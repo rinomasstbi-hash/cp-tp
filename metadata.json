@@ -1,0 +1,5 @@
+{
+  "name": "TP Generator MTsN 4 Jombang",
+  "description": "An application to generate, save, and manage Learning Objectives (Tujuan Pembelajaran - TP) based on Learning Outcomes (Capaian Pembelajaran - CP) for teachers at MTsN 4 Jombang.",
+  "requestFramePermissions": []
+}
