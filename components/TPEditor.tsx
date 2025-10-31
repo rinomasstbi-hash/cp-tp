@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { TPData, TPGroup, SubMateriGroup } from '../types';
+import React, { useState, useEffect } from 'react';
+import { User } from 'firebase/auth';
+import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
 import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon } from './icons';
 
@@ -7,15 +8,16 @@ interface TPEditorProps {
   mode: 'create' | 'edit';
   initialData?: TPData;
   subject: string;
-  onSave: (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  user: User; // User object from Firebase Auth
+  onSave: (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
 }
 
-const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave, onCancel }) => {
+const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, user, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     grade: initialData?.grade || '7',
-    creatorEmail: initialData?.creatorEmail || '',
-    creatorName: initialData?.creatorName || '',
+    creatorEmail: initialData?.creatorEmail || user.email || '',
+    creatorName: initialData?.creatorName || user.displayName || '',
     cpSourceVersion: initialData?.cpSourceVersion || '',
     additionalNotes: initialData?.additionalNotes || '',
   });
@@ -27,8 +29,20 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
   );
 
   const [tpGroups, setTpGroups] = useState<TPGroup[]>(initialData?.tpGroups || []);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    // Ensure creator info is populated from user object on creation
+    if (mode === 'create') {
+        setFormData(prev => ({
+            ...prev,
+            creatorEmail: user.email || '',
+            creatorName: user.displayName || '',
+        }));
+    }
+  }, [user, mode]);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -109,7 +123,7 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
       return;
     }
     setError('');
-    setIsLoading(true);
+    setIsGenerating(true);
     setTpGroups([]);
 
     try {
@@ -118,11 +132,11 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat generate TP.');
     } finally {
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
   
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.creatorEmail || !formData.creatorName) {
       setError('Email dan Nama Guru pembuat harus diisi untuk menyimpan.');
       return;
@@ -136,14 +150,22 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
         return;
     }
     setError('');
+    setIsSaving(true);
     
     const finalData = {
-        ...(initialData || {}),
+        subject,
         ...formData,
         cpElements,
         tpGroups,
     };
-    onSave(finalData);
+
+    try {
+        await onSave(finalData);
+    } catch(err: any) {
+        setError(err.message || "Gagal menyimpan data.");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
@@ -162,11 +184,11 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label htmlFor="creatorName" className="block text-sm font-medium text-slate-700 mb-1">Nama Guru</label>
-              <input type="text" name="creatorName" id="creatorName" value={formData.creatorName} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Masukkan nama lengkap" />
+              <input type="text" name="creatorName" id="creatorName" value={formData.creatorName} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100" readOnly />
             </div>
             <div>
-              <label htmlFor="creatorEmail" className="block text-sm font-medium text-slate-700 mb-1">Email (untuk edit/hapus)</label>
-              <input type="email" name="creatorEmail" id="creatorEmail" value={formData.creatorEmail} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="contoh@email.com" readOnly={mode === 'edit'} />
+              <label htmlFor="creatorEmail" className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <input type="email" name="creatorEmail" id="creatorEmail" value={formData.creatorEmail} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100" readOnly />
             </div>
             <div>
               <label htmlFor="grade" className="block text-sm font-medium text-slate-700 mb-1">Kelas</label>
@@ -214,8 +236,8 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
             <textarea name="additionalNotes" id="additionalNotes" value={formData.additionalNotes} onChange={handleInputChange} rows={2} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Informasi tambahan untuk AI..."></textarea>
           </div>
           
-          <button onClick={handleGenerate} disabled={isLoading} className="mt-6 w-full flex justify-center items-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
-            {isLoading ? (
+          <button onClick={handleGenerate} disabled={isGenerating || isSaving} className="mt-6 w-full flex justify-center items-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
+            {isGenerating ? (
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 <span>Menghasilkan...</span>
@@ -293,9 +315,18 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
           </div>
 
           <div className="mt-8 border-t pt-6 flex justify-end">
-            <button onClick={handleSave} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                <SaveIcon className="w-5 h-5"/>
-              {mode === 'create' ? 'Simpan TP Baru' : 'Perbarui TP'}
+            <button onClick={handleSave} disabled={isSaving || isGenerating} className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-400">
+                {isSaving ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <SaveIcon className="w-5 h-5"/>
+                    {mode === 'create' ? 'Simpan TP Baru' : 'Perbarui TP'}
+                  </>
+                )}
             </button>
           </div>
         </div>

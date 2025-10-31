@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const BookOpenIcon = ({ className }: { className?: string }) => (
@@ -121,23 +122,29 @@ export const DumbbellIcon = ({ className }: { className?: string }) => (
     <path d="M14.4 14.4 9.6 9.6" />
     <path d="M18.8 18.8 15 15" />
     <path d="M9 9 5.2 5.2" />
-    <path d="m5.2 9-.4.4a5 5 0 0 0 7 7l.4-.4" />
-    <path d="m14.4 5.2.4-.4a5 5 0 0 1 7 7l-.4.4" />
-    <path d="M9 5.2 5.2 9" />
-    <path d="M18.8 15 15 18.8" />
+    <path d="M5.6 18.4 2 22" />
+    <path d="M18.4 5.6 22 2" />
+    <path d="m21 7-4-4" />
+    <path d="m3 17 4 4" />
+    <path d="m17 3-4 4" />
+    <path d="m7 21-4-4" />
   </svg>
 );
 
+// FIX: Added PancasilaIcon to be used for "Pendidikan Pancasila" subject.
 export const PancasilaIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+    </svg>
 );
 
+// FIX: Added JavaneseIcon to be used for "Bahasa Jawa" subject.
 export const JavaneseIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 18c0-5 3-7 6-7s6 2 6 7"/>
-    <path d="M10 4c-4 0-4 4-4 4v1"/>
-    <path d="M18 9c0-5-2-5-4-5"/>
+    <path d="M12 2L8 10h8L12 2z" />
+    <path d="M18 10h-12" />
+    <path d="M18 10c0 4.418-2.686 8-6 8s-6-3.582-6-8" />
+    <path d="M12 18v4" />
+    <path d="M10 22h4" />
   </svg>
 );

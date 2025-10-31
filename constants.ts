@@ -1,4 +1,3 @@
-
 export const MATA_PELAJARAN = [
   "Al-Qur'an Hadis",
   "Akidah Akhlak",
@@ -20,4 +19,3 @@ export const MATA_PELAJARAN = [
 ];
 
 export const APP_TITLE = "TP Generator MTsN 4 Jombang";
-export const DB_KEY = "mtsn4jombang_tp_db";

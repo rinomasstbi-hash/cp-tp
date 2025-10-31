@@ -1,106 +1,67 @@
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy } from "firebase/firestore";
+import { db } from './firebase';
 import { TPData } from '../types';
-import { DB_KEY } from '../constants';
 
-type Database = {
-  [subject: string]: TPData[];
-};
+const TP_COLLECTION = 'tps';
 
-const getDatabase = (): Database => {
-  try {
-    const dbString = localStorage.getItem(DB_KEY);
-    return dbString ? JSON.parse(dbString) : {};
-  } catch (error) {
-    console.error("Failed to parse database from localStorage", error);
-    return {};
-  }
-};
-
-const saveDatabase = (db: Database) => {
-  try {
-    localStorage.setItem(DB_KEY, JSON.stringify(db));
-  } catch (error) {
-    console.error("Failed to save database to localStorage", error);
-  }
-};
-
-export const getTPsBySubject = (subject: string): TPData[] => {
-  const db = getDatabase();
-  return db[subject] || [];
-};
-
-export const saveTP = (subject: string, data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'>): TPData => {
-  const db = getDatabase();
-  const subjectTPs = db[subject] || [];
+export const getTPsBySubject = async (subject: string, userId: string): Promise<TPData[]> => {
+  if (!userId) return [];
   
-  const now = new Date().toISOString();
-  const newTP: TPData = {
-    ...data,
-    id: crypto.randomUUID(), // Use robust, cryptographically-secure unique IDs
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  // Immutable update: create a new DB object with the new TP added
-  const newDb = {
-    ...db,
-    [subject]: [...subjectTPs, newTP],
-  };
-
-  saveDatabase(newDb);
-  return newTP;
-};
-
-export const updateTP = (subject: string, updatedTP: TPData): TPData | null => {
-  const db = getDatabase();
-  const subjectTPs = db[subject];
-
-  if (!subjectTPs) {
-    return null;
-  }
-
-  const tpIndex = subjectTPs.findIndex(tp => tp.id === updatedTP.id);
-  if (tpIndex === -1) {
-    return null;
-  }
-
-  const newTPData = {
-      ...updatedTP,
-      updatedAt: new Date().toISOString()
-  };
-
-  // Immutable update: create a new array with the updated item
-  const newSubjectTPs = subjectTPs.map(tp => 
-    tp.id === updatedTP.id ? newTPData : tp
+  const tpsCollection = collection(db, TP_COLLECTION);
+  const q = query(
+    tpsCollection, 
+    where("userId", "==", userId), 
+    where("subject", "==", subject),
+    orderBy("createdAt", "desc")
   );
-  
-  // Immutable update: create a new DB object with the updated list
-  const newDb = {
-    ...db,
-    [subject]: newSubjectTPs
-  };
 
-  saveDatabase(newDb);
-  return newTPData;
+  try {
+    const querySnapshot = await getDocs(q);
+    const tps: TPData[] = [];
+    querySnapshot.forEach((doc) => {
+      tps.push({ id: doc.id, ...doc.data() } as TPData);
+    });
+    return tps;
+  } catch (error) {
+    console.error("Error fetching TPs: ", error);
+    throw new Error("Gagal mengambil data dari server.");
+  }
 };
 
-export const deleteTP = (subject: string, tpId: string): boolean => {
-    const db = getDatabase();
-    const subjectTPs = db[subject];
+export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'>): Promise<TPData> => {
+  try {
+    const now = new Date().toISOString();
+    const docRef = await addDoc(collection(db, TP_COLLECTION), {
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { ...data, id: docRef.id, createdAt: now, updatedAt: now };
+  } catch (error) {
+    console.error("Error saving TP: ", error);
+    throw new Error("Gagal menyimpan data ke server.");
+  }
+};
 
-    if (!subjectTPs) {
-        return false;
-    }
+export const updateTP = async (tpId: string, updatedData: Partial<Omit<TPData, 'id'>>): Promise<void> => {
+  try {
+    const tpDoc = doc(db, TP_COLLECTION, tpId);
+    await updateDoc(tpDoc, {
+        ...updatedData,
+        updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error updating TP: ", error);
+    throw new Error("Gagal memperbarui data di server.");
+  }
+};
 
-    const newSubjectTPs = subjectTPs.filter(tp => tp.id !== tpId);
-    
-    if (newSubjectTPs.length < subjectTPs.length) {
-        // Immutable update: create a new DB object with the filtered list
-        const newDb = {
-            ...db,
-            [subject]: newSubjectTPs
-        };
-        saveDatabase(newDb);
-        return true;
+export const deleteTP = async (tpId: string): Promise<void> => {
+    try {
+        const tpDoc = doc(db, TP_COLLECTION, tpId);
+        await deleteDoc(tpDoc);
+    } catch (error) {
+        console.error("Error deleting TP: ", error);
+        throw new Error("Gagal menghapus data dari server.");
     }
-    return false;
 };

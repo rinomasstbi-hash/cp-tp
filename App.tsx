@@ -1,35 +1,79 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './services/firebase';
 import { View, TPData, TPGroup } from './types';
 import * as dbService from './services/dbService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
+import Login from './components/Login';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon } from './components/icons';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [tps, setTps] = useState<TPData[]>([]);
   const [editingTP, setEditingTP] = useState<TPData | null>(null);
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [promptEmail, setPromptEmail] = useState<boolean>(false);
-  const [tpToEdit, setTpToEdit] = useState<TPData | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
 
-  const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
+  const SELECTED_SUBJECT_KEY_PREFIX = 'mtsn4jombang_selected_subject_';
 
-  const loadTPsForSubject = useCallback((subject: string) => {
-    const data = dbService.getTPsBySubject(subject);
-    setTps(data);
-    setSelectedSubject(subject);
-    setView('view_tps');
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+      if (!currentUser) {
+        // Clear subject selection on logout
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(SELECTED_SUBJECT_KEY_PREFIX)) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        setView('select_subject');
+        setSelectedSubject(null);
+      }
+    });
+    return () => unsubscribe();
   }, []);
+
+  const loadTPsForSubject = useCallback(async (subject: string, userId: string) => {
+    setDataLoading(true);
+    try {
+      const data = await dbService.getTPsBySubject(subject, userId);
+      setTps(data);
+    } catch (error) {
+      console.error(error);
+      alert("Gagal memuat data. Silakan coba lagi.");
+    } finally {
+      setDataLoading(false);
+      setSelectedSubject(subject);
+      setView('view_tps');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      const savedSubject = localStorage.getItem(SELECTED_SUBJECT_KEY_PREFIX + user.uid);
+      if (savedSubject) {
+        loadTPsForSubject(savedSubject, user.uid);
+      }
+    }
+  }, [user, loadTPsForSubject]);
   
   const handleSelectSubject = (subject: string) => {
-    localStorage.setItem(SELECTED_SUBJECT_KEY, subject);
-    loadTPsForSubject(subject);
+    if (!user) return;
+    localStorage.setItem(SELECTED_SUBJECT_KEY_PREFIX + user.uid, subject);
+    loadTPsForSubject(subject, user.uid);
   };
   
   const handleBackToSubjects = () => {
-    localStorage.removeItem(SELECTED_SUBJECT_KEY);
+    if (user) {
+        localStorage.removeItem(SELECTED_SUBJECT_KEY_PREFIX + user.uid);
+    }
     setSelectedSubject(null);
     setTps([]);
     setView('select_subject');
@@ -41,73 +85,44 @@ const App: React.FC = () => {
   };
 
   const handleEdit = (tp: TPData) => {
-    if(!userEmail) {
-        setTpToEdit(tp);
-        setPromptEmail(true);
-        return;
-    }
-    
-    if (userEmail.toLowerCase() === tp.creatorEmail.toLowerCase()) {
-        setEditingTP(tp);
-        setView('edit_tp');
-    } else {
-        alert("Otentikasi gagal: Email tidak cocok dengan email pembuat.");
-    }
+    setEditingTP(tp);
+    setView('edit_tp');
   };
 
-  const handleDelete = (tpId: string) => {
-    if (selectedSubject && window.confirm("Apakah Anda yakin ingin menghapus data TP ini?")) {
-        const tpToDelete = tps.find(tp => tp.id === tpId);
-        if (!tpToDelete) return;
-
-        if (!userEmail) {
-            alert("Silakan masukkan email Anda terlebih dahulu untuk verifikasi.");
-            setPromptEmail(true);
-            return;
-        }
-
-        if (userEmail.toLowerCase() !== tpToDelete.creatorEmail.toLowerCase()) {
-            alert("Otentikasi gagal: Anda bukan pembuat data TP ini.");
-            return;
-        }
-
-        dbService.deleteTP(selectedSubject, tpId);
-        loadTPsForSubject(selectedSubject);
+  const handleDelete = async (tpId: string) => {
+    if (!selectedSubject || !user || !tpId) return;
+    if (window.confirm("Apakah Anda yakin ingin menghapus data TP ini secara permanen?")) {
+      try {
+        await dbService.deleteTP(tpId);
+        await loadTPsForSubject(selectedSubject, user.uid);
+      } catch (error) {
+        console.error(error);
+        alert("Gagal menghapus data. Silakan coba lagi.");
+      }
     }
   };
   
-  const handleSave = (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'>) => {
-    if (selectedSubject) {
-        if(view === 'create_tp') {
-            dbService.saveTP(selectedSubject, data);
-        } else if (view === 'edit_tp' && editingTP) {
-            const fullData = { ...data, id: editingTP.id, createdAt: editingTP.createdAt, updatedAt: new Date().toISOString() };
-            dbService.updateTP(selectedSubject, fullData as TPData);
-        }
-      loadTPsForSubject(selectedSubject);
+  const handleSave = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
+    if (selectedSubject && user) {
+      if(view === 'create_tp') {
+        const dataToSave = { ...data, userId: user.uid };
+        await dbService.saveTP(dataToSave);
+      } else if (view === 'edit_tp' && editingTP?.id) {
+        await dbService.updateTP(editingTP.id, data);
+      }
+      await loadTPsForSubject(selectedSubject, user.uid);
     }
   };
 
-  const handleEmailSubmit = () => {
-    localStorage.setItem('userEmail', userEmail);
-    setPromptEmail(false);
-    if(tpToEdit) {
-        handleEdit(tpToEdit);
-        setTpToEdit(null);
+  const handleLogout = async () => {
+    try {
+        await signOut(auth);
+    } catch (error) {
+        console.error("Error signing out: ", error);
+        alert("Gagal untuk logout.");
     }
-  }
+  };
 
-  useEffect(() => {
-    const savedEmail = localStorage.getItem('userEmail');
-    if (savedEmail) {
-        setUserEmail(savedEmail);
-    }
-
-    const savedSubject = localStorage.getItem(SELECTED_SUBJECT_KEY);
-    if (savedSubject) {
-        loadTPsForSubject(savedSubject);
-    }
-  }, [loadTPsForSubject]);
 
   const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[] }> = ({ title, groups }) => {
     if (groups.length === 0) return null;
@@ -151,6 +166,18 @@ const App: React.FC = () => {
   };
 
   const renderContent = () => {
+    if (authLoading) {
+      return (
+        <div className="flex justify-center items-center h-screen">
+          <div className="w-16 h-16 border-4 border-teal-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      );
+    }
+
+    if (!user) {
+      return <Login />;
+    }
+
     switch (view) {
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} />;
@@ -159,10 +186,20 @@ const App: React.FC = () => {
         if (!selectedSubject) return null;
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-            <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6 font-semibold">
-                <BackIcon className="w-5 h-5" />
-                Kembali ke Pilihan Mapel
-            </button>
+            <div className="flex justify-between items-center mb-6">
+              <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                  <BackIcon className="w-5 h-5" />
+                  Kembali ke Pilihan Mapel
+              </button>
+              <div className="flex items-center gap-4">
+                  <div className="text-right">
+                      <p className="text-sm font-semibold text-slate-800">{user.displayName}</p>
+                      <p className="text-xs text-slate-500">{user.email}</p>
+                  </div>
+                  <button onClick={handleLogout} className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-md hover:bg-red-600">Logout</button>
+              </div>
+            </div>
+
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <div>
                 <h1 className="text-3xl font-bold text-slate-800">{selectedSubject}</h1>
@@ -174,7 +211,9 @@ const App: React.FC = () => {
               </button>
             </div>
             
-            {tps.length === 0 ? (
+            {dataLoading ? (
+                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data...</p></div>
+            ) : tps.length === 0 ? (
                 <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
                     <h3 className="text-xl font-semibold text-slate-700">Belum Ada Data</h3>
                     <p className="text-slate-500 mt-2">Tidak ada data Tujuan Pembelajaran untuk mata pelajaran ini.</p>
@@ -197,7 +236,7 @@ const App: React.FC = () => {
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => handleEdit(tp)} className="p-2 text-blue-500 hover:bg-blue-100 rounded-full"><EditIcon className="w-5 h-5"/></button>
-                                    <button onClick={() => handleDelete(tp.id)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-5 h-5"/></button>
+                                    <button onClick={() => handleDelete(tp.id!)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-5 h-5"/></button>
                                 </div>
                             </div>
 
@@ -235,10 +274,11 @@ const App: React.FC = () => {
       case 'edit_tp':
         return <TPEditor 
                 mode={view === 'create_tp' ? 'create' : 'edit'}
-                initialData={editingTP}
+                initialData={editingTP || undefined}
                 subject={selectedSubject!}
+                user={user}
                 onSave={handleSave}
-                onCancel={() => loadTPsForSubject(selectedSubject!)}
+                onCancel={() => loadTPsForSubject(selectedSubject!, user.uid)}
                />;
       default:
         return null;
@@ -247,25 +287,6 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-slate-100 min-h-screen">
-      {promptEmail && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-                  <h2 className="text-lg font-bold mb-4">Verifikasi Email</h2>
-                  <p className="text-sm text-slate-600 mb-4">Untuk mengedit atau menghapus, silakan masukkan email yang Anda gunakan saat membuat data ini.</p>
-                  <input
-                      type="email"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      placeholder="Masukkan email Anda"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 mb-4"
-                  />
-                  <div className="flex justify-end gap-2">
-                       <button onClick={() => { setPromptEmail(false); setTpToEdit(null); }} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">Batal</button>
-                       <button onClick={handleEmailSubmit} className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700">Lanjutkan</button>
-                  </div>
-              </div>
-          </div>
-      )}
       {renderContent()}
     </div>
   );
