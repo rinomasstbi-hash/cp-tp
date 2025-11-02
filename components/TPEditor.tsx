@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
@@ -136,6 +137,11 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
         setError('Setiap baris Elemen dan CP harus diisi.');
         return;
     }
+    if (!formData.additionalNotes.trim()) {
+      setError('Urutan bab/materi semester ganjil dan genap wajib diisi.');
+      return;
+    }
+
     setError('');
     setIsSaving(true);
     
@@ -219,8 +225,16 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
           </div>
           
            <div>
-            <label htmlFor="additionalNotes" className="block text-sm font-medium text-slate-700 mb-1">Keterangan Tambahan (Opsional)</label>
-            <textarea name="additionalNotes" id="additionalNotes" value={formData.additionalNotes} onChange={handleInputChange} rows={2} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Informasi tambahan untuk AI..."></textarea>
+            <label htmlFor="additionalNotes" className="block text-sm font-medium text-slate-700 mb-1">Tambahkan urutan bab/materi semester ganjil dan genap</label>
+            <textarea
+              name="additionalNotes"
+              id="additionalNotes"
+              value={formData.additionalNotes}
+              onChange={handleInputChange}
+              rows={4}
+              className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+              placeholder="Tuliskan urutan materi yang Anda inginkan, dipisahkan per semester. Contoh:&#10;Semester Ganjil: Bilangan, Aljabar, Geometri.&#10;Semester Genap: Statistika, Peluang.">
+            </textarea>
           </div>
           
           <button onClick={handleGenerate} disabled={isGenerating || isSaving} className="mt-6 w-full flex justify-center items-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
@@ -298,7 +312,6 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
                 <p className="text-sm text-slate-400 mt-1">Klik tombol "Hasilkan TP dengan AI" di atas.</p>
               </div>
             )}
-            <button onClick={addTpGroup} className="mt-4 text-blue-600 hover:text-blue-800 font-semibold text-sm">+ Tambah Grup Materi Manual</button>
           </div>
 
           <div className="mt-8 border-t pt-6 flex justify-end">
