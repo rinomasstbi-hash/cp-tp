@@ -1,110 +1,82 @@
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy } from "firebase/firestore";
-import { db } from './firebase';
+// ====================================================================================
+// PENTING: Layanan ini sekarang menggunakan Google Sheets sebagai database.
+// Ini memerlukan skrip Google Apps Script yang disebarkan sebagai aplikasi web
+// untuk bertindak sebagai backend yang aman.
+// PASTIKAN ANDA SUDAH MENGIKUTI LANGKAH-LANGKAH PENYIAPAN DI DOKUMENTASI.
+// ====================================================================================
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw-qsZV3CnJbi91_Slz-JpR-7z-LEqiQb25DkZxmE5QGfg4UfAD8mF8PHbHk_Y91Bcq/exec';
+
 import { TPData } from '../types';
 
-const TP_COLLECTION = 'tps';
+const apiRequest = async (action: string, method: 'GET' | 'POST', body?: object) => {
+    // FIX: Removed the obsolete check for a placeholder URL. This comparison was causing
+    // a TypeScript error because the constant GOOGLE_APPS_SCRIPT_URL will never be equal
+    // to the placeholder string. The check is no longer needed since the URL is configured.
 
-// Helper function to provide detailed, actionable error messages for common Firestore issues.
-const handleFirestoreError = (error: any, context: string): Error => {
-  console.error(`Firestore error in ${context}: `, error);
+    let url = `${GOOGLE_APPS_SCRIPT_URL}?action=${action}`;
+    const options: RequestInit = {
+        method,
+        headers: {},
+        mode: 'cors',
+    };
 
-  if (error.code === 'permission-denied') {
-    // FIX: Replaced string concatenation with a template literal for improved readability and to prevent potential parsing errors from complex escape sequences.
-    return new Error(
-`AKSES DITOLAK: Security Rules di Firestore Anda perlu diperbarui.
-
-Ini berarti pengguna yang sudah login pun tidak diizinkan mengakses data. Salin dan tempel aturan di bawah ini ke tab "Rules" di Firebase Console Anda untuk memperbaikinya:
-
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /tps/{tpId} {
-      // Pengguna hanya bisa mengakses/mengubah dokumen miliknya sendiri
-      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      // Pengguna hanya bisa membuat dokumen dengan userId miliknya sendiri
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    if (method === 'POST' && body) {
+        options.body = JSON.stringify(body);
+        // FIX: Changed Content-Type to 'text/plain' to avoid CORS preflight (OPTIONS)
+        // requests, which is a common issue with Google Apps Script web apps.
+        // The server-side script is expected to parse the text content as JSON.
+        options.headers = {'Content-Type': 'text/plain;charset=utf-8'};
     }
-  }
-}`
-    );
-  }
-
-  if (error.code === 'failed-precondition' && error.message.includes('index')) {
-    // FIX: Replaced string concatenation with a template literal for improved readability.
-      return new Error(
-`MEMBUTUHKAN INDEX: Query database Anda memerlukan index komposit di Firestore agar dapat berjalan. Ini adalah langkah konfigurasi satu kali yang umum.
-
-Buka Firebase Console, navigasi ke Firestore Database > Indexes, dan buat index baru dengan detail berikut:
-
-  - Collection ID: tps
-  - Fields to index:
-    1. userId (Ascending)
-    2. subject (Ascending)
-    3. createdAt (Descending)
-  - Query scope: Collection
-
-Biasanya, Firebase juga menyediakan link untuk membuat index ini secara otomatis di pesan error pada console browser.`
-      );
-  }
-  
-  return new Error(`Gagal ${context}. Penyebab: ${error.message || 'Tidak diketahui'}`);
+    
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Gagal terhubung ke server: ${response.statusText} | ${errorText}`);
+        }
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Terjadi kesalahan pada server.');
+        }
+        return result.data;
+    } catch (error: any) {
+        console.error(`API request error for action "${action}":`, error);
+        throw new Error(`${error.message}`);
+    }
 };
 
-
-export const getTPsBySubject = async (subject: string, userId: string): Promise<TPData[]> => {
-  if (!userId) return [];
-  
-  const tpsCollection = collection(db, TP_COLLECTION);
-  const q = query(
-    tpsCollection, 
-    where("userId", "==", userId), 
-    where("subject", "==", subject),
-    orderBy("createdAt", "desc")
-  );
-
-  try {
-    const querySnapshot = await getDocs(q);
-    const tps: TPData[] = [];
-    querySnapshot.forEach((doc) => {
-      tps.push({ id: doc.id, ...doc.data() } as TPData);
-    });
-    return tps;
-  } catch (error) {
-    throw handleFirestoreError(error, "mengambil data dari server");
-  }
+export const getTPsBySubject = async (subject: string): Promise<TPData[]> => {
+    const url = `${GOOGLE_APPS_SCRIPT_URL}?action=getTPs&subject=${encodeURIComponent(subject)}`;
+     try {
+        const response = await fetch(url);
+         if (!response.ok) {
+            throw new Error(`Network response was not ok: ${response.statusText}`);
+        }
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'Terjadi kesalahan pada server.');
+        }
+        // Data dari sheet yang berupa JSON string di-parse kembali menjadi objek.
+        const parsedData = result.data.map((item: any) => ({
+            ...item,
+            cpElements: typeof item.cpElements === 'string' ? JSON.parse(item.cpElements || '[]') : item.cpElements,
+            tpGroups: typeof item.tpGroups === 'string' ? JSON.parse(item.tpGroups || '[]') : item.tpGroups,
+        }));
+        return parsedData;
+    } catch (error: any) {
+        console.error(`API request error for action "getTPs":`, error);
+        throw new Error(`Gagal mengambil data: ${error.message}`);
+    }
 };
 
-export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'>): Promise<TPData> => {
-  try {
-    const now = new Date().toISOString();
-    const docRef = await addDoc(collection(db, TP_COLLECTION), {
-      ...data,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { ...data, id: docRef.id, createdAt: now, updatedAt: now };
-  } catch (error) {
-    throw handleFirestoreError(error, "menyimpan data ke server");
-  }
+export const saveTP = async (data: Omit<TPData, 'id' | 'userId'>): Promise<TPData> => {
+    return apiRequest('saveTP', 'POST', data);
 };
 
 export const updateTP = async (tpId: string, updatedData: Partial<Omit<TPData, 'id'>>): Promise<void> => {
-  try {
-    const tpDoc = doc(db, TP_COLLECTION, tpId);
-    await updateDoc(tpDoc, {
-        ...updatedData,
-        updatedAt: new Date().toISOString()
-    });
-  } catch (error) {
-    throw handleFirestoreError(error, "memperbarui data di server");
-  }
+    return apiRequest('updateTP', 'POST', { tpId, updatedData });
 };
 
 export const deleteTP = async (tpId: string): Promise<void> => {
-    try {
-        const tpDoc = doc(db, TP_COLLECTION, tpId);
-        await deleteDoc(tpDoc);
-    } catch (error) {
-        throw handleFirestoreError(error, "menghapus data dari server");
-    }
+    return apiRequest('deleteTP', 'POST', { tpId });
 };

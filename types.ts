@@ -10,9 +10,9 @@ export interface TPGroup {
 }
 
 export interface TPData {
-  id?: string; // Firestore will generate this, so it's optional on creation
-  userId: string; // To associate data with a user
-  subject: string; // Added to store subject directly in the document
+  id?: string; 
+  userId?: string; // Menjadi opsional karena tidak ada login
+  subject: string; 
   cpElements: { element: string; cp: string; }[];
   grade: string;
   creatorEmail: string;
@@ -24,4 +24,4 @@ export interface TPData {
   updatedAt: string;
 }
 
-export type View = 'select_subject' | 'view_tps' | 'create_tp' | 'edit_tp';
+export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp';

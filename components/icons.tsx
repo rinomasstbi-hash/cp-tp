@@ -66,22 +66,9 @@ export const MosqueIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export const IndonesiaFlagIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24">
-        <path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z" fill="#FFFFFF" />
-        <path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7H3V5z" fill="#E13B3D" />
-        <rect x="3" y="5" width="18" height="14" rx="2" ry="2" fill="none" stroke="#6b7280" strokeWidth="0.5" />
-    </svg>
-);
-
-export const UKFlagIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24">
-    <path fill="#00247d" d="M0 0h24v24H0z"/>
-    <path fill="#fff" d="M24 0v2.09L2.09 24H0v-2.09L21.91 0H24z"/>
-    <path fill="#fff" d="M21.91 24L0 2.09V0h2.09L24 21.91V24h-2.09z"/>
-    <path fill="#cf142b" d="M9.43 24L0 14.57V9.43L9.43 0h5.14L24 9.43v5.14L14.57 24H9.43z"/>
-    <path fill="#fff" d="M10.5 0h3v24h-3zM0 10.5h24v3H0z"/>
-    <path fill="#cf142b" d="M11 0h2v24h-2zM0 11h24v2H0z"/>
+export const LanguageIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
   </svg>
 );
 
@@ -161,5 +148,14 @@ export const JavaneseIcon = ({ className }: { className?: string }) => (
 export const AlertIcon = ({ className }: { className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+  </svg>
+);
+
+export const FlowChartIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+    <circle cx="18" cy="18" r="3"></circle>
+    <circle cx="6" cy="6" r="3"></circle>
+    <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+    <path d="M6 9v12"></path>
   </svg>
 );

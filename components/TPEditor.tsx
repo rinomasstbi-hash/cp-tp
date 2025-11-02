@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { User } from 'firebase/auth';
 import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
 import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon } from './icons';
@@ -8,16 +7,15 @@ interface TPEditorProps {
   mode: 'create' | 'edit';
   initialData?: TPData;
   subject: string;
-  user: User; // User object from Firebase Auth
   onSave: (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
 }
 
-const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, user, onSave, onCancel }) => {
+const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     grade: initialData?.grade || '7',
-    creatorEmail: initialData?.creatorEmail || user.email || '',
-    creatorName: initialData?.creatorName || user.displayName || '',
+    creatorEmail: initialData?.creatorEmail || '',
+    creatorName: initialData?.creatorName || '',
     cpSourceVersion: initialData?.cpSourceVersion || '',
     additionalNotes: initialData?.additionalNotes || '',
   });
@@ -32,17 +30,6 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, user, o
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    // Ensure creator info is populated from user object on creation
-    if (mode === 'create') {
-        setFormData(prev => ({
-            ...prev,
-            creatorEmail: user.email || '',
-            creatorName: user.displayName || '',
-        }));
-    }
-  }, [user, mode]);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -184,11 +171,11 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, user, o
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label htmlFor="creatorName" className="block text-sm font-medium text-slate-700 mb-1">Nama Guru</label>
-              <input type="text" name="creatorName" id="creatorName" value={formData.creatorName} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100" readOnly />
+              <input type="text" name="creatorName" id="creatorName" value={formData.creatorName} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Masukkan nama lengkap Anda" />
             </div>
             <div>
               <label htmlFor="creatorEmail" className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input type="email" name="creatorEmail" id="creatorEmail" value={formData.creatorEmail} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-slate-100" readOnly />
+              <input type="email" name="creatorEmail" id="creatorEmail" value={formData.creatorEmail} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Masukkan email aktif" />
             </div>
             <div>
               <label htmlFor="grade" className="block text-sm font-medium text-slate-700 mb-1">Kelas</label>

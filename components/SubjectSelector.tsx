@@ -3,8 +3,7 @@ import { MATA_PELAJARAN, APP_TITLE } from '../constants';
 import { 
   BookOpenIcon, 
   MosqueIcon,
-  IndonesiaFlagIcon,
-  UKFlagIcon,
+  LanguageIcon,
   AtomIcon,
   CalculatorIcon,
   GlobeIcon,
@@ -27,12 +26,9 @@ const getSubjectIcon = (subject: string) => {
     return <MosqueIcon className={className} />;
   }
 
-  // Specific Languages get Flag icons
-  if (subject.includes("Indonesia")) {
-    return <IndonesiaFlagIcon className={className} />;
-  }
-  if (subject.includes("Inggris")) {
-    return <UKFlagIcon className={className} />;
+  // Languages
+  if (subject.includes("Indonesia") || subject.includes("Inggris")) {
+    return <LanguageIcon className={className} />;
   }
   if (subject.includes("Jawa")) {
       return <JavaneseIcon className={className} />;
