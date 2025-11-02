@@ -1,9 +1,38 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup } from './types';
 import * as apiService from './services/dbService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon } from './components/icons';
+
+const Header: React.FC = () => {
+  return (
+    <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-start h-20">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+               <img 
+                 src="https://id.ppdb.mtsn4jombang.org/assets/img/logo/logo_ppdb695.png" 
+                 alt="Logo MTsN 4 Jombang" 
+                 className="h-12 w-auto"
+               />
+            </div>
+            <div className="ml-4">
+              <span className="block text-xl font-extrabold text-white tracking-wide uppercase">
+                Tujuan Pembelajaran (TP)
+              </span>
+              <span className="block text-sm text-slate-300">
+                Tahun Pelajaran 2025/2026
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
 
 const App: React.FC = () => {
   const [view, setView] = useState<View>('select_subject');
@@ -362,6 +391,8 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-slate-100 min-h-screen">
+      <Header />
+
       {copyNotification && (
           <div className="fixed top-5 right-5 bg-teal-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-transform transform animate-pulse">
               {copyNotification}
@@ -396,8 +427,9 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-
-      {renderContent()}
+      <main>
+        {renderContent()}
+      </main>
     </div>
   );
 };

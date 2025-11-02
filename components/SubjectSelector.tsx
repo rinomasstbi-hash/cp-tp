@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { MATA_PELAJARAN, APP_TITLE } from '../constants';
+import { MATA_PELAJARAN } from '../constants';
 import { 
   BookOpenIcon, 
   MosqueIcon,
@@ -63,12 +64,12 @@ const getSubjectIcon = (subject: string) => {
 
 const SubjectSelector: React.FC<SubjectSelectorProps> = ({ onSelectSubject }) => {
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center p-4 sm:p-6 lg:p-8">
-      <header className="text-center mb-8">
-        <img src="https://picsum.photos/seed/mtsn4/100/100" alt="Logo MTsN 4 Jombang" className="w-24 h-24 mx-auto rounded-full shadow-lg mb-4" />
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-800">{APP_TITLE}</h1>
-        <p className="text-slate-600 mt-2">Silakan pilih mata pelajaran untuk melihat atau membuat Tujuan Pembelajaran (TP).</p>
-      </header>
+    <div className="flex flex-col items-center p-4 sm:p-6 lg:p-8">
+      <div className="text-center my-8">
+        <p className="text-lg text-slate-600 max-w-2xl">
+          Silakan pilih mata pelajaran untuk melihat atau membuat Tujuan Pembelajaran (TP).
+        </p>
+      </div>
       <main className="w-full max-w-4xl">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {MATA_PELAJARAN.map((subject) => (
