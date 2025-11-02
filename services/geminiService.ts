@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPGroup } from "../types";
 
@@ -14,8 +13,8 @@ export const generateTPs = async (
   const { cpElements, grade, additionalNotes } = data;
 
   const cpElementsString = cpElements
-    .map((item, index) => `Elemen ${index + 1}: ${item.element}\nCapaian Pembelajaran (CP) ${index + 1}: "${item.cp}"`)
-    .join('\n\n');
+    .map((item, index) => `Elemen ${index + 1}: ${item.element}\\nCapaian Pembelajaran (CP) ${index + 1}: "${item.cp}"`)
+    .join('\\n\\n');
 
   const prompt = `
     Anda adalah seorang ahli desain kurikulum dan pakar pedagogi untuk sistem pendidikan Indonesia, khususnya untuk tingkat Madrasah Tsanawiyah (MTs).
@@ -81,6 +80,30 @@ ${cpElementsString}
       contents: prompt,
        config: {
         responseMimeType: "application/json",
+        // FIX: Added responseSchema to ensure the AI returns a well-structured JSON object, improving reliability.
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              semester: { type: Type.STRING },
+              materi: { type: Type.STRING },
+              subMateriGroups: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    subMateri: { type: Type.STRING },
+                    tps: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
     const text = response.text.trim();

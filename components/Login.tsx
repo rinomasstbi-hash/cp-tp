@@ -2,20 +2,51 @@ import React, { useState } from 'react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { APP_TITLE } from '../constants';
+import { AlertIcon } from './icons';
 
 const Login: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
+    // Change error state to an object for more structured content
+    const [error, setError] = useState<{title: string, message: React.ReactNode} | null>(null);
 
     const handleGoogleSignIn = async () => {
         setIsLoading(true);
-        setError('');
+        setError(null);
         const provider = new GoogleAuthProvider();
         try {
             await signInWithPopup(auth, provider);
         } catch (err: any) {
-            setError('Gagal masuk dengan Google. Silakan coba lagi.');
-            console.error(err);
+            let title = "Gagal Masuk";
+            let message: React.ReactNode = "Terjadi kesalahan yang tidak diketahui. Silakan coba lagi.";
+            
+            if (err.code === 'auth/unauthorized-domain') {
+                title = "Domain Tidak Diizinkan";
+                // Get project ID from the live auth instance to build a helpful link
+                const projectId = auth.app.options.projectId;
+                const consoleUrl = projectId ? `https://console.firebase.google.com/u/0/project/${projectId}/authentication/settings` : '#';
+                
+                message = (
+                    <>
+                        <p className="mb-2">Firebase menolak permintaan karena domain <code className="bg-red-100 text-red-800 px-1 rounded">aistudio.google.com</code> tidak ada dalam daftar domain resmi Anda.</p>
+                        <p className="font-semibold mb-1">Langkah-langkah untuk memperbaiki:</p>
+                        <ol className="list-decimal list-inside text-sm space-y-1">
+                            <li>Buka Pengaturan Autentikasi Firebase Anda.</li>
+                            <li>Klik "Add domain" dan masukkan <code className="bg-red-100 text-red-800 px-1 rounded">aistudio.google.com</code> persis seperti ini.</li>
+                            <li>Jika Anda baru saja menambahkannya, mohon tunggu 2-5 menit lalu coba lagi (ini disebut 'propagation delay').</li>
+                        </ol>
+                        {projectId && (
+                            <a href={consoleUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-blue-600 hover:text-blue-800 hover:underline font-semibold">
+                                Buka Firebase Console &rarr;
+                            </a>
+                        )}
+                    </>
+                );
+            } else {
+                message = err.message || 'Gagal masuk dengan Google. Silakan coba lagi.';
+            }
+            
+            setError({ title, message });
+            console.error("Firebase Auth Error:", err);
             setIsLoading(false);
         }
     };
@@ -51,7 +82,21 @@ const Login: React.FC = () => {
                     )}
                     
                 </button>
-                 {error && <p className="text-red-500 mt-4 text-sm">{error}</p>}
+                 {error && (
+                    <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <AlertIcon className="h-5 w-5 text-red-400" />
+                            </div>
+                            <div className="ml-3">
+                                <h3 className="text-sm font-medium text-red-800">{error.title}</h3>
+                                <div className="mt-2 text-sm text-red-700">
+                                    {error.message}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
              <footer className="text-center mt-8 text-slate-500 text-sm">
                 <p>&copy; {new Date().getFullYear()} MTsN 4 Jombang. All rights reserved.</p>

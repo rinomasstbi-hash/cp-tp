@@ -6,7 +6,7 @@ import * as dbService from './services/dbService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
 import Login from './components/Login';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon } from './components/icons';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon } from './components/icons';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -16,6 +16,8 @@ const App: React.FC = () => {
   const [tps, setTps] = useState<TPData[]>([]);
   const [editingTP, setEditingTP] = useState<TPData | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
+  const [copyNotification, setCopyNotification] = useState('');
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   const SELECTED_SUBJECT_KEY_PREFIX = 'mtsn4jombang_selected_subject_';
 
@@ -42,12 +44,13 @@ const App: React.FC = () => {
 
   const loadTPsForSubject = useCallback(async (subject: string, userId: string) => {
     setDataLoading(true);
+    setGlobalError(null);
     try {
       const data = await dbService.getTPsBySubject(subject, userId);
       setTps(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Gagal memuat data. Silakan coba lagi.");
+      setGlobalError(error.message);
     } finally {
       setDataLoading(false);
       setSelectedSubject(subject);
@@ -76,6 +79,7 @@ const App: React.FC = () => {
     }
     setSelectedSubject(null);
     setTps([]);
+    setGlobalError(null);
     setView('select_subject');
   };
 
@@ -92,12 +96,13 @@ const App: React.FC = () => {
   const handleDelete = async (tpId: string) => {
     if (!selectedSubject || !user || !tpId) return;
     if (window.confirm("Apakah Anda yakin ingin menghapus data TP ini secara permanen?")) {
+      setGlobalError(null);
       try {
         await dbService.deleteTP(tpId);
         await loadTPsForSubject(selectedSubject, user.uid);
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
-        alert("Gagal menghapus data. Silakan coba lagi.");
+        setGlobalError(error.message);
       }
     }
   };
@@ -123,6 +128,17 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+        setCopyNotification('Tujuan Pembelajaran berhasil disalin!');
+        setTimeout(() => setCopyNotification(''), 2000);
+    }, (err) => {
+        console.error('Gagal menyalin teks: ', err);
+        setCopyNotification('Gagal menyalin.');
+        setTimeout(() => setCopyNotification(''), 2000);
+    });
+  };
+
 
   const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[] }> = ({ title, groups }) => {
     if (groups.length === 0) return null;
@@ -143,6 +159,7 @@ const App: React.FC = () => {
                                               <tr>
                                                   <th className="w-16 px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No.</th>
                                                   <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tujuan Pembelajaran</th>
+                                                  <th className="w-20 px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
                                               </tr>
                                           </thead>
                                           <tbody className="divide-y divide-slate-200">
@@ -150,6 +167,11 @@ const App: React.FC = () => {
                                                   <tr key={index}>
                                                       <td className="px-4 py-3 align-top text-slate-500">{index + 1}</td>
                                                       <td className="px-4 py-3 text-slate-700">{item}</td>
+                                                      <td className="px-4 py-3 align-top text-center">
+                                                          <button onClick={() => handleCopy(item)} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
+                                                              <ClipboardIcon className="w-5 h-5"/>
+                                                          </button>
+                                                      </td>
                                                   </tr>
                                               ))}
                                           </tbody>
@@ -186,6 +208,28 @@ const App: React.FC = () => {
         if (!selectedSubject) return null;
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+             {globalError && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                  <div className="flex">
+                      <div className="flex-shrink-0">
+                          <AlertIcon className="h-5 w-5 text-red-400" />
+                      </div>
+                      <div className="ml-3">
+                          <h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan Konfigurasi</h3>
+                          <div className="mt-2 text-sm text-red-700 whitespace-pre-wrap">
+                            <p>{globalError}</p>
+                          </div>
+                      </div>
+                  </div>
+                  <button 
+                    onClick={() => setGlobalError(null)} 
+                    className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full"
+                    title="Tutup peringatan"
+                  >
+                    <CloseIcon className="w-5 h-5" />
+                  </button>
+              </div>
+            )}
             <div className="flex justify-between items-center mb-6">
               <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                   <BackIcon className="w-5 h-5" />
@@ -213,6 +257,11 @@ const App: React.FC = () => {
             
             {dataLoading ? (
                 <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data...</p></div>
+            ) : globalError ? (
+                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
+                    <h3 className="text-xl font-semibold text-slate-700">Gagal Memuat Data</h3>
+                    <p className="text-slate-500 mt-2">Silakan periksa pesan error di atas dan coba lagi.</p>
+                </div>
             ) : tps.length === 0 ? (
                 <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
                     <h3 className="text-xl font-semibold text-slate-700">Belum Ada Data</h3>
@@ -287,6 +336,11 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-slate-100 min-h-screen">
+      {copyNotification && (
+          <div className="fixed top-5 right-5 bg-teal-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-transform transform animate-pulse">
+              {copyNotification}
+          </div>
+      )}
       {renderContent()}
     </div>
   );
