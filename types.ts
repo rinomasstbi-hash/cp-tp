@@ -24,4 +24,22 @@ export interface TPData {
   updatedAt: string;
 }
 
-export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp';
+export interface ATPTableRow {
+  cp: string;
+  topikMateri: string;
+  tp: string;
+  atpSequence: number;
+  semester: 'Ganjil' | 'Genap';
+}
+
+
+export interface ATPData {
+  id: string;
+  tpId: string;
+  subject: string;
+  content: ATPTableRow[];
+  creatorName: string;
+  createdAt: string;
+}
+
+export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp';

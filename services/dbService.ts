@@ -4,79 +4,113 @@
 // untuk bertindak sebagai backend yang aman.
 // PASTIKAN ANDA SUDAH MENGIKUTI LANGKAH-LANGKAH PENYIAPAN DI DOKUMENTASI.
 // ====================================================================================
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw-qsZV3CnJbi91_Slz-JpR-7z-LEqiQb25DkZxmE5QGfg4UfAD8mF8PHbHk_Y91Bcq/exec';
+// FIX: Explicitly type GOOGLE_APPS_SCRIPT_URL as string to prevent a compile-time error
+// on the validation check below. The compiler is smart enough to know the two const
+// literals are different, but we want to keep the check for future developers.
+const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbwYylVE0_-bZYIOKZRyF-RyC8EJrToom9b-LvM3qa38Nri94QbsO52C-KD2Zgdfb50/exec';
+const PLACEHOLDER_URL = '';
 
-import { TPData } from '../types';
+import { TPData, ATPData } from '../types';
 
-const apiRequest = async (action: string, method: 'GET' | 'POST', body?: object) => {
-    // FIX: Removed the obsolete check for a placeholder URL. This comparison was causing
-    // a TypeScript error because the constant GOOGLE_APPS_SCRIPT_URL will never be equal
-    // to the placeholder string. The check is no longer needed since the URL is configured.
-
-    let url = `${GOOGLE_APPS_SCRIPT_URL}?action=${action}`;
+// FIX: Changed `params` type from `object` to `Record<string, any>` to allow safe spreading.
+const apiRequest = async (action: string, method: 'GET' | 'POST', params: Record<string, any> = {}) => {
+    if (GOOGLE_APPS_SCRIPT_URL === PLACEHOLDER_URL || !GOOGLE_APPS_SCRIPT_URL) {
+        throw new Error('URL Google Apps Script belum diatur. Silakan salin URL dari hasil deploy Google Apps Script Anda dan tempelkan ke dalam variabel GOOGLE_APPS_SCRIPT_URL di file services/dbService.ts.');
+    }
+    
+    let url = GOOGLE_APPS_SCRIPT_URL;
     const options: RequestInit = {
         method,
         headers: {},
         mode: 'cors',
     };
 
-    if (method === 'POST' && body) {
-        options.body = JSON.stringify(body);
-        // FIX: Changed Content-Type to 'text/plain' to avoid CORS preflight (OPTIONS)
-        // requests, which is a common issue with Google Apps Script web apps.
-        // The server-side script is expected to parse the text content as JSON.
-        options.headers = {'Content-Type': 'text/plain;charset=utf-8'};
+    if (method === 'POST') {
+        const payload = {
+            action,
+            ...params
+        };
+        options.headers = {
+            // FIX: Change Content-Type to text/plain to avoid CORS preflight (OPTIONS) request,
+            // which is a common point of failure for Google Apps Script backends that don't
+            // have a doOptions function. The GAS backend can still parse the JSON string from the body.
+            'Content-Type': 'text/plain;charset=utf-8',
+        };
+        options.body = JSON.stringify(payload);
+    } else { // GET
+        // FIX: Correctly construct URLSearchParams from params, ensuring values are treated as strings.
+        const queryParams = new URLSearchParams({ action, ...params } as Record<string, string>);
+        url += `?${queryParams.toString()}`;
     }
-    
+
     try {
         const response = await fetch(url, options);
+        let responseData;
+        try {
+            responseData = await response.json();
+        } catch (e) {
+            if (!response.ok) {
+                 throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak valid.`);
+            }
+            responseData = {}; 
+        }
+
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Gagal terhubung ke server: ${response.statusText} | ${errorText}`);
+            const errorMessage = responseData?.message || `HTTP error ${response.status}`;
+            throw new Error(`Terjadi kesalahan di server: ${errorMessage}`);
         }
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.message || 'Terjadi kesalahan pada server.');
+        
+        if (responseData.status === 'error') {
+            throw new Error(`Terjadi kesalahan di server: ${responseData.message || 'Aksi tidak valid.'}`);
         }
-        return result.data;
+
+        return responseData.data;
+
     } catch (error: any) {
         console.error(`API request error for action "${action}":`, error);
-        throw new Error(`${error.message}`);
+        
+        let detailedMessage = error.message;
+        // Check for the specific backend error indicating a missing sheet.
+        if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null") && error.message.includes("getLastRow")) {
+            detailedMessage = "Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, sheet 'TP' atau 'ATP' tidak ada di dalam file Google Sheet Anda. Harap periksa dan pastikan kedua sheet tersebut ada dengan nama dan header kolom yang benar.";
+        }
+
+        throw new Error(`Gagal mengambil data dari server. Pastikan Anda terhubung ke internet. Detail: ${detailedMessage}`);
     }
 };
 
 export const getTPsBySubject = async (subject: string): Promise<TPData[]> => {
-    const url = `${GOOGLE_APPS_SCRIPT_URL}?action=getTPs&subject=${encodeURIComponent(subject)}`;
-     try {
-        const response = await fetch(url);
-         if (!response.ok) {
-            throw new Error(`Network response was not ok: ${response.statusText}`);
-        }
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.message || 'Terjadi kesalahan pada server.');
-        }
-        // Data dari sheet yang berupa JSON string di-parse kembali menjadi objek.
-        const parsedData = result.data.map((item: any) => ({
-            ...item,
-            cpElements: typeof item.cpElements === 'string' ? JSON.parse(item.cpElements || '[]') : item.cpElements,
-            tpGroups: typeof item.tpGroups === 'string' ? JSON.parse(item.tpGroups || '[]') : item.tpGroups,
-        }));
-        return parsedData;
-    } catch (error: any) {
-        console.error(`API request error for action "getTPs":`, error);
-        throw new Error(`Gagal mengambil data: ${error.message}`);
-    }
+    const data = await apiRequest('getTPsBySubject', 'GET', { subject });
+    // This check is critical to prevent TypeError if the API returns a non-array value
+    return Array.isArray(data) ? data : [];
 };
 
-export const saveTP = async (data: Omit<TPData, 'id' | 'userId'>): Promise<TPData> => {
-    return apiRequest('saveTP', 'POST', data);
+export const saveTP = (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<TPData> => {
+    return apiRequest('saveTP', 'POST', { data });
 };
 
-export const updateTP = async (tpId: string, updatedData: Partial<Omit<TPData, 'id'>>): Promise<void> => {
-    return apiRequest('updateTP', 'POST', { tpId, updatedData });
+export const updateTP = (id: string, data: Partial<TPData>): Promise<TPData> => {
+    return apiRequest('updateTP', 'POST', { id, data });
 };
 
-export const deleteTP = async (tpId: string): Promise<void> => {
-    return apiRequest('deleteTP', 'POST', { tpId });
+export const deleteTP = (id: string): Promise<{ success: boolean }> => {
+    return apiRequest('deleteTP', 'POST', { id });
+};
+
+export const getATPsByTPId = async (tpId: string): Promise<ATPData[]> => {
+    const data = await apiRequest('getATPsByTPId', 'GET', { tpId });
+     // This check is critical to prevent TypeError if the API returns a non-array value
+    return Array.isArray(data) ? data : [];
+};
+
+export const saveATP = (data: Omit<ATPData, 'id' | 'createdAt'>): Promise<ATPData> => {
+    return apiRequest('saveATP', 'POST', { data });
+};
+
+export const deleteATP = (id: string): Promise<{ success: boolean }> => {
+    return apiRequest('deleteATP', 'POST', { id });
+};
+
+export const updateATP = (id: string, data: Partial<ATPData>): Promise<ATPData> => {
+    return apiRequest('updateATP', 'POST', { id, data });
 };

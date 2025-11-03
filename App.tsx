@@ -1,14 +1,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TPData, TPGroup } from './types';
+import { View, TPData, TPGroup, ATPData, ATPTableRow } from './types';
 import * as apiService from './services/dbService';
+import { generateATP } from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon } from './components/icons';
+import ATPEditor from './components/ATPEditor';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon } from './components/icons';
 
 const Header: React.FC = () => {
   return (
-    <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40">
+    <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-start h-20">
           <div className="flex items-center">
@@ -20,7 +22,7 @@ const Header: React.FC = () => {
                />
             </div>
             <div className="ml-4">
-              <span className="block text-xl font-extrabold text-white tracking-wide uppercase">
+              <span className="block text-base sm:text-xl font-extrabold text-white tracking-wide uppercase">
                 Tujuan Pembelajaran (TP)
               </span>
               <span className="block text-sm text-slate-300">
@@ -45,8 +47,24 @@ const App: React.FC = () => {
   const [globalError, setGlobalError] = useState<string | null>(null);
   
   // State for ownership verification modal
-  const [authPrompt, setAuthPrompt] = useState<{ action: 'edit' | 'delete'; tp: TPData; } | null>(null);
+  const [authPrompt, setAuthPrompt] = useState<{
+    action: 'edit' | 'delete';
+    type: 'tp' | 'atp';
+    data: TPData | ATPData;
+  } | null>(null);
   const [authEmailInput, setAuthEmailInput] = useState('');
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // State for collapsible CP info section
+  const [isCpInfoVisible, setIsCpInfoVisible] = useState(false);
+  
+  // State for ATP Management
+  const [atps, setAtps] = useState<ATPData[]>([]);
+  const [selectedATP, setSelectedATP] = useState<ATPData | null>(null);
+  const [editingATP, setEditingATP] = useState<ATPData | null>(null);
+  const [isGeneratingAtp, setIsGeneratingAtp] = useState(false);
+  const [atpError, setAtpError] = useState<string | null>(null);
 
 
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
@@ -57,10 +75,10 @@ const App: React.FC = () => {
     try {
       const data = await apiService.getTPsBySubject(subject);
       setTps(data);
-    // FIX: Added missing opening brace for the catch block. This was causing a major syntax error that broke the component's scope.
     } catch (error: any) {
       console.error(error);
       setGlobalError(error.message);
+      setTps([]); // Reset state on error
     } finally {
       setDataLoading(false);
     }
@@ -82,6 +100,28 @@ const App: React.FC = () => {
       }
   }, []); // Run only once on mount
 
+  const loadATPsForTP = useCallback(async (tpId: string) => {
+    setDataLoading(true);
+    setAtpError(null);
+    try {
+      const data = await apiService.getATPsByTPId(tpId);
+      setAtps(data);
+    } catch (error: any) {
+      console.error(error);
+      setAtpError(error.message);
+      setAtps([]); // Reset state on error
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+  
+  useEffect(() => {
+      if (view === 'view_atp_list' && selectedTP?.id) {
+          loadATPsForTP(selectedTP.id);
+      }
+  }, [view, selectedTP, loadATPsForTP]);
+
+
   const handleSelectSubject = (subject: string) => {
     localStorage.setItem(SELECTED_SUBJECT_KEY, subject);
     setTps([]);
@@ -100,6 +140,7 @@ const App: React.FC = () => {
   
   const handleBackToTPList = () => {
     setSelectedTP(null);
+    setIsCpInfoVisible(false); // Reset visibility when leaving detail view
     setView('view_tp_list');
   };
 
@@ -113,64 +154,156 @@ const App: React.FC = () => {
     setView('view_tp_detail');
   };
 
+  // Helper to open the auth modal with reset states
+  const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
+    setAuthEmailInput('');
+    setAuthError(null);
+    setAuthPrompt({ action, type, data });
+  };
+
+
   const handleEdit = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
-    setAuthEmailInput('');
-    setAuthPrompt({ action: 'edit', tp });
+    openAuthModal('edit', 'tp', tp);
   };
 
   const handleDelete = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
-    setAuthEmailInput('');
-    setAuthPrompt({ action: 'delete', tp });
+    openAuthModal('delete', 'tp', tp);
+  };
+  
+  const handleEditATP = (e: React.MouseEvent, atp: ATPData) => {
+    e.stopPropagation();
+    if (!selectedTP) return;
+    openAuthModal('edit', 'atp', atp);
+  };
+
+  const handleDeleteATP = (e: React.MouseEvent, atp: ATPData) => {
+    e.stopPropagation();
+    if (!selectedTP) return;
+    openAuthModal('delete', 'atp', atp);
   };
 
   const handleAuthSubmit = async () => {
-    if (!authPrompt || !selectedSubject) return;
+    if (!authPrompt) return;
 
-    if (authEmailInput.trim().toLowerCase() !== authPrompt.tp.creatorEmail.trim().toLowerCase()) {
-      alert('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
-      return;
-    }
-
-    if (authPrompt.action === 'edit') {
-      setEditingTP(authPrompt.tp);
-      setView('edit_tp');
-    } else if (authPrompt.action === 'delete') {
-      if (window.confirm("Apakah Anda yakin ingin menghapus data TP ini secara permanen? Tindakan ini tidak dapat dibatalkan.")) {
-        setGlobalError(null);
-        try {
-          await apiService.deleteTP(authPrompt.tp.id!);
-          await loadTPsForSubject(selectedSubject);
-        } catch (error: any) {
-          console.error(error);
-          setGlobalError(error.message);
+    setAuthError(null);
+    setIsAuthorizing(true);
+    
+    try {
+        const creatorEmail = authPrompt.type === 'tp'
+            ? (authPrompt.data as TPData).creatorEmail
+            : selectedTP?.creatorEmail;
+            
+        if (!creatorEmail) {
+            throw new Error('Tidak dapat menemukan email pembuat untuk verifikasi.');
         }
-      }
-    }
 
-    setAuthPrompt(null);
+        if (authEmailInput.trim().toLowerCase() !== creatorEmail.trim().toLowerCase()) {
+          throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
+        }
+
+        // If email validation is successful, proceed with the action
+        if (authPrompt.type === 'tp') {
+            const tpData = authPrompt.data as TPData;
+            if (authPrompt.action === 'edit') {
+                setEditingTP(tpData);
+                setView('edit_tp');
+                setAuthPrompt(null);
+            } else if (authPrompt.action === 'delete') {
+                if (window.confirm("Apakah Anda yakin ingin menghapus data TP ini secara permanen? Ini juga akan menghapus semua ATP terkait.")) {
+                    await apiService.deleteTP(tpData.id!);
+                    if (selectedSubject) await loadTPsForSubject(selectedSubject);
+                    setAuthPrompt(null);
+                }
+            }
+        } else if (authPrompt.type === 'atp') {
+            const atpToProcess = authPrompt.data as ATPData;
+            if (authPrompt.action === 'edit') {
+                setEditingATP(atpToProcess);
+                setView('edit_atp');
+                setAuthPrompt(null);
+            } else if (authPrompt.action === 'delete') {
+                if (!atpToProcess?.id) {
+                    setAtpError("ID ATP tidak ditemukan. Tidak dapat menghapus.");
+                    setAuthPrompt(null);
+                    return;
+                }
+
+                if (window.confirm("Apakah Anda yakin ingin menghapus data ATP ini secara permanen?")) {
+                    setAtpError(null);
+                    const originalAtps = [...atps];
+                    
+                    setAtps(currentAtps => currentAtps.filter(atp => atp.id !== atpToProcess.id));
+                    setAuthPrompt(null); 
+
+                    try {
+                        await apiService.deleteATP(atpToProcess.id);
+                        if (selectedTP?.id) {
+                            await loadATPsForTP(selectedTP.id);
+                        }
+                    } catch (error: any) {
+                        setAtps(originalAtps); 
+                        setAtpError(`Gagal menghapus ATP di server: ${error.message}`);
+                    }
+                } else {
+                  setAuthPrompt(null);
+                }
+            }
+        }
+    } catch (error: any) {
+        setAuthError(error.message);
+    } finally {
+        setIsAuthorizing(false);
+    }
   };
+  
+  const handleNavigateToAtpList = (tp: TPData) => {
+    setSelectedTP(tp);
+    setAtps([]);
+    setAtpError(null);
+    setView('view_atp_list');
+  };
+
+  const handleViewAtpDetail = (atp: ATPData) => {
+    setSelectedATP(atp);
+    setView('view_atp_detail');
+  };
+
+  const handleCreateNewAtp = async () => {
+      if (!selectedTP) return;
+      
+      setIsGeneratingAtp(true);
+      setAtpError(null);
+      
+      try {
+          const generatedContent = await generateATP(selectedTP);
+          const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
+              tpId: selectedTP.id!,
+              subject: selectedTP.subject,
+              content: generatedContent,
+              creatorName: selectedTP.creatorName, // Or a logged in user's name
+          };
+          const savedAtp = await apiService.saveATP(newAtpData);
+          await loadATPsForTP(selectedTP.id!);
+          handleViewAtpDetail(savedAtp);
+
+      } catch (error: any) {
+          setAtpError(error.message);
+      } finally {
+          setIsGeneratingAtp(false);
+      }
+  };
+
 
   const handleSave = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     if (selectedSubject) {
       setGlobalError(null);
       try {
         if(view === 'create_tp') {
-            const now = new Date().toISOString();
-            const dataToSave = { 
-                ...data, 
-                createdAt: now,
-                updatedAt: now
-            };
-            await apiService.saveTP(dataToSave);
+            await apiService.saveTP(data);
         } else if (view === 'edit_tp' && editingTP?.id) {
-            const now = new Date().toISOString();
-            const dataToUpdate = {
-                ...data,
-                updatedAt: now
-            };
-            await apiService.updateTP(editingTP.id, dataToUpdate);
+            await apiService.updateTP(editingTP.id, data);
         }
         setView('view_tp_list');
       } catch (error: any) {
@@ -180,16 +313,120 @@ const App: React.FC = () => {
       }
     }
   };
+  
+  const handleSaveATP = async (id: string, data: Partial<ATPData>) => {
+    if (selectedTP?.id) {
+        setAtpError(null);
+        try {
+            await apiService.updateATP(id, data);
+            await loadATPsForTP(selectedTP.id); // Reload the list
+            setView('view_atp_list'); // Go back to the list after saving
+        } catch (error: any) {
+            console.error(error);
+            setAtpError(error.message);
+            throw error; // Propagate error to the editor to display it
+        }
+    }
+  };
 
-  const handleCopy = (text: string) => {
+  const handleCopy = (text: string, message: string = 'Teks berhasil disalin!') => {
     navigator.clipboard.writeText(text).then(() => {
-        setCopyNotification('Tujuan Pembelajaran berhasil disalin!');
+        setCopyNotification(message);
         setTimeout(() => setCopyNotification(''), 2000);
     }, (err) => {
         console.error('Gagal menyalin teks: ', err);
         setCopyNotification('Gagal menyalin.');
         setTimeout(() => setCopyNotification(''), 2000);
     });
+  };
+
+  const handleExportAtpToWord = () => {
+    if (!selectedATP || !selectedTP) return;
+
+    // Create a map from TP text to its hierarchical code (e.g., "1.1")
+    const tpCodeMap = new Map<string, string>();
+    if (selectedTP) {
+      let materiPokokNumber = 1;
+      selectedTP.tpGroups.forEach(group => {
+        let tpCounterWithinGroup = 1;
+        group.subMateriGroups.forEach(subGroup => {
+          subGroup.tps.forEach(tpText => {
+            tpCodeMap.set(tpText, `${materiPokokNumber}.${tpCounterWithinGroup++}`);
+          });
+        });
+        materiPokokNumber++;
+      });
+    }
+
+    const styles = `
+        <style>
+            body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            h1, h2 { font-family: 'Times New Roman', Times, serif; }
+        </style>
+    `;
+
+    let tableRows = '';
+    selectedATP.content.forEach((row, index) => {
+        const tpCode = tpCodeMap.get(row.tp) || row.atpSequence;
+        tableRows += '<tr>';
+        tableRows += `<td style="text-align: center;">${index + 1}</td>`;
+        tableRows += `<td>${row.cp}</td>`;
+        tableRows += `<td>${row.topikMateri}</td>`;
+        tableRows += `<td>${row.tp}</td>`;
+        tableRows += `<td style="text-align: center; font-weight: bold;">${tpCode}</td>`;
+        tableRows += `<td>${row.semester}</td>`;
+        tableRows += '</tr>';
+    });
+
+    const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            ${styles}
+        </head>
+        <body>
+            <h1 style="text-align: center;">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
+            <br/>
+            <h2>Mata Pelajaran: ${selectedATP.subject}</h2>
+            <h2>Kelas: ${selectedTP.grade}</h2>
+            <h2>Nama Guru: ${selectedATP.creatorName}</h2>
+            <br/>
+            <table>
+                <thead>
+                    <tr>
+                        <th>No.</th>
+                        <th>Capaian Pembelajaran (CP)</th>
+                        <th>Topik Materi</th>
+                        <th>Tujuan Pembelajaran (TP)</th>
+                        <th>Kode TP</th>
+                        <th>Semester</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `;
+
+    const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `ATP_${selectedATP.subject.replace(/ /g, '_')}_Kelas_${selectedTP.grade}.doc`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    setCopyNotification('File Word berhasil diunduh!');
+    setTimeout(() => setCopyNotification(''), 2000);
   };
 
   const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[]; numberingOffset?: number }> = ({ title, groups, numberingOffset = 0 }) => {
@@ -223,7 +460,7 @@ const App: React.FC = () => {
                                                         <td className="px-4 py-3 align-top text-slate-500">{`${materiPokokNumber}.${tpCounterWithinGroup++}`}</td>
                                                         <td className="px-4 py-3 text-slate-700">{item}</td>
                                                         <td className="px-4 py-3 align-top text-center">
-                                                            <button onClick={() => handleCopy(item)} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
+                                                            <button onClick={() => handleCopy(item, 'Tujuan Pembelajaran berhasil disalin!')} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
                                                                 <ClipboardIcon className="w-5 h-5"/>
                                                             </button>
                                                         </td>
@@ -242,7 +479,7 @@ const App: React.FC = () => {
         </div>
     );
   };
-
+  
   const renderContent = () => {
     switch (view) {
       case 'select_subject':
@@ -323,48 +560,65 @@ const App: React.FC = () => {
                 </button>
                 <div className="flex flex-col sm:flex-row justify-end gap-3 w-full sm:w-auto">
                     <button
-                        onClick={(e) => handleEdit(e, selectedTP)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                        <EditIcon className="w-5 h-5" />
-                        Edit TP
-                    </button>
-                    <button
-                        onClick={() => alert('Fitur pembuatan Alur Tujuan Pembelajaran (ATP) akan segera hadir!')}
+                        onClick={() => handleNavigateToAtpList(selectedTP)}
                         className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
                     >
                         <FlowChartIcon className="w-5 h-5" />
-                        Buat ATP (Alur Tujuan Pembelajaran)
+                        Lihat Alur Tujuan Pembelajaran (ATP)
                     </button>
                 </div>
             </div>
 
             <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="mb-4">
-                <p className="text-sm text-slate-500">Dibuat oleh: <span className="font-medium text-slate-700">{creatorName}</span></p>
-                <p className="text-sm text-slate-500">Sumber CP: <span className="font-medium text-slate-700">{cpSourceVersion || '-'}</span></p>
-                <p className="text-sm text-slate-500">Tanggal Dibuat: <span className="font-medium text-slate-700">{new Date(createdAt).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric'})}</span></p>
-                <p className="text-sm text-slate-500">Kelas: <span className="font-medium text-slate-700">{grade}</span></p>
+              <div className="flex flex-col sm:flex-row justify-between items-start mb-4">
+                  <div>
+                    <p className="text-sm text-slate-500">Dibuat oleh: <span className="font-medium text-slate-700">{creatorName}</span></p>
+                    <p className="text-sm text-slate-500">Sumber CP: <span className="font-medium text-slate-700">{cpSourceVersion || '-'}</span></p>
+                    <p className="text-sm text-slate-500">Tanggal Dibuat: <span className="font-medium text-slate-700">{new Date(createdAt).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric'})}</span></p>
+                    <p className="text-sm text-slate-500">Kelas: <span className="font-medium text-slate-700">{grade}</span></p>
+                  </div>
+                  <div className="mt-4 sm:mt-0 sm:ml-4 flex-shrink-0">
+                      <button
+                          onClick={(e) => handleEdit(e, selectedTP)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-blue-600 font-semibold rounded-md border border-blue-300 shadow-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                          <EditIcon className="w-4 h-4" />
+                          Edit
+                      </button>
+                  </div>
               </div>
 
-              <div className="mb-4 border-t pt-4">
-                <h4 className="font-semibold text-slate-600">Capaian Pembelajaran & Elemen:</h4>
-                <div className="mt-2 space-y-3">
-                {cpElements.map((item, index) => (
-                    <div key={index} className="p-3 bg-slate-50 rounded-md border">
-                        <p className="font-semibold text-slate-700">{item.element}</p>
-                        <p className="text-slate-600 whitespace-pre-wrap mt-1">{item.cp}</p>
-                    </div>
-                ))}
-                </div>
+              <div className="border-t pt-4">
+                <button
+                  onClick={() => setIsCpInfoVisible(!isCpInfoVisible)}
+                  className="flex items-center gap-2 text-teal-600 hover:text-teal-800 font-semibold text-sm w-full text-left p-2 rounded-md hover:bg-teal-50"
+                  aria-expanded={isCpInfoVisible}
+                >
+                  {isCpInfoVisible ? <ChevronUpIcon className="w-5 h-5"/> : <ChevronDownIcon className="w-5 h-5"/>}
+                  <span>{isCpInfoVisible ? 'Sembunyikan' : 'Tampilkan'} Detail CP & Catatan</span>
+                </button>
               </div>
-              
-              {additionalNotes && (
+
+              <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCpInfoVisible ? 'max-h-[1000px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
                 <div className="mb-4">
-                  <h4 className="font-semibold text-slate-600">Catatan Tambahan:</h4>
-                  <p className="text-slate-700 whitespace-pre-wrap p-3 bg-slate-50 rounded-md border">{additionalNotes}</p>
+                  <h4 className="font-semibold text-slate-600">Capaian Pembelajaran & Elemen:</h4>
+                  <div className="mt-2 space-y-3">
+                  {cpElements.map((item, index) => (
+                      <div key={index} className="p-3 bg-slate-50 rounded-md border">
+                          <p className="font-semibold text-slate-700">{item.element}</p>
+                          <p className="text-slate-600 whitespace-pre-wrap mt-1">{item.cp}</p>
+                      </div>
+                  ))}
+                  </div>
                 </div>
-              )}
+                
+                {additionalNotes && (
+                  <div className="mb-4">
+                    <h4 className="font-semibold text-slate-600">Catatan Tambahan:</h4>
+                    <p className="text-slate-700 whitespace-pre-wrap p-3 bg-slate-50 rounded-md border">{additionalNotes}</p>
+                  </div>
+                )}
+              </div>
               
               <div className="border-t mt-4 pt-4">
                   <SemesterDisplay title="Semester Ganjil" groups={ganjilTPs} />
@@ -372,6 +626,137 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
+        );
+
+      case 'view_atp_list':
+        if (!selectedTP) return null;
+        return (
+          <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
+            <div className="flex justify-between items-center mb-6">
+              <button onClick={() => setView('view_tp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold"><BackIcon className="w-5 h-5" /> Kembali ke Detail TP</button>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-800">Daftar Alur Tujuan Pembelajaran (ATP)</h1>
+                <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+              </div>
+              <button onClick={handleCreateNewAtp} disabled={isGeneratingAtp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
+                {isGeneratingAtp ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Membuat ATP...</span>
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon className="w-5 h-5"/> Buat ATP Baru dengan AI
+                  </>
+                )}
+              </button>
+            </div>
+            
+             {atpError && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                  <div className="flex">
+                      <div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div>
+                      <div className="ml-3">
+                          <h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3>
+                          <div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{atpError}</p></div>
+                      </div>
+                  </div>
+                  <button onClick={() => setAtpError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+              </div>
+            )}
+            
+            {dataLoading ? (
+              <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data ATP...</p></div>
+            ) : atps.length === 0 && !atpError ? (
+              <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Belum Ada ATP</h3><p className="text-slate-500 mt-2">Belum ada ATP yang dibuat untuk set TP ini.</p><p className="text-slate-500">Silakan klik tombol "Buat ATP Baru" untuk memulai.</p></div>
+            ) : (
+                <div className="space-y-4">
+                  {atps.map(atp => (
+                      <div key={atp.id} className="bg-white rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl p-4 flex justify-between items-center">
+                         <div onClick={() => handleViewAtpDetail(atp)} className="cursor-pointer flex-grow hover:text-teal-600">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                                <span>Dibuat pada: <span className="font-medium text-slate-600">{new Date(atp.createdAt).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short'})}</span></span>
+                                <span>Oleh: <span className="font-medium text-slate-600">{atp.creatorName}</span></span>
+                            </div>
+                         </div>
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
+                              <button onClick={(e) => handleEditATP(e, atp)} className="p-2 text-blue-500 hover:bg-blue-100 rounded-full" title="Edit ATP"><EditIcon className="w-5 h-5"/></button>
+                              <button onClick={(e) => handleDeleteATP(e, atp)} className="p-2 text-red-500 hover:bg-red-100 rounded-full" title="Hapus ATP"><TrashIcon className="w-5 h-5"/></button>
+                          </div>
+                      </div>
+                  ))}
+                </div>
+            )}
+          </div>
+        );
+      
+      case 'view_atp_detail':
+        if (!selectedATP || !selectedTP) return null;
+
+        // Create a map from TP text to its hierarchical code (e.g., "1.1")
+        const tpCodeMap = new Map<string, string>();
+        if (selectedTP) {
+          let materiPokokNumber = 1;
+          selectedTP.tpGroups.forEach(group => {
+            let tpCounterWithinGroup = 1;
+            group.subMateriGroups.forEach(subGroup => {
+              subGroup.tps.forEach(tpText => {
+                tpCodeMap.set(tpText, `${materiPokokNumber}.${tpCounterWithinGroup++}`);
+              });
+            });
+            materiPokokNumber++;
+          });
+        }
+
+        return (
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+                <div className="print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                    <button onClick={() => setView('view_atp_list')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                        <BackIcon className="w-5 h-5" />
+                        Kembali ke Daftar ATP
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <button onClick={handleExportAtpToWord} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                           <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                        </button>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 print:shadow-none print:border">
+                    <h1 className="text-2xl font-bold text-slate-800 mb-1">Alur Tujuan Pembelajaran (ATP)</h1>
+                    <p className="text-slate-500 mb-4">Mata Pelajaran: <span className="font-semibold text-teal-600">{selectedATP.subject}</span> | Dibuat: <span className="font-semibold text-teal-600">{new Date(selectedATP.createdAt).toLocaleDateString('id-ID')}</span></p>
+                    
+                    <div className="overflow-x-auto mt-4 border-t pt-4">
+                        <table className="min-w-full bg-white border border-slate-300 text-sm">
+                            <thead className="bg-slate-100 text-left">
+                                <tr>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-12 text-center">No.</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/4">Capaian Pembelajaran (CP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/6">Topik Materi</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/3">Tujuan Pembelajaran (TP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center">Kode TP</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-24">Semester</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                                {selectedATP.content.map((row, index) => (
+                                    <tr key={index} className="hover:bg-slate-50">
+                                        <td className="px-3 py-2 align-top border-r text-center">{index + 1}</td>
+                                        <td className="px-3 py-2 align-top border-r">{row.cp}</td>
+                                        <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
+                                        <td className="px-3 py-2 align-top border-r">{row.tp}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center font-semibold">{tpCodeMap.get(row.tp) || row.atpSequence}</td>
+                                        <td className="px-3 py-2 align-top">{row.semester}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         );
 
       case 'create_tp':
@@ -384,6 +769,13 @@ const App: React.FC = () => {
                 onSave={handleSave}
                 onCancel={() => setView('view_tp_list')}
                />;
+      case 'edit_atp':
+        if (!editingATP) return null;
+        return <ATPEditor 
+          initialData={editingATP}
+          onSave={handleSaveATP}
+          onCancel={() => setView('view_atp_list')}
+        />;
       default:
         return null;
     }
@@ -404,7 +796,7 @@ const App: React.FC = () => {
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
             <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
             <p className="text-sm text-slate-600 mb-4">
-              Untuk {authPrompt.action === 'edit' ? 'mengedit' : 'menghapus'} data ini, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.tp.creatorName}</span>.
+              Untuk {authPrompt.action === 'edit' ? 'mengedit' : 'menghapus'} data ini, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
             </p>
             <form onSubmit={(e) => { e.preventDefault(); handleAuthSubmit(); }}>
                 <input
@@ -414,13 +806,21 @@ const App: React.FC = () => {
                     placeholder="Masukkan email pembuat"
                     className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
                     autoFocus
+                    disabled={isAuthorizing}
                 />
+                {authError && (
+                  <p className="text-red-600 text-sm mt-2">{authError}</p>
+                )}
                 <div className="mt-6 flex justify-end gap-3">
-                    <button type="button" onClick={() => setAuthPrompt(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                    <button type="button" onClick={() => setAuthPrompt(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300" disabled={isAuthorizing}>
                     Batal
                     </button>
-                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                    Konfirmasi
+                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400 disabled:cursor-wait w-32 text-center" disabled={isAuthorizing}>
+                      {isAuthorizing ? (
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
+                      ) : (
+                          'Konfirmasi'
+                      )}
                     </button>
                 </div>
             </form>

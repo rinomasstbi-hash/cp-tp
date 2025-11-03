@@ -1,8 +1,9 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
-import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon } from './icons';
+import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
 
 interface TPEditorProps {
   mode: 'create' | 'edit';
@@ -102,6 +103,18 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
 
   const removeTpGroup = (groupIndex: number) => {
     setTpGroups(tpGroups.filter((_, i) => i !== groupIndex));
+  };
+  
+  const handleReorderTpGroup = (index: number, direction: 'up' | 'down') => {
+    const newGroups = [...tpGroups];
+    if (direction === 'up' && index > 0) {
+      // Swap with the element before
+      [newGroups[index - 1], newGroups[index]] = [newGroups[index], newGroups[index - 1]];
+    } else if (direction === 'down' && index < newGroups.length - 1) {
+      // Swap with the element after
+      [newGroups[index + 1], newGroups[index]] = [newGroups[index], newGroups[index + 1]];
+    }
+    setTpGroups(newGroups);
   };
   // --- End of Handlers ---
 
@@ -260,9 +273,28 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
               <div className="space-y-6">
                 {tpGroups.map((group, groupIndex) => (
                   <div key={groupIndex} className="p-4 border-2 border-slate-200 rounded-lg bg-white relative">
-                     <button onClick={() => removeTpGroup(groupIndex)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-100 rounded-full">
-                          <TrashIcon className="w-5 h-5"/>
-                      </button>
+                     <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/50 backdrop-blur-sm p-1 rounded-full border">
+                          <button 
+                              onClick={() => handleReorderTpGroup(groupIndex, 'up')}
+                              disabled={groupIndex === 0}
+                              className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Pindah ke atas"
+                          >
+                              <ChevronUpIcon className="w-5 h-5"/>
+                          </button>
+                          <button 
+                              onClick={() => handleReorderTpGroup(groupIndex, 'down')}
+                              disabled={groupIndex === tpGroups.length - 1}
+                              className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-full disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Pindah ke bawah"
+                          >
+                              <ChevronDownIcon className="w-5 h-5"/>
+                          </button>
+                          <div className="h-5 w-px bg-slate-200 mx-1"></div>
+                          <button onClick={() => removeTpGroup(groupIndex)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full" title="Hapus Materi Pokok">
+                              <TrashIcon className="w-5 h-5"/>
+                          </button>
+                      </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Semester</label>

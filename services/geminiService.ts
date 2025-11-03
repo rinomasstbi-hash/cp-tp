@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { TPGroup } from "../types";
+import { TPGroup, TPData, ATPTableRow } from "../types";
 
 // The 'ai' instance is no longer created here at the top level.
 
@@ -198,4 +199,123 @@ ${cpElementsString}
     // which helps diagnose issues like invalid API keys instead of generic network errors.
     throw new Error(`Gagal berkomunikasi dengan AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'} Pastikan koneksi internet dan API Key Anda sudah benar.`);
   }
+};
+
+
+export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    // Combine all CP elements into a single string for context.
+    const cpContext = JSON.stringify(tpData.cpElements, null, 2);
+    const tpContext = JSON.stringify(tpData.tpGroups, null, 2);
+
+    const prompt = `
+    Anda adalah seorang ahli perancangan kurikulum pendidikan di Indonesia yang sangat teliti dan akurat.
+    Tugas Anda adalah mengubah data Tujuan Pembelajaran (TP) menjadi format tabel Alur Tujuan Pembelajaran (ATP) dalam bentuk JSON. Fokus utama Anda adalah memetakan setiap TP ke Capaian Pembelajaran (CP) yang paling relevan.
+
+    Konteks:
+    - Mata Pelajaran: ${tpData.subject}
+    - Kelas: ${tpData.grade}
+    - Daftar Capaian Pembelajaran (CP) yang menjadi acuan. Ini adalah sumber kebenaran untuk kolom 'cp':
+    \`\`\`json
+    ${cpContext}
+    \`\`\`
+    - Data Tujuan Pembelajaran (TP) yang perlu dianalisis dan dikonversi:
+    \`\`\`json
+    ${tpContext}
+    \`\`\`
+
+    Instruksi Wajib (Ikuti dengan SANGAT SEKSAMA):
+    1.  **Struktur Output:** Hasilkan sebuah array JSON. Setiap objek dalam array merepresentasikan satu baris tabel ATP, yang sesuai dengan satu TP dari input.
+    2.  **Urutan Presisi:** Proses semua TP **secara berurutan** sesuai urutan yang diberikan dalam data input. **JANGAN MENGUBAH URUTAN TP YANG SUDAH ADA.** Urutan output harus sama persis dengan urutan TP di input.
+    3.  **Penomoran ATP:** Buat kolom "atpSequence" yang merupakan nomor urut berkelanjutan (dimulai dari 1, 2, 3, ...) untuk keseluruhan alur.
+    
+    4.  **ATURAN PEMETAAN CP PER BARIS (PALING PENTING):**
+        Prinsipnya adalah **akurasi baris-demi-baris**.
+        a. Untuk **SETIAP** Tujuan Pembelajaran (TP) dari data input, Anda harus menganalisis teks TP tersebut secara individual.
+        b. Bandingkan teks TP individual tersebut dengan daftar CP yang tersedia dalam konteks.
+        c. Pilih **SATU** CP yang paling relevan dan paling cocok untuk TP tersebut.
+        d. Salin teks CP yang lengkap dan **SAMA PERSIS** dari daftar acuan ke dalam kolom \`cp\` untuk baris TP yang sedang Anda proses.
+        e. **PENTING:** Jangan berasumsi semua TP dalam satu 'materi' memiliki CP yang sama. Lakukan analisis individu untuk setiap TP untuk memastikan akurasi maksimal.
+
+    5.  **Pemetaan Kolom Lainnya:**
+        - \`cp\`: Teks CP lengkap yang sudah Anda tentukan untuk TP spesifik tersebut, sesuai Aturan #4.
+        - \`topikMateri\`: Salin nama \`materi\` dari data input yang menjadi induk dari TP tersebut.
+        - \`tp\`: Salin teks lengkap dari Tujuan Pembelajaran.
+        - \`atpSequence\`: Nomor urut alur (integer).
+        - \`semester\`: Salin "Ganjil" atau "Genap" dari data input yang menjadi induk dari TP tersebut.
+    6.  **Kelengkapan:** Pastikan setiap TP yang ada di input muncul tepat satu kali di output.
+
+    Contoh Format Output JSON:
+    [
+      {
+        "cp": "Pada akhir fase D, peserta didik dapat membaca, menulis, mempresentasikan, dan mengurutkan bilangan bulat, pecahan, desimal, dan bilangan berpangkat.",
+        "topikMateri": "Bilangan",
+        "tp": "Murid dapat menjelaskan konsep bilangan bulat dan posisinya pada garis bilangan dengan benar setelah mengikuti penjelasan guru.",
+        "atpSequence": 1,
+        "semester": "Ganjil"
+      },
+      {
+        "cp": "Pada akhir fase D, peserta didik dapat membaca, menulis, mempresentasikan, dan mengurutkan bilangan bulat, pecahan, desimal, dan bilangan berpangkat.",
+        "topikMateri": "Bilangan",
+        "tp": "Murid dapat membandingkan dan mengurutkan bilangan pecahan dengan tepat setelah menggunakan model visual.",
+        "atpSequence": 2,
+        "semester": "Ganjil"
+      },
+      {
+        "cp": "Pada akhir fase D, peserta didik dapat mengenali, menggunakan, dan menginterpretasi variabel dalam ekspresi aljabar.",
+        "topikMateri": "Aljabar",
+        "tp": "Murid dapat mengidentifikasi variabel, koefisien, dan konstanta dalam bentuk aljabar dengan benar setelah diberikan beberapa contoh.",
+        "atpSequence": 3,
+        "semester": "Ganjil"
+      }
+    ]
+
+    PENTING: Hasilkan HANYA output JSON array yang valid tanpa teks pembuka, penutup, atau markdown.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            cp: { type: Type.STRING },
+                            topikMateri: { type: Type.STRING },
+                            tp: { type: Type.STRING },
+                            atpSequence: { type: Type.INTEGER },
+                            semester: { type: Type.STRING },
+                        }
+                    }
+                }
+            }
+        });
+        
+        let jsonStr = response.text.trim();
+        if (jsonStr.startsWith("```json")) {
+            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
+        } else if (jsonStr.startsWith("```")) {
+            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
+        }
+
+        const parsed = JSON.parse(jsonStr);
+        if (Array.isArray(parsed)) {
+            return parsed;
+        } else {
+            console.error("Unexpected AI JSON structure for ATP:", parsed);
+            throw new Error("Struktur JSON ATP yang dihasilkan AI tidak sesuai format array yang diharapkan.");
+        }
+
+    } catch (error: any) {
+        console.error("Error generating ATP:", error);
+         if (error instanceof SyntaxError) {
+            throw new Error("Gagal memproses respons ATP dari AI karena format tidak valid. Silakan coba generate lagi.");
+        }
+        throw new Error(`Gagal menghasilkan ATP dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
+    }
 };
