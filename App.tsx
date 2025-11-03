@@ -93,12 +93,12 @@ const App: React.FC = () => {
     }
   }, []);
   
-  // Effect to load data when subject and view are set correctly
+  // Effect to load TPs only when the selected subject changes.
   useEffect(() => {
-    if (selectedSubject && view === 'view_tp_list') {
+    if (selectedSubject) {
         loadTPsForSubject(selectedSubject);
     }
-  }, [selectedSubject, view, loadTPsForSubject]);
+  }, [selectedSubject, loadTPsForSubject]);
   
   // Effect for initial load from localStorage
   useEffect(() => {
@@ -124,11 +124,12 @@ const App: React.FC = () => {
     }
   }, []);
   
+  // Effect to load ATPs only when the selected TP changes.
   useEffect(() => {
-      if (view === 'view_atp_list' && selectedTP?.id) {
+      if (selectedTP?.id) {
           loadATPsForTP(selectedTP.id);
       }
-  }, [view, selectedTP, loadATPsForTP]);
+  }, [selectedTP, loadATPsForTP]);
 
 
   const handleSelectSubject = (subject: string) => {
@@ -319,6 +320,8 @@ const App: React.FC = () => {
             await apiService.updateTP(editingTP.id, data);
         }
         setView('view_tp_list');
+        // Explicitly reload data after saving to ensure the list is up-to-date
+        await loadTPsForSubject(selectedSubject);
       } catch (error: any) {
           console.error(error);
           setGlobalError(error.message);
