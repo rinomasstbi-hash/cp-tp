@@ -416,14 +416,15 @@ const App: React.FC = () => {
             table { border-collapse: collapse; width: 100%; }
             th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; }
             th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-            h1 { font-family: 'Times New Roman', Times, serif; text-align: center; margin-bottom: 0; }
+            h1 { font-family: 'Times New Roman', Times, serif; text-align: center; margin-bottom: 0; font-size: 14pt; }
             .identity-table, .identity-table td { border: none; padding: 2px 5px; }
             .signature-table, .signature-table td { border: none; text-align: center; vertical-align: top; }
+            .section-heading { font-family: 'Times New Roman', Times, serif; font-size: 12pt; margin-bottom: 5px; margin-top: 15px; font-weight: bold; }
         </style>
     `;
 
     const identityTable = `
-      <table class="identity-table" style="margin-left: auto; margin-right: auto; margin-top: 20px; width: auto;">
+      <table class="identity-table" style="margin-left: auto; margin-right: auto; width: auto;">
           <tr>
               <td>Nama Madrasah</td>
               <td>: MTsN 4 Jombang</td>
@@ -443,12 +444,36 @@ const App: React.FC = () => {
       </table>
     `;
 
+    let cpElementsTableRows = '';
+    selectedTP.cpElements.forEach(item => {
+        cpElementsTableRows += `
+            <tr>
+                <td>${item.element}</td>
+                <td>${item.cp}</td>
+            </tr>
+        `;
+    });
+
+    const cpElementsTable = `
+      <p class="section-heading">A. Capaian Pembelajaran</p>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30%;">Elemen</th>
+            <th>Capaian Pembelajaran (CP)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cpElementsTableRows}
+        </tbody>
+      </table>
+    `;
+
     let tableRows = '';
     selectedATP.content.forEach((row, index) => {
         const tpCode = tpCodeMap.get(row.tp) || row.atpSequence;
         tableRows += '<tr>';
         tableRows += `<td style="text-align: center;">${index + 1}</td>`;
-        tableRows += `<td>${row.cp}</td>`;
         tableRows += `<td>${row.topikMateri}</td>`;
         tableRows += `<td>${row.tp}</td>`;
         tableRows += `<td style="text-align: center; font-weight: bold;">${tpCode}</td>`;
@@ -493,17 +518,20 @@ const App: React.FC = () => {
         </head>
         <body>
             <h1>ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
+            <br/>
             ${identityTable}
-            <br/><br/>
+            <br/>
+            ${cpElementsTable}
+            <br/>
+            <p class="section-heading">B. Alur Tujuan Pembelajaran</p>
             <table>
                 <thead>
                     <tr>
-                        <th>No.</th>
-                        <th>Capaian Pembelajaran (CP)</th>
+                        <th style="width: 5%;">No.</th>
                         <th>Topik Materi</th>
                         <th>Tujuan Pembelajaran (TP)</th>
-                        <th>Kode TP</th>
-                        <th>Semester</th>
+                        <th style="width: 10%;">Kode TP</th>
+                        <th style="width: 15%;">Semester</th>
                     </tr>
                 </thead>
                 <tbody>
