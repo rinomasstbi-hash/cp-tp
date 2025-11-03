@@ -95,10 +95,10 @@ const App: React.FC = () => {
   
   // Effect to load TPs only when the selected subject changes.
   useEffect(() => {
-    if (selectedSubject) {
+    if (selectedSubject && view === 'view_tp_list') {
         loadTPsForSubject(selectedSubject);
     }
-  }, [selectedSubject, loadTPsForSubject]);
+  }, [selectedSubject, view, loadTPsForSubject]);
   
   // Effect for initial load from localStorage
   useEffect(() => {
@@ -124,12 +124,12 @@ const App: React.FC = () => {
     }
   }, []);
   
-  // Effect to load ATPs only when the selected TP changes.
+  // Effect to load ATPs only when the selected TP changes and we are in the ATP list view.
   useEffect(() => {
-      if (selectedTP?.id) {
+      if (selectedTP?.id && view === 'view_atp_list') {
           loadATPsForTP(selectedTP.id);
       }
-  }, [selectedTP, loadATPsForTP]);
+  }, [selectedTP, view, loadATPsForTP]);
 
 
   const handleSelectSubject = (subject: string) => {
@@ -219,11 +219,14 @@ const App: React.FC = () => {
             if (authPrompt.action === 'edit') {
                 setEditingTP(tpData);
                 setView('edit_tp');
+                setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
+                // Cascade Delete: Delete ATPs first, then the TP.
+                await apiService.deleteATPsByTPId(tpData.id!);
                 await apiService.deleteTP(tpData.id!);
                 if (selectedSubject) await loadTPsForSubject(selectedSubject);
+                setAuthPrompt(null);
             }
-            setAuthPrompt(null);
         } else if (authPrompt.type === 'atp') {
             const atpToProcess = authPrompt.data as ATPData;
             if (authPrompt.action === 'edit') {
@@ -314,18 +317,40 @@ const App: React.FC = () => {
     if (selectedSubject) {
       setGlobalError(null);
       try {
-        if(view === 'create_tp') {
-            await apiService.saveTP(data);
+        if (view === 'create_tp') {
+          await apiService.saveTP(data);
         } else if (view === 'edit_tp' && editingTP?.id) {
-            await apiService.updateTP(editingTP.id, data);
+          // Check if fields that need to be cascaded have changed.
+          const nameHasChanged = editingTP.creatorName !== data.creatorName;
+
+          // First, update the main TP record.
+          await apiService.updateTP(editingTP.id, data);
+
+          // If the name changed, propagate the update to all associated ATPs.
+          if (nameHasChanged && data.creatorName) {
+            try {
+              const associatedATPs = await apiService.getATPsByTPId(editingTP.id);
+              
+              if (associatedATPs.length > 0) {
+                 const updatePromises = associatedATPs.map(atp => 
+                    apiService.updateATP(atp.id, { creatorName: data.creatorName })
+                 );
+                 await Promise.all(updatePromises);
+              }
+            } catch (cascadeError: any) {
+              console.error("Gagal melakukan sinkronisasi update ke ATP terkait:", cascadeError);
+              // We'll throw a new error to be caught by the outer block,
+              // providing more context to the user.
+              throw new Error(`TP berhasil diperbarui, tetapi gagal menyinkronkan nama pembuat ke ATP terkait. Silakan coba lagi atau periksa data ATP secara manual. Detail: ${cascadeError.message}`);
+            }
+          }
         }
         setView('view_tp_list');
-        // Explicitly reload data after saving to ensure the list is up-to-date
-        await loadTPsForSubject(selectedSubject);
+        // Data will be reloaded by the useEffect hook for 'view_tp_list'
       } catch (error: any) {
-          console.error(error);
-          setGlobalError(error.message);
-          throw error;
+        console.error(error);
+        setGlobalError(error.message);
+        throw error; // Rethrow to notify the editor component
       }
     }
   };
@@ -335,8 +360,8 @@ const App: React.FC = () => {
         setAtpError(null);
         try {
             await apiService.updateATP(id, data);
-            await loadATPsForTP(selectedTP.id); // Reload the list
             setView('view_atp_list'); // Go back to the list after saving
+            // Data will be reloaded by the useEffect hook for 'view_atp_list'
         } catch (error: any) {
             console.error(error);
             setAtpError(error.message);
@@ -802,9 +827,17 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
             <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Untuk {authPrompt.action === 'edit' ? 'mengedit' : 'menghapus'} data ini, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
-            </p>
+            <div className="text-sm text-slate-600 mb-4">
+                <p>
+                Untuk {authPrompt.action === 'edit' ? 'mengedit' : 'menghapus'} data ini, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
+                </p>
+                {authPrompt.action === 'delete' && authPrompt.type === 'tp' && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <p className="font-bold text-red-800">Peringatan Penting</p>
+                        <p className="text-red-700">Menghapus TP ini juga akan menghapus <strong>semua Alur Tujuan Pembelajaran (ATP)</strong> yang terkait secara permanen. Tindakan ini tidak dapat diurungkan.</p>
+                    </div>
+                )}
+            </div>
             <form onSubmit={(e) => { e.preventDefault(); handleAuthSubmit(); }}>
                 <input
                     type="email"

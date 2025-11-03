@@ -7,7 +7,7 @@
 // FIX: Explicitly type GOOGLE_APPS_SCRIPT_URL as string to prevent a compile-time error
 // on the validation check below. The compiler is smart enough to know the two const
 // literals are different, but we want to keep the check for future developers.
-const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbwYylVE0_-bZYIOKZRyF-RyC8EJrToom9b-LvM3qa38Nri94QbsO52C-KD2Zgdfb50/exec';
+const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbw92L7ROQoEGvHJo2RUGcPwk1TvH5ay3KYzBM-dqS44u3GnvjmiSGoDeaBncSSiq7Yk/exec';
 const PLACEHOLDER_URL = '';
 
 import { TPData, ATPData } from '../types';
@@ -95,6 +95,10 @@ export const updateTP = (id: string, data: Partial<TPData>): Promise<TPData> => 
 
 export const deleteTP = (id: string): Promise<{ success: boolean }> => {
     return apiRequest('deleteTP', 'POST', { id });
+};
+
+export const deleteATPsByTPId = (tpId: string): Promise<{ success: boolean }> => {
+    return apiRequest('deleteATPsByTPId', 'POST', { tpId });
 };
 
 export const getATPsByTPId = async (tpId: string): Promise<ATPData[]> => {
