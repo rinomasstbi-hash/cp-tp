@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow } from './types';
 import * as apiService from './services/dbService';
 import { generateATP } from './services/geminiService';
@@ -35,14 +35,6 @@ const Header: React.FC = () => {
   );
 };
 
-const ATP_LOADING_MESSAGES = [
-  "Menganalisis struktur Tujuan Pembelajaran...",
-  "Memetakan setiap TP ke Capaian Pembelajaran yang relevan...",
-  "Menyusun alur pembelajaran yang logis...",
-  "Memastikan urutan materi sudah sesuai...",
-  "Hampir selesai, memfinalisasi format tabel..."
-];
-
 const App: React.FC = () => {
   const [view, setView] = useState<View>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -70,10 +62,14 @@ const App: React.FC = () => {
   const [atps, setAtps] = useState<ATPData[]>([]);
   const [selectedATP, setSelectedATP] = useState<ATPData | null>(null);
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
-  const [isGeneratingAtp, setIsGeneratingAtp] = useState(false);
   const [atpError, setAtpError] = useState<string | null>(null);
-  const [atpLoadingMessage, setAtpLoadingMessage] = useState(ATP_LOADING_MESSAGES[0]);
-  const atpMessageIntervalRef = useRef<number | null>(null);
+  
+  // New state for real ATP generation progress
+  const [atpGenerationProgress, setAtpGenerationProgress] = useState({
+    isLoading: false,
+    message: '',
+    progress: 0,
+  });
 
 
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
@@ -284,38 +280,43 @@ const App: React.FC = () => {
   };
 
   const _proceedWithAtpGeneration = async () => {
-    if (!selectedTP) return;
-    
-    setIsGeneratingAtp(true);
-    setAtpError(null);
-    setAtpLoadingMessage(ATP_LOADING_MESSAGES[0]);
+      if (!selectedTP) return;
 
-    let messageIndex = 0;
-    atpMessageIntervalRef.current = window.setInterval(() => {
-        messageIndex = (messageIndex + 1) % ATP_LOADING_MESSAGES.length;
-        setAtpLoadingMessage(ATP_LOADING_MESSAGES[messageIndex]);
-    }, 3000);
-    
-    try {
-        const generatedContent = await generateATP(selectedTP);
-        const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
-            tpId: selectedTP.id!,
-            subject: selectedTP.subject,
-            content: generatedContent,
-            creatorName: selectedTP.creatorName,
-        };
-        const savedAtp = await apiService.saveATP(newAtpData);
-        await loadATPsForTP(selectedTP.id!);
-        handleViewAtpDetail(savedAtp);
+      setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
+      setAtpError(null);
 
-    } catch (error: any) {
-        setAtpError(error.message);
-    } finally {
-        setIsGeneratingAtp(false);
-        if (atpMessageIntervalRef.current) {
-            clearInterval(atpMessageIntervalRef.current);
-        }
-    }
+      try {
+          // Step 1: Call AI
+          setAtpGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf ATP...', progress: 25 }));
+          const generatedContent = await generateATP(selectedTP);
+
+          // Step 2: Save to DB
+          setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
+          const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
+              tpId: selectedTP.id!,
+              subject: selectedTP.subject,
+              content: generatedContent,
+              creatorName: selectedTP.creatorName,
+          };
+          const savedAtp = await apiService.saveATP(newAtpData);
+
+          // Step 3: Reload data
+          setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang daftar ATP...', progress: 90 }));
+          await loadATPsForTP(selectedTP.id!);
+          
+          // Step 4: Finalize
+          setAtpGenerationProgress(prev => ({ ...prev, message: 'Selesai!', progress: 100 }));
+          
+          // Give a moment for the user to see the "Selesai!" message
+          setTimeout(() => {
+              handleViewAtpDetail(savedAtp);
+              setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 });
+          }, 500);
+
+      } catch (error: any) {
+          setAtpError(error.message);
+          setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 }); // Reset on error
+      }
   };
 
   const handleCreateNewAtp = () => {
@@ -693,7 +694,7 @@ const App: React.FC = () => {
                 <h1 className="text-3xl font-bold text-slate-800">Daftar Alur Tujuan Pembelajaran (ATP)</h1>
                 <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
               </div>
-              <button onClick={handleCreateNewAtp} disabled={isGeneratingAtp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
+              <button onClick={handleCreateNewAtp} disabled={atpGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
                   <SparklesIcon className="w-5 h-5"/> Buat ATP Baru dengan AI
               </button>
             </div>
@@ -883,16 +884,23 @@ const App: React.FC = () => {
         </div>
       )}
       
-      {isGeneratingAtp && (
+      {atpGenerationProgress.isLoading && (
          <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
             <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
                 <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
                 <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang bekerja...</h3>
-                <p className="text-slate-600 mt-2">Harap tunggu sejenak, proses ini bisa memakan waktu hingga satu menit.</p>
-                <div className="mt-6 h-16 flex items-center justify-center">
-                  <p key={atpLoadingMessage} className="text-teal-700 font-semibold animate-fade-in">
-                      {atpLoadingMessage}
-                  </p>
+                <p className="text-slate-600 mt-2">Harap tunggu, ATP sedang dibuat berdasarkan TP yang Anda susun.</p>
+                
+                <div className="mt-6 w-full">
+                    <div className="bg-slate-200 rounded-full h-2.5">
+                        <div 
+                            className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" 
+                            style={{ width: `${atpGenerationProgress.progress}%` }}
+                        ></div>
+                    </div>
+                    <p className="text-teal-700 font-semibold mt-3 text-sm">
+                        {atpGenerationProgress.message} ({atpGenerationProgress.progress}%)
+                    </p>
                 </div>
             </div>
         </div>
