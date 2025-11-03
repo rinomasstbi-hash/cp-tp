@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow } from './types';
 import * as apiService from './services/dbService';
 import { generateATP } from './services/geminiService';
@@ -36,6 +35,14 @@ const Header: React.FC = () => {
   );
 };
 
+const ATP_LOADING_MESSAGES = [
+  "Menganalisis struktur Tujuan Pembelajaran...",
+  "Memetakan setiap TP ke Capaian Pembelajaran yang relevan...",
+  "Menyusun alur pembelajaran yang logis...",
+  "Memastikan urutan materi sudah sesuai...",
+  "Hampir selesai, memfinalisasi format tabel..."
+];
+
 const App: React.FC = () => {
   const [view, setView] = useState<View>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -65,6 +72,8 @@ const App: React.FC = () => {
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
   const [isGeneratingAtp, setIsGeneratingAtp] = useState(false);
   const [atpError, setAtpError] = useState<string | null>(null);
+  const [atpLoadingMessage, setAtpLoadingMessage] = useState(ATP_LOADING_MESSAGES[0]);
+  const atpMessageIntervalRef = useRef<number | null>(null);
 
 
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
@@ -209,14 +218,11 @@ const App: React.FC = () => {
             if (authPrompt.action === 'edit') {
                 setEditingTP(tpData);
                 setView('edit_tp');
-                setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                if (window.confirm("Apakah Anda yakin ingin menghapus data TP ini secara permanen? Ini juga akan menghapus semua ATP terkait.")) {
-                    await apiService.deleteTP(tpData.id!);
-                    if (selectedSubject) await loadTPsForSubject(selectedSubject);
-                    setAuthPrompt(null);
-                }
+                await apiService.deleteTP(tpData.id!);
+                if (selectedSubject) await loadTPsForSubject(selectedSubject);
             }
+            setAuthPrompt(null);
         } else if (authPrompt.type === 'atp') {
             const atpToProcess = authPrompt.data as ATPData;
             if (authPrompt.action === 'edit') {
@@ -230,24 +236,20 @@ const App: React.FC = () => {
                     return;
                 }
 
-                if (window.confirm("Apakah Anda yakin ingin menghapus data ATP ini secara permanen?")) {
-                    setAtpError(null);
-                    const originalAtps = [...atps];
-                    
-                    setAtps(currentAtps => currentAtps.filter(atp => atp.id !== atpToProcess.id));
-                    setAuthPrompt(null); 
+                setAtpError(null);
+                const originalAtps = [...atps];
+                
+                setAtps(currentAtps => currentAtps.filter(atp => atp.id !== atpToProcess.id));
+                setAuthPrompt(null); 
 
-                    try {
-                        await apiService.deleteATP(atpToProcess.id);
-                        if (selectedTP?.id) {
-                            await loadATPsForTP(selectedTP.id);
-                        }
-                    } catch (error: any) {
-                        setAtps(originalAtps); 
-                        setAtpError(`Gagal menghapus ATP di server: ${error.message}`);
+                try {
+                    await apiService.deleteATP(atpToProcess.id);
+                    if (selectedTP?.id) {
+                        await loadATPsForTP(selectedTP.id);
                     }
-                } else {
-                  setAuthPrompt(null);
+                } catch (error: any) {
+                    setAtps(originalAtps); 
+                    setAuthError(`Gagal menghapus ATP di server: ${error.message}`);
                 }
             }
         }
@@ -275,6 +277,14 @@ const App: React.FC = () => {
       
       setIsGeneratingAtp(true);
       setAtpError(null);
+      setAtpLoadingMessage(ATP_LOADING_MESSAGES[0]);
+
+      // Start cycling through loading messages
+      let messageIndex = 0;
+      atpMessageIntervalRef.current = window.setInterval(() => {
+          messageIndex = (messageIndex + 1) % ATP_LOADING_MESSAGES.length;
+          setAtpLoadingMessage(ATP_LOADING_MESSAGES[messageIndex]);
+      }, 3000);
       
       try {
           const generatedContent = await generateATP(selectedTP);
@@ -292,6 +302,9 @@ const App: React.FC = () => {
           setAtpError(error.message);
       } finally {
           setIsGeneratingAtp(false);
+          if (atpMessageIntervalRef.current) {
+              clearInterval(atpMessageIntervalRef.current);
+          }
       }
   };
 
@@ -642,16 +655,7 @@ const App: React.FC = () => {
                 <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
               </div>
               <button onClick={handleCreateNewAtp} disabled={isGeneratingAtp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
-                {isGeneratingAtp ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Membuat ATP...</span>
-                  </>
-                ) : (
-                  <>
-                    <SparklesIcon className="w-5 h-5"/> Buat ATP Baru dengan AI
-                  </>
-                )}
+                  <SparklesIcon className="w-5 h-5"/> Buat ATP Baru dengan AI
               </button>
             </div>
             
@@ -827,6 +831,22 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+      
+      {isGeneratingAtp && (
+         <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
+            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
+                <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
+                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang bekerja...</h3>
+                <p className="text-slate-600 mt-2">Harap tunggu sejenak, proses ini bisa memakan waktu hingga satu menit.</p>
+                <div className="mt-6 h-16 flex items-center justify-center">
+                  <p key={atpLoadingMessage} className="text-teal-700 font-semibold animate-fade-in">
+                      {atpLoadingMessage}
+                  </p>
+                </div>
+            </div>
+        </div>
+      )}
+
       <main>
         {renderContent()}
       </main>
