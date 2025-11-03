@@ -396,7 +396,6 @@ const App: React.FC = () => {
   const handleExportAtpToWord = () => {
     if (!selectedATP || !selectedTP) return;
 
-    // Create a map from TP text to its hierarchical code (e.g., "1.1")
     const tpCodeMap = new Map<string, string>();
     if (selectedTP) {
       let materiPokokNumber = 1;
@@ -416,9 +415,32 @@ const App: React.FC = () => {
             body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
             table { border-collapse: collapse; width: 100%; }
             th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            h1, h2 { font-family: 'Times New Roman', Times, serif; }
+            th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
+            h1 { font-family: 'Times New Roman', Times, serif; text-align: center; margin-bottom: 0; }
+            .identity-table, .identity-table td { border: none; padding: 2px 5px; }
+            .signature-table, .signature-table td { border: none; text-align: center; vertical-align: top; }
         </style>
+    `;
+
+    const identityTable = `
+      <table class="identity-table" style="margin-left: auto; margin-right: auto; margin-top: 20px; width: auto;">
+          <tr>
+              <td>Nama Madrasah</td>
+              <td>: MTsN 4 Jombang</td>
+          </tr>
+          <tr>
+              <td>Mata Pelajaran</td>
+              <td>: ${selectedATP.subject}</td>
+          </tr>
+          <tr>
+              <td>Kelas/Fase</td>
+              <td>: ${selectedTP.grade}/Fase D</td>
+          </tr>
+          <tr>
+              <td>Tahun Pelajaran</td>
+              <td>: 2025/2026</td>
+          </tr>
+      </table>
     `;
 
     let tableRows = '';
@@ -433,6 +455,34 @@ const App: React.FC = () => {
         tableRows += `<td>${row.semester}</td>`;
         tableRows += '</tr>';
     });
+    
+    const creationDate = new Date(selectedATP.createdAt).toLocaleDateString('id-ID', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+
+    const signatureSection = `
+      <br/><br/>
+      <table class="signature-table">
+          <tr>
+              <td style="width: 50%;">
+                  Mengetahui,<br/>
+                  Kepala Madrasah
+                  <br/><br/><br/><br/>
+                  <strong><u>Sulthon Sulaiman, M.Pd.I</u></strong><br/>
+                  NIP. 198106162005011003
+              </td>
+              <td style="width: 50%;">
+                  Jombang, ${creationDate}<br/>
+                  Guru Mapel
+                  <br/><br/><br/><br/>
+                  <strong><u>${selectedATP.creatorName}</u></strong><br/>
+                  NIP. .........................
+              </td>
+          </tr>
+      </table>
+    `;
 
     const htmlContent = `
         <!DOCTYPE html>
@@ -442,12 +492,9 @@ const App: React.FC = () => {
             ${styles}
         </head>
         <body>
-            <h1 style="text-align: center;">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
-            <br/>
-            <h2>Mata Pelajaran: ${selectedATP.subject}</h2>
-            <h2>Kelas: ${selectedTP.grade}</h2>
-            <h2>Nama Guru: ${selectedATP.creatorName}</h2>
-            <br/>
+            <h1>ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
+            ${identityTable}
+            <br/><br/>
             <table>
                 <thead>
                     <tr>
@@ -463,6 +510,7 @@ const App: React.FC = () => {
                     ${tableRows}
                 </tbody>
             </table>
+            ${signatureSection}
         </body>
         </html>
     `;
@@ -770,10 +818,29 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="bg-white rounded-lg shadow-lg p-6 print:shadow-none print:border">
-                    <h1 className="text-2xl font-bold text-slate-800 mb-1">Alur Tujuan Pembelajaran (ATP)</h1>
-                    <p className="text-slate-500 mb-4">Mata Pelajaran: <span className="font-semibold text-teal-600">{selectedATP.subject}</span> | Dibuat: <span className="font-semibold text-teal-600">{new Date(selectedATP.createdAt).toLocaleDateString('id-ID')}</span></p>
+                    <h1 className="text-2xl font-bold text-slate-800 mb-1 text-center">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
+                    <table className="text-sm mx-auto my-4" style={{ border: 'none' }}>
+                        <tbody>
+                            <tr>
+                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Nama Madrasah</td>
+                                <td style={{ border: 'none', padding: '2px 8px' }}>: MTsN 4 Jombang</td>
+                            </tr>
+                            <tr>
+                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Mata Pelajaran</td>
+                                <td style={{ border: 'none', padding: '2px 8px' }}>: {selectedATP.subject}</td>
+                            </tr>
+                            <tr>
+                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Kelas/Fase</td>
+                                <td style={{ border: 'none', padding: '2px 8px' }}>: {selectedTP.grade}/Fase D</td>
+                            </tr>
+                            <tr>
+                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Tahun Pelajaran</td>
+                                <td style={{ border: 'none', padding: '2px 8px' }}>: 2025/2026</td>
+                            </tr>
+                        </tbody>
+                    </table>
                     
-                    <div className="overflow-x-auto mt-4 border-t pt-4">
+                    <div className="overflow-x-auto mt-4">
                         <table className="min-w-full bg-white border border-slate-300 text-sm">
                             <thead className="bg-slate-100 text-left">
                                 <tr>
@@ -799,6 +866,27 @@ const App: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    <table className="w-full mt-12 text-sm" style={{ border: 'none' }}>
+                        <tbody>
+                            <tr>
+                                <td className="w-1/2 text-center" style={{ border: 'none', verticalAlign: 'top' }}>
+                                    Mengetahui,<br/>
+                                    Kepala Madrasah
+                                    <br/><br/><br/><br/><br/>
+                                    <strong><u>Sulthon Sulaiman, M.Pd.I</u></strong><br/>
+                                    NIP. 198106162005011003
+                                </td>
+                                <td className="w-1/2 text-center" style={{ border: 'none', verticalAlign: 'top' }}>
+                                    Jombang, {new Date(selectedATP.createdAt).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric'})}<br/>
+                                    Guru Mapel
+                                    <br/><br/><br/><br/><br/>
+                                    <strong><u>{selectedATP.creatorName}</u></strong><br/>
+                                    NIP. .........................
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         );
