@@ -55,7 +55,7 @@ const App: React.FC = () => {
   
   // State for ownership verification modal
   const [authPrompt, setAuthPrompt] = useState<{
-    action: 'edit' | 'delete';
+    action: 'edit' | 'delete' | 'create_atp';
     type: 'tp' | 'atp';
     data: TPData | ATPData;
   } | null>(null);
@@ -165,7 +165,7 @@ const App: React.FC = () => {
   };
 
   // Helper to open the auth modal with reset states
-  const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
+  const openAuthModal = (action: 'edit' | 'delete' | 'create_atp', type: 'tp' | 'atp', data: TPData | ATPData) => {
     setAuthEmailInput('');
     setAuthError(null);
     setAuthPrompt({ action, type, data });
@@ -212,8 +212,15 @@ const App: React.FC = () => {
         if (authEmailInput.trim().toLowerCase() !== creatorEmail.trim().toLowerCase()) {
           throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
         }
+        
+        // Handle ATP creation after successful auth
+        if (authPrompt.action === 'create_atp') {
+            setAuthPrompt(null);
+            _proceedWithAtpGeneration(); 
+            return; 
+        }
 
-        // If email validation is successful, proceed with the action
+        // If email validation is successful, proceed with other actions
         if (authPrompt.type === 'tp') {
             const tpData = authPrompt.data as TPData;
             if (authPrompt.action === 'edit') {
@@ -276,40 +283,44 @@ const App: React.FC = () => {
     setView('view_atp_detail');
   };
 
-  const handleCreateNewAtp = async () => {
+  const _proceedWithAtpGeneration = async () => {
+    if (!selectedTP) return;
+    
+    setIsGeneratingAtp(true);
+    setAtpError(null);
+    setAtpLoadingMessage(ATP_LOADING_MESSAGES[0]);
+
+    let messageIndex = 0;
+    atpMessageIntervalRef.current = window.setInterval(() => {
+        messageIndex = (messageIndex + 1) % ATP_LOADING_MESSAGES.length;
+        setAtpLoadingMessage(ATP_LOADING_MESSAGES[messageIndex]);
+    }, 3000);
+    
+    try {
+        const generatedContent = await generateATP(selectedTP);
+        const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
+            tpId: selectedTP.id!,
+            subject: selectedTP.subject,
+            content: generatedContent,
+            creatorName: selectedTP.creatorName,
+        };
+        const savedAtp = await apiService.saveATP(newAtpData);
+        await loadATPsForTP(selectedTP.id!);
+        handleViewAtpDetail(savedAtp);
+
+    } catch (error: any) {
+        setAtpError(error.message);
+    } finally {
+        setIsGeneratingAtp(false);
+        if (atpMessageIntervalRef.current) {
+            clearInterval(atpMessageIntervalRef.current);
+        }
+    }
+  };
+
+  const handleCreateNewAtp = () => {
       if (!selectedTP) return;
-      
-      setIsGeneratingAtp(true);
-      setAtpError(null);
-      setAtpLoadingMessage(ATP_LOADING_MESSAGES[0]);
-
-      // Start cycling through loading messages
-      let messageIndex = 0;
-      atpMessageIntervalRef.current = window.setInterval(() => {
-          messageIndex = (messageIndex + 1) % ATP_LOADING_MESSAGES.length;
-          setAtpLoadingMessage(ATP_LOADING_MESSAGES[messageIndex]);
-      }, 3000);
-      
-      try {
-          const generatedContent = await generateATP(selectedTP);
-          const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
-              tpId: selectedTP.id!,
-              subject: selectedTP.subject,
-              content: generatedContent,
-              creatorName: selectedTP.creatorName, // Or a logged in user's name
-          };
-          const savedAtp = await apiService.saveATP(newAtpData);
-          await loadATPsForTP(selectedTP.id!);
-          handleViewAtpDetail(savedAtp);
-
-      } catch (error: any) {
-          setAtpError(error.message);
-      } finally {
-          setIsGeneratingAtp(false);
-          if (atpMessageIntervalRef.current) {
-              clearInterval(atpMessageIntervalRef.current);
-          }
-      }
+      openAuthModal('create_atp', 'tp', selectedTP);
   };
 
 
@@ -829,7 +840,11 @@ const App: React.FC = () => {
             <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
             <div className="text-sm text-slate-600 mb-4">
                 <p>
-                Untuk {authPrompt.action === 'edit' ? 'mengedit' : 'menghapus'} data ini, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
+                  Untuk {
+                    authPrompt.action === 'create_atp' ? 'membuat ATP baru dari TP ini' :
+                    authPrompt.action === 'edit' ? `mengedit data ${authPrompt.type.toUpperCase()} ini` :
+                    `menghapus data ${authPrompt.type.toUpperCase()} ini`
+                  }, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
                 </p>
                 {authPrompt.action === 'delete' && authPrompt.type === 'tp' && (
                     <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
