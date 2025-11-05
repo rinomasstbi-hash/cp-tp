@@ -536,7 +536,7 @@ const App: React.FC = () => {
         .cp-container { border: 1px solid black; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }
         .cp-title { font-size: 12pt; font-weight: bold; margin: 0 0 10px 0; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 5px; }
+        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
       </style>
     `;
 
@@ -591,25 +591,27 @@ const App: React.FC = () => {
 
     const signatureBlock = `
       <div class="signature-table-container">
-        <table style="width: 100%; border: none;">
-          <tr>
-            <td class="signature-td">
-              Mengetahui,<br>
-              Kepala Madrasah,
-              <br><br><br><br>
-              <span style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</span><br>
-              NIP. 198106162005011003
-            </td>
-            <td class="signature-td">
-              <table>
-                <tr style="border: none;"><td style="border: none; text-align: center;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
-                <tr style="border: none;"><td style="border: none; text-align: center;">Guru Mata Pelajaran,</td></tr>
-              </table>
-              <br><br><br><br>
-              <span style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</span><br>
-              NIP. -
-            </td>
-          </tr>
+        <table style="width: 100%; border: none; text-align: center;">
+          <tbody>
+            <tr>
+              <td class="signature-td">Mengetahui,</td>
+              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">Kepala Madrasah,</td>
+              <td class="signature-td">Guru Mata Pelajaran,</td>
+            </tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. -</td>
+            </tr>
+          </tbody>
         </table>
       </div>
     `;
@@ -623,6 +625,7 @@ const App: React.FC = () => {
         </head>
         <body>
           ${mainContent}
+          <br>
           ${signatureBlock}
         </body>
       </html>
@@ -660,7 +663,7 @@ const App: React.FC = () => {
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
         .signature-table-container { page-break-inside: avoid; margin-top: 25px; }
-        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 5px; }
+        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
       </style>
     `;
 
@@ -720,23 +723,27 @@ const App: React.FC = () => {
     
     const signatureBlock = `
       <div class="signature-table-container">
-        <table style="width: 100%; border: none;">
-          <tr>
-            <td class="signature-td">
-              Mengetahui,<br>
-              Kepala Madrasah,
-              <br><br><br><br>
-              <span style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</span><br>
-              NIP. 198106162005011003
-            </td>
-            <td class="signature-td">
-              <span style="display: block; text-align: center;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-              <span style="display: block; text-align: center;">Guru Mata Pelajaran,</span>
-              <br><br><br><br>
-              <span style="font-weight: bold; text-decoration: underline; display: block; text-align: center;">${currentProta.creatorName}</span>
-              <span style="display: block; text-align: center;">NIP. -</span>
-            </td>
-          </tr>
+        <table style="width: 100%; border: none; text-align: center;">
+          <tbody>
+            <tr>
+              <td class="signature-td">Mengetahui,</td>
+              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">Kepala Madrasah,</td>
+              <td class="signature-td">Guru Mata Pelajaran,</td>
+            </tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${currentProta.creatorName}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. -</td>
+            </tr>
+          </tbody>
         </table>
       </div>
     `;
@@ -811,11 +818,11 @@ const App: React.FC = () => {
                   <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
                       <div>
-                        <p className="font-bold text-lg text-slate-800">
-                          Kelas {tp.grade}
+                        <p className="text-lg text-slate-800">
+                          <span className="font-bold">Kelas {tp.grade}</span>
                         </p>
                         <p className="text-sm text-slate-500 mt-1">
-                          Dibuat oleh {tp.creatorName} | {new Date(tp.createdAt).toLocaleString('id-ID')}
+                          Dibuat oleh <span className="font-semibold">{tp.creatorName}</span> | {new Date(tp.createdAt).toLocaleString('id-ID')}
                         </p>
                       </div>
                       <div className="flex flex-row flex-wrap items-center gap-2 flex-shrink-0 w-full sm:w-auto sm:justify-end">
