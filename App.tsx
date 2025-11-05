@@ -1,11 +1,12 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TPData, TPGroup, ATPData, ATPTableRow } from './types';
+import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData } from './types';
 import * as apiService from './services/dbService';
-import { generateATP } from './services/geminiService';
+import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon } from './components/icons';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon } from './components/icons';
 
 const Header: React.FC = () => {
   return (
@@ -35,6 +36,59 @@ const Header: React.FC = () => {
   );
 };
 
+// Moved SemesterDisplay outside of the App component for better performance and code organization.
+const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[]; numberingOffset?: number, onCopy: (text: string, message?: string) => void }> = ({ title, groups, numberingOffset = 0, onCopy }) => {
+    if (groups.length === 0) return null;
+    return (
+        <div className="mb-8">
+            <h2 className="text-2xl font-bold text-slate-700 border-b-2 border-teal-500 pb-2 mb-4">{title}</h2>
+            <div className="space-y-8">
+                {groups.map((group, groupIndex) => {
+                    let tpCounterWithinGroup = 1;
+                    const materiPokokNumber = groupIndex + 1 + numberingOffset;
+                    return (
+                      <div key={groupIndex} className="p-4 rounded-lg bg-slate-50 border">
+                          <h3 className="text-xl font-bold text-slate-800 mb-4">Materi Pokok {materiPokokNumber}: <span className="font-normal">{group.materi}</span></h3>
+                          <div className="space-y-6 pl-4 border-l-2 border-teal-300">
+                            {group.subMateriGroups.map((subGroup, subIndex) => (
+                                <div key={subIndex}>
+                                    <h4 className="text-lg font-semibold text-slate-700 mb-2">Sub-Materi: <span className="font-normal">{subGroup.subMateri}</span></h4>
+                                    <div className="overflow-x-auto">
+                                       <table className="min-w-full bg-white border border-slate-200">
+                                            <thead className="bg-slate-100">
+                                                <tr>
+                                                    <th className="w-16 px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No.</th>
+                                                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tujuan Pembelajaran</th>
+                                                    <th className="w-20 px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-200">
+                                                {subGroup.tps.map((item, index) => (
+                                                    <tr key={index}>
+                                                        <td className="px-4 py-3 align-top text-slate-500">{`${materiPokokNumber}.${tpCounterWithinGroup++}`}</td>
+                                                        <td className="px-4 py-3 text-slate-700">{item}</td>
+                                                        <td className="px-4 py-3 align-top text-center">
+                                                            <button onClick={() => onCopy(item, 'Tujuan Pembelajaran berhasil disalin!')} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
+                                                                <ClipboardIcon className="w-5 h-5"/>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ))}
+                          </div>
+                      </div>
+                    )
+                })}
+            </div>
+        </div>
+    );
+};
+
+
 const App: React.FC = () => {
   const [view, setView] = useState<View>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -44,6 +98,7 @@ const App: React.FC = () => {
   const [dataLoading, setDataLoading] = useState(false);
   const [copyNotification, setCopyNotification] = useState('');
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [transientMessage, setTransientMessage] = useState<string | null>(null);
   
   // State for ownership verification modal
   const [authPrompt, setAuthPrompt] = useState<{
@@ -64,13 +119,16 @@ const App: React.FC = () => {
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
   const [atpError, setAtpError] = useState<string | null>(null);
   
-  // New state for real ATP generation progress
-  const [atpGenerationProgress, setAtpGenerationProgress] = useState({
-    isLoading: false,
-    message: '',
-    progress: 0,
-  });
+  // State for PROTA Management
+  const [protas, setProtas] = useState<PROTAData[]>([]);
+  const [protaError, setProtaError] = useState<string | null>(null);
+  const [isProtaJpModalOpen, setIsProtaJpModalOpen] = useState(false);
+  const [protaJpInput, setProtaJpInput] = useState<number | ''>('');
 
+
+  // State for AI generation progress
+  const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
+  const [protaGenerationProgress, setProtaGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
 
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
 
@@ -89,21 +147,19 @@ const App: React.FC = () => {
     }
   }, []);
   
-  // Effect to load TPs only when the selected subject changes.
   useEffect(() => {
     if (selectedSubject && view === 'view_tp_list') {
         loadTPsForSubject(selectedSubject);
     }
   }, [selectedSubject, view, loadTPsForSubject]);
   
-  // Effect for initial load from localStorage
   useEffect(() => {
       const savedSubject = localStorage.getItem(SELECTED_SUBJECT_KEY);
       if (savedSubject) {
         setSelectedSubject(savedSubject);
         setView('view_tp_list');
       }
-  }, []); // Run only once on mount
+  }, []);
 
   const loadATPsForTP = useCallback(async (tpId: string) => {
     setDataLoading(true);
@@ -114,18 +170,38 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setAtpError(error.message);
-      setAtps([]); // Reset state on error
+      setAtps([]);
     } finally {
       setDataLoading(false);
     }
   }, []);
   
-  // Effect to load ATPs only when the selected TP changes and we are in the ATP list view.
   useEffect(() => {
-      if (selectedTP?.id && view === 'view_atp_list') {
+      if (selectedTP?.id && (view === 'view_atp_list' || view === 'view_atp_detail')) {
           loadATPsForTP(selectedTP.id);
       }
   }, [selectedTP, view, loadATPsForTP]);
+
+  const loadPROTAsForTP = useCallback(async (tpId: string) => {
+    setDataLoading(true);
+    setProtaError(null);
+    try {
+      const data = await apiService.getPROTAsByTPId(tpId);
+      setProtas(data);
+    } catch (error: any) {
+      console.error(error);
+      setProtaError(error.message);
+      setProtas([]);
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedTP?.id && (view === 'view_prota_list' || view === 'view_atp_detail')) {
+        loadPROTAsForTP(selectedTP.id);
+    }
+  }, [selectedTP, view, loadPROTAsForTP]);
 
 
   const handleSelectSubject = (subject: string) => {
@@ -146,7 +222,7 @@ const App: React.FC = () => {
   
   const handleBackToTPList = () => {
     setSelectedTP(null);
-    setIsCpInfoVisible(false); // Reset visibility when leaving detail view
+    setIsCpInfoVisible(false);
     setView('view_tp_list');
   };
 
@@ -160,7 +236,6 @@ const App: React.FC = () => {
     setView('view_tp_detail');
   };
 
-  // Helper to open the auth modal with reset states
   const openAuthModal = (action: 'edit' | 'delete' | 'create_atp', type: 'tp' | 'atp', data: TPData | ATPData) => {
     setAuthEmailInput('');
     setAuthError(null);
@@ -209,14 +284,12 @@ const App: React.FC = () => {
           throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
         }
         
-        // Handle ATP creation after successful auth
         if (authPrompt.action === 'create_atp') {
             setAuthPrompt(null);
             _proceedWithAtpGeneration(); 
             return; 
         }
 
-        // If email validation is successful, proceed with other actions
         if (authPrompt.type === 'tp') {
             const tpData = authPrompt.data as TPData;
             if (authPrompt.action === 'edit') {
@@ -224,8 +297,9 @@ const App: React.FC = () => {
                 setView('edit_tp');
                 setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                // Cascade Delete: Delete ATPs first, then the TP.
+                // Cascade Delete: Delete ATPs, PROTAs, then the TP.
                 await apiService.deleteATPsByTPId(tpData.id!);
+                await apiService.deletePROTAsByTPId(tpData.id!);
                 await apiService.deleteTP(tpData.id!);
                 if (selectedSubject) await loadTPsForSubject(selectedSubject);
                 setAuthPrompt(null);
@@ -271,7 +345,24 @@ const App: React.FC = () => {
     setSelectedTP(tp);
     setAtps([]);
     setAtpError(null);
+    setTransientMessage(null);
     setView('view_atp_list');
+  };
+
+  const handleNavigateToProtaListFromList = (tp: TPData) => {
+    setSelectedTP(tp);
+    setSelectedATP(null); // Explicitly clear selected ATP to adjust back button logic
+    setProtas([]);
+    setProtaError(null);
+    setView('view_prota_list');
+  };
+  
+  const handleBackFromProta = () => {
+    if (selectedATP) {
+        setView('view_atp_detail');
+    } else {
+        setView('view_tp_list');
+    }
   };
 
   const handleViewAtpDetail = (atp: ATPData) => {
@@ -281,16 +372,11 @@ const App: React.FC = () => {
 
   const _proceedWithAtpGeneration = async () => {
       if (!selectedTP) return;
-
       setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
       setAtpError(null);
-
       try {
-          // Step 1: Call AI
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf ATP...', progress: 25 }));
-          const generatedContent = await generateATP(selectedTP);
-
-          // Step 2: Save to DB
+          const generatedContent = await geminiService.generateATP(selectedTP);
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
           const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
               tpId: selectedTP.id!,
@@ -299,23 +385,16 @@ const App: React.FC = () => {
               creatorName: selectedTP.creatorName,
           };
           const savedAtp = await apiService.saveATP(newAtpData);
-
-          // Step 3: Reload data
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang daftar ATP...', progress: 90 }));
           await loadATPsForTP(selectedTP.id!);
-          
-          // Step 4: Finalize
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Selesai!', progress: 100 }));
-          
-          // Give a moment for the user to see the "Selesai!" message
           setTimeout(() => {
               handleViewAtpDetail(savedAtp);
               setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 });
           }, 500);
-
       } catch (error: any) {
           setAtpError(error.message);
-          setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 }); // Reset on error
+          setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 });
       }
   };
 
@@ -323,7 +402,65 @@ const App: React.FC = () => {
       if (!selectedTP) return;
       openAuthModal('create_atp', 'tp', selectedTP);
   };
+  
+  const handleCreateNewProta = () => {
+    setProtaJpInput('');
+    setIsProtaJpModalOpen(true);
+  };
 
+  const handleProtaGenerationSubmit = async () => {
+    if (!selectedTP || !selectedATP || !protaJpInput || protaJpInput < 1) {
+        setProtaError("Harap pilih ATP yang valid dan masukkan jumlah JP (minimal 1).");
+        setIsProtaJpModalOpen(false);
+        return;
+    }
+    
+    setIsProtaJpModalOpen(false);
+    setProtaGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
+    setProtaError(null);
+
+    try {
+        setProtaGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf PROTA...', progress: 25 }));
+        const generatedContent = await geminiService.generatePROTA(selectedATP, protaJpInput);
+
+        setProtaGenerationProgress(prev => ({ ...prev, message: 'Draf PROTA diterima. Menyimpan ke database...', progress: 60 }));
+        const newProtaData: Omit<PROTAData, 'id' | 'createdAt'> = {
+            tpId: selectedTP.id!,
+            subject: selectedTP.subject,
+            jamPertemuan: protaJpInput,
+            content: generatedContent,
+            creatorName: selectedTP.creatorName,
+        };
+        await apiService.savePROTA(newProtaData);
+
+        setProtaGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang PROTA...', progress: 90 }));
+        await loadPROTAsForTP(selectedTP.id!);
+        
+        setProtaGenerationProgress({ isLoading: false, message: '', progress: 0 });
+        setView('view_prota_list');
+
+    } catch (error: any) {
+        setProtaError(error.message);
+        setProtaGenerationProgress({ isLoading: false, message: '', progress: 0 });
+    }
+  };
+
+  const handleDeleteAndRegenerateProta = async () => {
+    if (!selectedTP) return;
+    
+    setDataLoading(true);
+    setProtaError(null);
+    try {
+        await apiService.deletePROTAsByTPId(selectedTP.id!);
+        setProtas([]); // Clear state immediately
+        setView('view_atp_list');
+        setTransientMessage("PROTA lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
+    } catch (error: any) {
+        setProtaError(`Gagal menghapus PROTA lama: ${error.message}`);
+    } finally {
+        setDataLoading(false);
+    }
+  };
 
   const handleSave = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     if (selectedSubject) {
@@ -332,37 +469,26 @@ const App: React.FC = () => {
         if (view === 'create_tp') {
           await apiService.saveTP(data);
         } else if (view === 'edit_tp' && editingTP?.id) {
-          // Check if fields that need to be cascaded have changed.
           const nameHasChanged = editingTP.creatorName !== data.creatorName;
-
-          // First, update the main TP record.
           await apiService.updateTP(editingTP.id, data);
-
-          // If the name changed, propagate the update to all associated ATPs.
           if (nameHasChanged && data.creatorName) {
             try {
               const associatedATPs = await apiService.getATPsByTPId(editingTP.id);
-              
               if (associatedATPs.length > 0) {
-                 const updatePromises = associatedATPs.map(atp => 
-                    apiService.updateATP(atp.id, { creatorName: data.creatorName })
-                 );
+                 const updatePromises = associatedATPs.map(atp => apiService.updateATP(atp.id, { creatorName: data.creatorName }));
                  await Promise.all(updatePromises);
               }
             } catch (cascadeError: any) {
               console.error("Gagal melakukan sinkronisasi update ke ATP terkait:", cascadeError);
-              // We'll throw a new error to be caught by the outer block,
-              // providing more context to the user.
-              throw new Error(`TP berhasil diperbarui, tetapi gagal menyinkronkan nama pembuat ke ATP terkait. Silakan coba lagi atau periksa data ATP secara manual. Detail: ${cascadeError.message}`);
+              throw new Error(`TP berhasil diperbarui, tetapi gagal menyinkronkan nama pembuat ke ATP terkait. Detail: ${cascadeError.message}`);
             }
           }
         }
         setView('view_tp_list');
-        // Data will be reloaded by the useEffect hook for 'view_tp_list'
       } catch (error: any) {
         console.error(error);
         setGlobalError(error.message);
-        throw error; // Rethrow to notify the editor component
+        throw error;
       }
     }
   };
@@ -372,12 +498,11 @@ const App: React.FC = () => {
         setAtpError(null);
         try {
             await apiService.updateATP(id, data);
-            setView('view_atp_list'); // Go back to the list after saving
-            // Data will be reloaded by the useEffect hook for 'view_atp_list'
+            setView('view_atp_list');
         } catch (error: any) {
             console.error(error);
             setAtpError(error.message);
-            throw error; // Propagate error to the editor to display it
+            throw error;
         }
     }
   };
@@ -395,152 +520,112 @@ const App: React.FC = () => {
 
   const handleExportAtpToWord = () => {
     if (!selectedATP || !selectedTP) return;
-
-    const tpCodeMap = new Map<string, string>();
-    if (selectedTP) {
-      let materiPokokNumber = 1;
-      selectedTP.tpGroups.forEach(group => {
-        let tpCounterWithinGroup = 1;
-        group.subMateriGroups.forEach(subGroup => {
-          subGroup.tps.forEach(tpText => {
-            tpCodeMap.set(tpText, `${materiPokokNumber}.${tpCounterWithinGroup++}`);
-          });
-        });
-        materiPokokNumber++;
-      });
-    }
-
+    
     const styles = `
-        <style>
-            body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid black; padding: 8px; text-align: left; vertical-align: top; }
-            th { background-color: #f2f2f2; font-weight: bold; text-align: center; }
-            h1 { font-family: 'Times New Roman', Times, serif; text-align: center; margin-bottom: 0; font-size: 14pt; }
-            .identity-table, .identity-table td { border: none; padding: 2px 5px; }
-            .signature-table, .signature-table td { border: none; text-align: center; vertical-align: top; }
-            .section-heading { font-family: 'Times New Roman', Times, serif; font-size: 12pt; margin-bottom: 5px; margin-top: 15px; font-weight: bold; }
-        </style>
+      <style>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
+        p, li, h2, h1 { margin: 0; padding: 0; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; }
+        th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
+        .title { text-align: center; font-weight: bold; font-size: 14pt; text-transform: uppercase; margin: 0; padding: 0;}
+        .header-table { margin-bottom: 15px; }
+        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .no-wrap { white-space: nowrap; }
+        .text-center { text-align: center; }
+        .cp-container { border: 1px solid black; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }
+        .cp-title { font-size: 12pt; font-weight: bold; margin: 0 0 10px 0; }
+        .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
+        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 5px; }
+      </style>
     `;
 
     const identityTable = `
-      <table class="identity-table" style="margin-left: auto; margin-right: auto; width: auto;">
-          <tr>
-              <td>Nama Madrasah</td>
-              <td>: MTsN 4 Jombang</td>
-          </tr>
-          <tr>
-              <td>Mata Pelajaran</td>
-              <td>: ${selectedATP.subject}</td>
-          </tr>
-          <tr>
-              <td>Kelas/Fase</td>
-              <td>: ${selectedTP.grade}/Fase D</td>
-          </tr>
-          <tr>
-              <td>Tahun Pelajaran</td>
-              <td>: 2025/2026</td>
-          </tr>
+      <table class="header-table">
+        <tr><td class="no-wrap" style="width: 150px; padding-left: 0;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0;">Mata Pelajaran</td><td>: ${selectedATP.subject}</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0;">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0;">Tahun Ajaran</td><td>: 2025/2026</td></tr>
       </table>
     `;
 
-    let cpElementsTableRows = '';
-    selectedTP.cpElements.forEach(item => {
-        cpElementsTableRows += `
-            <tr>
-                <td>${item.element}</td>
-                <td>${item.cp}</td>
-            </tr>
-        `;
-    });
+    const atpRows = selectedATP.content.map(row => `
+      <tr>
+        <td class="text-center">${row.atpSequence}</td>
+        <td>${row.topikMateri}</td>
+        <td>${row.tp}</td>
+        <td class="text-center">${row.kodeTp || ''}</td>
+        <td class="text-center">${row.semester}</td>
+      </tr>
+    `).join('');
+    
+    const cpElementsHtml = `
+      <div class="cp-container">
+        <p class="cp-title">Capaian Pembelajaran (CP) Acuan</p>
+        ${selectedTP.cpElements.map(item => `
+          <p style="text-align: justify; margin: 0 0 5px 0;"><span style="font-weight: bold;">${item.element}:</span> ${item.cp}</p>
+        `).join('')}
+      </div>
+    `;
 
-    const cpElementsTable = `
-      <p class="section-heading">A. Capaian Pembelajaran</p>
+    const mainContent = `
+      <p class="title">ALUR TUJUAN PEMBELAJARAN (ATP)</p>
+      <br>
+      ${identityTable}
+      ${cpElementsHtml}
       <table>
         <thead>
           <tr>
-            <th style="width: 30%;">Elemen</th>
-            <th>Capaian Pembelajaran (CP)</th>
+            <th class="text-center" style="width: 5%;">No. ATP</th>
+            <th style="width: 25%;">Topik/Materi</th>
+            <th style="width: 45%;">Tujuan Pembelajaran (TP)</th>
+            <th class="text-center" style="width: 10%;">Kode TP</th>
+            <th class="text-center" style="width: 15%;">Semester</th>
           </tr>
         </thead>
         <tbody>
-          ${cpElementsTableRows}
+          ${atpRows}
         </tbody>
       </table>
     `;
 
-    let tableRows = '';
-    selectedATP.content.forEach((row, index) => {
-        const tpCode = tpCodeMap.get(row.tp) || row.atpSequence;
-        tableRows += '<tr>';
-        tableRows += `<td style="text-align: center;">${index + 1}</td>`;
-        tableRows += `<td>${row.topikMateri}</td>`;
-        tableRows += `<td>${row.tp}</td>`;
-        tableRows += `<td style="text-align: center; font-weight: bold;">${tpCode}</td>`;
-        tableRows += `<td>${row.semester}</td>`;
-        tableRows += '</tr>';
-    });
-    
-    const creationDate = new Date(selectedATP.createdAt).toLocaleDateString('id-ID', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-
-    const signatureSection = `
-      <br/><br/>
-      <table class="signature-table">
+    const signatureBlock = `
+      <div class="signature-table-container">
+        <table style="width: 100%; border: none;">
           <tr>
-              <td style="width: 50%;">
-                  Mengetahui,<br/>
-                  Kepala Madrasah
-                  <br/><br/><br/><br/>
-                  <strong><u>Sulthon Sulaiman, M.Pd.I</u></strong><br/>
-                  NIP. 198106162005011003
-              </td>
-              <td style="width: 50%;">
-                  Jombang, ${creationDate}<br/>
-                  Guru Mapel
-                  <br/><br/><br/><br/>
-                  <strong><u>${selectedATP.creatorName}</u></strong><br/>
-                  NIP. .........................
-              </td>
+            <td class="signature-td">
+              Mengetahui,<br>
+              Kepala Madrasah,
+              <br><br><br><br>
+              <span style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</span><br>
+              NIP. 198106162005011003
+            </td>
+            <td class="signature-td">
+              <table>
+                <tr style="border: none;"><td style="border: none; text-align: center;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+                <tr style="border: none;"><td style="border: none; text-align: center;">Guru Mata Pelajaran,</td></tr>
+              </table>
+              <br><br><br><br>
+              <span style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</span><br>
+              NIP. -
+            </td>
           </tr>
-      </table>
+        </table>
+      </div>
     `;
 
     const htmlContent = `
-        <!DOCTYPE html>
-        <html>
+      <!DOCTYPE html>
+      <html>
         <head>
-            <meta charset="UTF-8">
-            ${styles}
+          <meta charset="UTF-8">
+          ${styles}
         </head>
         <body>
-            <h1>ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
-            <br/>
-            ${identityTable}
-            <br/>
-            ${cpElementsTable}
-            <br/>
-            <p class="section-heading">B. Alur Tujuan Pembelajaran</p>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 5%;">No.</th>
-                        <th>Topik Materi</th>
-                        <th>Tujuan Pembelajaran (TP)</th>
-                        <th style="width: 10%;">Kode TP</th>
-                        <th style="width: 15%;">Semester</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tableRows}
-                </tbody>
-            </table>
-            ${signatureSection}
+          ${mainContent}
+          ${signatureBlock}
         </body>
-        </html>
+      </html>
     `;
 
     const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
@@ -557,202 +642,263 @@ const App: React.FC = () => {
     setCopyNotification('File Word berhasil diunduh!');
     setTimeout(() => setCopyNotification(''), 2000);
   };
-
-  const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[]; numberingOffset?: number }> = ({ title, groups, numberingOffset = 0 }) => {
-    if (groups.length === 0) return null;
-    return (
-        <div className="mb-8">
-            <h2 className="text-2xl font-bold text-slate-700 border-b-2 border-teal-500 pb-2 mb-4">{title}</h2>
-            <div className="space-y-8">
-                {groups.map((group, groupIndex) => {
-                    let tpCounterWithinGroup = 1;
-                    const materiPokokNumber = groupIndex + 1 + numberingOffset;
-                    return (
-                      <div key={groupIndex} className="p-4 rounded-lg bg-slate-50 border">
-                          <h3 className="text-xl font-bold text-slate-800 mb-4">Materi Pokok {materiPokokNumber}: <span className="font-normal">{group.materi}</span></h3>
-                          <div className="space-y-6 pl-4 border-l-2 border-teal-300">
-                            {group.subMateriGroups.map((subGroup, subIndex) => (
-                                <div key={subIndex}>
-                                    <h4 className="text-lg font-semibold text-slate-700 mb-2">Sub-Materi: <span className="font-normal">{subGroup.subMateri}</span></h4>
-                                    <div className="overflow-x-auto">
-                                       <table className="min-w-full bg-white border border-slate-200">
-                                            <thead className="bg-slate-100">
-                                                <tr>
-                                                    <th className="w-16 px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No.</th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tujuan Pembelajaran</th>
-                                                    <th className="w-20 px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-200">
-                                                {subGroup.tps.map((item, index) => (
-                                                    <tr key={index}>
-                                                        <td className="px-4 py-3 align-top text-slate-500">{`${materiPokokNumber}.${tpCounterWithinGroup++}`}</td>
-                                                        <td className="px-4 py-3 text-slate-700">{item}</td>
-                                                        <td className="px-4 py-3 align-top text-center">
-                                                            <button onClick={() => handleCopy(item, 'Tujuan Pembelajaran berhasil disalin!')} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
-                                                                <ClipboardIcon className="w-5 h-5"/>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            ))}
-                          </div>
-                      </div>
-                    )
-                })}
-            </div>
-        </div>
-    );
-  };
   
+  const handleExportProtaToWord = () => {
+    if (protas.length === 0 || !selectedTP) return;
+    const currentProta = protas[0];
+
+    const styles = `
+      <style>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
+        p, li, h2, h1 { margin: 0; padding: 0; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; }
+        th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
+        .title { text-align: center; font-weight: bold; font-size: 14pt; }
+        .header-table { margin-bottom: 15px; }
+        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .no-wrap { white-space: nowrap; }
+        .text-center { text-align: center; }
+        .signature-table-container { page-break-inside: avoid; margin-top: 25px; }
+        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 5px; }
+      </style>
+    `;
+
+    const identityTable = `
+      <table class="header-table">
+        <tr><td class="no-wrap" style="width: 150px;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap">Mata Pelajaran</td><td>: ${currentProta.subject}</td></tr>
+        <tr><td class="no-wrap">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
+        <tr><td class="no-wrap">Tahun Ajaran</td><td>: 2025/2026</td></tr>
+      </table>
+    `;
+
+    const protaRows = currentProta.content.map(row => `
+      <tr>
+        <td class="text-center">${row.no}</td>
+        <td>${row.topikMateri}</td>
+        <td class="text-center">${row.alurTujuanPembelajaran}</td>
+        <td>${row.tujuanPembelajaran}</td>
+        <td class="text-center">${row.alokasiWaktu}</td>
+        <td class="text-center">${row.semester}</td>
+      </tr>
+    `).join('');
+
+    const totalJp = currentProta.content.reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0);
+    
+    const totalRow = `
+        <tfoot>
+            <tr>
+                <td colspan="4" style="font-weight: bold; text-align: right; padding-right: 10px;">Total Jam Pertemuan (JP)</td>
+                <td class="text-center" style="font-weight: bold;">${totalJp} JP</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    `;
+
+    const mainContent = `
+      <p class="title">PROGRAM TAHUNAN (PROTA)</p>
+      <br>
+      ${identityTable}
+      <table>
+        <thead>
+          <tr>
+            <th class="text-center" style="width: 5%;">No</th>
+            <th style="width: 20%;">Topik / Materi Pokok</th>
+            <th class="text-center" style="width: 10%;">Alur Tujuan Pembelajaran</th>
+            <th style="width: 45%;">Tujuan Pembelajaran</th>
+            <th class="text-center" style="width: 10%;">Alokasi Waktu</th>
+            <th class="text-center" style="width: 10%;">Semester</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${protaRows}
+        </tbody>
+        ${totalRow}
+      </table>
+    `;
+    
+    const signatureBlock = `
+      <div class="signature-table-container">
+        <table style="width: 100%; border: none;">
+          <tr>
+            <td class="signature-td">
+              Mengetahui,<br>
+              Kepala Madrasah,
+              <br><br><br><br>
+              <span style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</span><br>
+              NIP. 198106162005011003
+            </td>
+            <td class="signature-td">
+              <span style="display: block; text-align: center;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              <span style="display: block; text-align: center;">Guru Mata Pelajaran,</span>
+              <br><br><br><br>
+              <span style="font-weight: bold; text-decoration: underline; display: block; text-align: center;">${currentProta.creatorName}</span>
+              <span style="display: block; text-align: center;">NIP. -</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          ${styles}
+        </head>
+        <body>
+          ${mainContent}
+          <br>
+          ${signatureBlock}
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `PROTA_${currentProta.subject.replace(/ /g, '_')}_Kelas_${selectedTP.grade}.doc`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    setCopyNotification('File Word PROTA berhasil diunduh!');
+    setTimeout(() => setCopyNotification(''), 2000);
+  };
+
   const renderContent = () => {
     switch (view) {
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} />;
       
       case 'view_tp_list':
-        if (!selectedSubject) return null;
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
-             {globalError && (
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div>
+                <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
+                  <BackIcon className="w-5 h-5" />
+                  Ganti Mata Pelajaran
+                </button>
+                <h1 className="text-3xl font-bold text-slate-800">Tujuan Pembelajaran</h1>
+                <p className="text-slate-500">Mata Pelajaran: {selectedSubject}</p>
+              </div>
+              <button onClick={handleCreateNew} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700">
+                <PlusIcon className="w-5 h-5"/>
+                Buat TP Baru
+              </button>
+            </div>
+            {globalError && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
-                  <div className="flex">
-                      <div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div>
-                      <div className="ml-3">
-                          <h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3>
-                          <div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{globalError}</p></div>
-                      </div>
-                  </div>
+                  <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{globalError}</p></div></div></div>
                   <button onClick={() => setGlobalError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
               </div>
             )}
-            <div className="flex justify-between items-center mb-6">
-              <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold"><BackIcon className="w-5 h-5" /> Kembali ke Pilihan Mapel</button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-800">{selectedSubject}</h1>
-                <p className="text-slate-500">Daftar set Tujuan Pembelajaran yang tersimpan. Klik untuk melihat rincian.</p>
-              </div>
-              <button onClick={handleCreateNew} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"><PlusIcon className="w-5 h-5" /> Buat TP Baru</button>
-            </div>
-            
             {dataLoading ? (
-                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data...</p></div>
-            ) : globalError && !dataLoading ? (
-                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Gagal Memuat Data</h3><p className="text-slate-500 mt-2">Silakan periksa pesan error di atas dan coba lagi.</p></div>
-            ) : tps.length === 0 ? (
-                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Belum Ada Data</h3><p className="text-slate-500 mt-2">Tidak ada data Tujuan Pembelajaran untuk mata pelajaran ini.</p><p className="text-slate-500">Silakan klik tombol "Buat TP Baru" untuk memulai.</p></div>
-            ) : (
-                <div className="space-y-4">
-                    {tps.map(tp => (
-                      <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:ring-2 hover:ring-teal-500 cursor-pointer p-4 flex justify-between items-center">
-                          <div>
-                              <p className="text-lg font-bold text-slate-800">
-                                  Kelas {tp.grade}
-                                  {tp.cpSourceVersion && <span className="font-normal text-slate-400 mx-2">|</span>}
-                                  {tp.cpSourceVersion}
-                              </p>
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 mt-1">
-                                <span>Oleh: <span className="font-medium text-slate-600">{tp.creatorName}</span></span>
-                                <span>Dibuat: <span className="font-medium text-slate-600">{new Date(tp.createdAt).toLocaleDateString('id-ID')}</span></span>
-                              </div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                              <button onClick={(e) => handleEdit(e, tp)} className="p-2 text-blue-500 hover:bg-blue-100 rounded-full"><EditIcon className="w-5 h-5"/></button>
-                              <button onClick={(e) => handleDelete(e, tp)} className="p-2 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-5 h-5"/></button>
-                          </div>
+              <div className="text-center py-16">
+                <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="mt-4 text-slate-600">Memuat data...</p>
+              </div>
+            ) : tps.length > 0 ? (
+              <div className="space-y-4">
+                {tps.map((tp) => (
+                  <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs text-slate-400">Kelas {tp.grade}</p>
+                        <h3 className="text-lg font-bold text-slate-800">Dibuat oleh: {tp.creatorName}</h3>
+                        <p className="text-sm text-slate-500">{tp.creatorEmail}</p>
+                        <p className="text-xs text-slate-400 mt-2">Terakhir diperbarui: {new Date(tp.updatedAt).toLocaleString('id-ID')}</p>
                       </div>
-                    ))}
-                </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToProtaListFromList(tp); }} title="Lihat & Kelola PROTA" className="p-2 text-purple-600 bg-purple-100 hover:bg-purple-200 rounded-full">
+                           <BookOpenIcon className="w-5 h-5"/>
+                         </button>
+                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToAtpList(tp); }} title="Lihat ATP" className="p-2 text-indigo-600 bg-indigo-100 hover:bg-indigo-200 rounded-full">
+                           <FlowChartIcon className="w-5 h-5"/>
+                         </button>
+                         <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="p-2 text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-full">
+                           <EditIcon className="w-5 h-5"/>
+                         </button>
+                         <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="p-2 text-red-600 bg-red-100 hover:bg-red-200 rounded-full">
+                           <TrashIcon className="w-5 h-5"/>
+                         </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
+                <h3 className="text-xl font-semibold text-slate-700">Belum Ada Data</h3>
+                <p className="text-slate-500 mt-2">Belum ada Tujuan Pembelajaran yang dibuat untuk mata pelajaran ini.</p>
+                <p className="text-slate-500">Silakan klik tombol "Buat TP Baru" untuk memulai.</p>
+              </div>
             )}
           </div>
         );
 
       case 'view_tp_detail':
         if (!selectedTP) return null;
-        const { creatorName, cpSourceVersion, createdAt, grade, tpGroups, cpElements, additionalNotes } = selectedTP;
-        const ganjilTPs = tpGroups?.filter(g => g.semester === 'Ganjil') || [];
-        const genapTPs = tpGroups?.filter(g => g.semester === 'Genap') || [];
-        const ganjilMateriCount = ganjilTPs.length;
+        const ganjilGroups = selectedTP.tpGroups.filter(g => g.semester === 'Ganjil');
+        const genapGroups = selectedTP.tpGroups.filter(g => g.semester === 'Genap');
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <button onClick={handleBackToTPList} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+              <button onClick={handleBackToTPList} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                   <BackIcon className="w-5 h-5" />
                   Kembali ke Daftar TP
-                </button>
-                <div className="flex flex-col sm:flex-row justify-end gap-3 w-full sm:w-auto">
-                    <button
-                        onClick={() => handleNavigateToAtpList(selectedTP)}
-                        className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
-                    >
-                        <FlowChartIcon className="w-5 h-5" />
-                        Lihat Alur Tujuan Pembelajaran (ATP)
-                    </button>
+              </button>
+              <button onClick={() => handleNavigateToAtpList(selectedTP)} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700">
+                  <FlowChartIcon className="w-5 h-5"/>
+                  Lihat & Kelola ATP
+              </button>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-lg">
+                <div className="border-b pb-4 mb-4">
+                   <h1 className="text-3xl font-bold text-slate-800">Detail Tujuan Pembelajaran</h1>
+                   <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm text-slate-600">
+                        <span><span className="font-semibold">Mapel:</span> {selectedTP.subject}</span>
+                        <span><span className="font-semibold">Kelas:</span> {selectedTP.grade}</span>
+                        <span><span className="font-semibold">Penyusun:</span> {selectedTP.creatorName}</span>
+                   </div>
+                </div>
+
+                 <div>
+                  <button onClick={() => setIsCpInfoVisible(!isCpInfoVisible)} className="w-full flex justify-between items-center p-3 bg-slate-100 rounded-md hover:bg-slate-200">
+                    <span className="font-semibold text-slate-700">Lihat Detail Capaian Pembelajaran (CP)</span>
+                    {isCpInfoVisible ? <ChevronUpIcon className="w-5 h-5 text-slate-600"/> : <ChevronDownIcon className="w-5 h-5 text-slate-600"/>}
+                  </button>
+                  {isCpInfoVisible && (
+                    <div className="mt-3 p-4 border rounded-b-md bg-white space-y-3">
+                      <p className="text-sm"><span className="font-semibold">Sumber CP:</span> {selectedTP.cpSourceVersion || '-'}</p>
+                      {selectedTP.cpElements.map((item, index) => (
+                          <div key={index} className="p-3 bg-slate-50 rounded">
+                              <p className="font-semibold text-slate-800">{item.element}</p>
+                              <p className="text-slate-600 text-sm mt-1">{item.cp}</p>
+                          </div>
+                      ))}
+                      {selectedTP.additionalNotes && (
+                          <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                              <p className="font-semibold text-blue-800">Catatan Tambahan dari Guru</p>
+                              <p className="text-blue-700 text-sm mt-1 whitespace-pre-wrap">{selectedTP.additionalNotes}</p>
+                          </div>
+                      )}
+                    </div>
+                  )}
                 </div>
             </div>
-
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start mb-4">
-                  <div>
-                    <p className="text-sm text-slate-500">Dibuat oleh: <span className="font-medium text-slate-700">{creatorName}</span></p>
-                    <p className="text-sm text-slate-500">Sumber CP: <span className="font-medium text-slate-700">{cpSourceVersion || '-'}</span></p>
-                    <p className="text-sm text-slate-500">Tanggal Dibuat: <span className="font-medium text-slate-700">{new Date(createdAt).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric'})}</span></p>
-                    <p className="text-sm text-slate-500">Kelas: <span className="font-medium text-slate-700">{grade}</span></p>
-                  </div>
-                  <div className="mt-4 sm:mt-0 sm:ml-4 flex-shrink-0">
-                      <button
-                          onClick={(e) => handleEdit(e, selectedTP)}
-                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white text-blue-600 font-semibold rounded-md border border-blue-300 shadow-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      >
-                          <EditIcon className="w-4 h-4" />
-                          Edit
-                      </button>
-                  </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <button
-                  onClick={() => setIsCpInfoVisible(!isCpInfoVisible)}
-                  className="flex items-center gap-2 text-teal-600 hover:text-teal-800 font-semibold text-sm w-full text-left p-2 rounded-md hover:bg-teal-50"
-                  aria-expanded={isCpInfoVisible}
-                >
-                  {isCpInfoVisible ? <ChevronUpIcon className="w-5 h-5"/> : <ChevronDownIcon className="w-5 h-5"/>}
-                  <span>{isCpInfoVisible ? 'Sembunyikan' : 'Tampilkan'} Detail CP & Catatan</span>
-                </button>
-              </div>
-
-              <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isCpInfoVisible ? 'max-h-[1000px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
-                <div className="mb-4">
-                  <h4 className="font-semibold text-slate-600">Capaian Pembelajaran & Elemen:</h4>
-                  <div className="mt-2 space-y-3">
-                  {cpElements.map((item, index) => (
-                      <div key={index} className="p-3 bg-slate-50 rounded-md border">
-                          <p className="font-semibold text-slate-700">{item.element}</p>
-                          <p className="text-slate-600 whitespace-pre-wrap mt-1">{item.cp}</p>
-                      </div>
-                  ))}
-                  </div>
-                </div>
-                
-                {additionalNotes && (
-                  <div className="mb-4">
-                    <h4 className="font-semibold text-slate-600">Catatan Tambahan:</h4>
-                    <p className="text-slate-700 whitespace-pre-wrap p-3 bg-slate-50 rounded-md border">{additionalNotes}</p>
-                  </div>
-                )}
-              </div>
-              
-              <div className="border-t mt-4 pt-4">
-                  <SemesterDisplay title="Semester Ganjil" groups={ganjilTPs} />
-                  <SemesterDisplay title="Semester Genap" groups={genapTPs} numberingOffset={ganjilMateriCount} />
-              </div>
+            
+            <div className="mt-8">
+              <SemesterDisplay title="Semester Ganjil" groups={ganjilGroups} onCopy={handleCopy}/>
+              <SemesterDisplay title="Semester Genap" groups={genapGroups} numberingOffset={ganjilGroups.length} onCopy={handleCopy}/>
             </div>
           </div>
         );
@@ -761,76 +907,60 @@ const App: React.FC = () => {
         if (!selectedTP) return null;
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
-            <div className="flex justify-between items-center mb-6">
-              <button onClick={() => setView('view_tp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold"><BackIcon className="w-5 h-5" /> Kembali ke Detail TP</button>
-            </div>
-            
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-800">Daftar Alur Tujuan Pembelajaran (ATP)</h1>
-                <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
-              </div>
-              <button onClick={handleCreateNewAtp} disabled={atpGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
-                  <SparklesIcon className="w-5 h-5"/> Buat ATP Baru dengan AI
-              </button>
+                <div>
+                  <button onClick={() => setView('view_tp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
+                      <BackIcon className="w-5 h-5" />
+                      Kembali ke Detail TP
+                  </button>
+                  <h1 className="text-3xl font-bold text-slate-800">Alur Tujuan Pembelajaran (ATP)</h1>
+                  <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+                </div>
+                <button onClick={handleCreateNewAtp} disabled={atpGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                    <SparklesIcon className="w-5 h-5"/>
+                    Buat ATP Baru dengan AI
+                </button>
             </div>
-            
-             {atpError && (
+            {atpError && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
-                  <div className="flex">
-                      <div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div>
-                      <div className="ml-3">
-                          <h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3>
-                          <div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{atpError}</p></div>
-                      </div>
-                  </div>
+                  <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{atpError}</p></div></div></div>
                   <button onClick={() => setAtpError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
               </div>
             )}
-            
-            {dataLoading ? (
-              <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data ATP...</p></div>
-            ) : atps.length === 0 && !atpError ? (
-              <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Belum Ada ATP</h3><p className="text-slate-500 mt-2">Belum ada ATP yang dibuat untuk set TP ini.</p><p className="text-slate-500">Silakan klik tombol "Buat ATP Baru" untuk memulai.</p></div>
-            ) : (
-                <div className="space-y-4">
-                  {atps.map(atp => (
-                      <div key={atp.id} className="bg-white rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl p-4 flex justify-between items-center">
-                         <div onClick={() => handleViewAtpDetail(atp)} className="cursor-pointer flex-grow hover:text-teal-600">
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
-                                <span>Dibuat pada: <span className="font-medium text-slate-600">{new Date(atp.createdAt).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short'})}</span></span>
-                                <span>Oleh: <span className="font-medium text-slate-600">{atp.creatorName}</span></span>
-                            </div>
-                         </div>
-                          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                              <button onClick={(e) => handleEditATP(e, atp)} className="p-2 text-blue-500 hover:bg-blue-100 rounded-full" title="Edit ATP"><EditIcon className="w-5 h-5"/></button>
-                              <button onClick={(e) => handleDeleteATP(e, atp)} className="p-2 text-red-500 hover:bg-red-100 rounded-full" title="Hapus ATP"><TrashIcon className="w-5 h-5"/></button>
-                          </div>
-                      </div>
-                  ))}
+             {transientMessage && (
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left relative">
+                    <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-blue-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-blue-800">Informasi</h3><div className="mt-2 text-sm text-blue-700"><p>{transientMessage}</p></div></div></div>
+                    <button onClick={() => setTransientMessage(null)} className="absolute top-2 right-2 p-1.5 text-blue-500 hover:bg-blue-200 rounded-full" title="Tutup"><CloseIcon className="w-5 h-5" /></button>
                 </div>
+            )}
+            {dataLoading ? (
+                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data ATP...</p></div>
+            ) : atps.length > 0 ? (
+                <div className="space-y-4">
+                {atps.map((atp) => (
+                    <div key={atp.id} onClick={() => handleViewAtpDetail(atp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-indigo-500 transition-all duration-300 cursor-pointer">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800">Versi ATP Dibuat oleh: {atp.creatorName}</h3>
+                            <p className="text-sm text-slate-500">Total {atp.content.length} alur tujuan pembelajaran</p>
+                            <p className="text-xs text-slate-400 mt-2">Dibuat pada: {new Date(atp.createdAt).toLocaleString('id-ID')}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                           <button onClick={(e) => handleEditATP(e, atp)} title="Edit ATP" className="p-2 text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-full"><EditIcon className="w-5 h-5"/></button>
+                           <button onClick={(e) => handleDeleteATP(e, atp)} title="Hapus ATP" className="p-2 text-red-600 bg-red-100 hover:bg-red-200 rounded-full"><TrashIcon className="w-5 h-5"/></button>
+                        </div>
+                    </div>
+                    </div>
+                ))}
+                </div>
+            ) : (
+                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Belum Ada ATP</h3><p className="text-slate-500 mt-2">Belum ada Alur Tujuan Pembelajaran yang dibuat untuk set TP ini.</p><p className="text-slate-500">Silakan klik tombol "Buat ATP Baru" untuk memulai.</p></div>
             )}
           </div>
         );
       
       case 'view_atp_detail':
         if (!selectedATP || !selectedTP) return null;
-
-        // Create a map from TP text to its hierarchical code (e.g., "1.1")
-        const tpCodeMap = new Map<string, string>();
-        if (selectedTP) {
-          let materiPokokNumber = 1;
-          selectedTP.tpGroups.forEach(group => {
-            let tpCounterWithinGroup = 1;
-            group.subMateriGroups.forEach(subGroup => {
-              subGroup.tps.forEach(tpText => {
-                tpCodeMap.set(tpText, `${materiPokokNumber}.${tpCounterWithinGroup++}`);
-              });
-            });
-            materiPokokNumber++;
-          });
-        }
-
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 <div className="print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -839,100 +969,200 @@ const App: React.FC = () => {
                         Kembali ke Daftar ATP
                     </button>
                     <div className="flex items-center gap-3">
+                         {protas.length > 0 ? (
+                            <button onClick={() => setView('view_prota_list')} className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700">
+                                <BookOpenIcon className="w-5 h-5" /> Lihat PROTA
+                            </button>
+                        ) : (
+                            <button onClick={handleCreateNewProta} disabled={protaGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                                <SparklesIcon className="w-5 h-5" /> Buat PROTA dari ATP Ini
+                            </button>
+                        )}
                         <button onClick={handleExportAtpToWord} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                         </button>
                     </div>
                 </div>
 
+                {protaError && (
+                  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                      <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Gagal Membuat PROTA</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{protaError}</p></div></div></div>
+                      <button onClick={() => setProtaError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+                  </div>
+                )}
+
                 <div className="bg-white rounded-lg shadow-lg p-6 print:shadow-none print:border">
-                    <h1 className="text-2xl font-bold text-slate-800 mb-1 text-center">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
-                    <table className="text-sm mx-auto my-4" style={{ border: 'none' }}>
-                        <tbody>
-                            <tr>
-                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Nama Madrasah</td>
-                                <td style={{ border: 'none', padding: '2px 8px' }}>: MTsN 4 Jombang</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Mata Pelajaran</td>
-                                <td style={{ border: 'none', padding: '2px 8px' }}>: {selectedATP.subject}</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Kelas/Fase</td>
-                                <td style={{ border: 'none', padding: '2px 8px' }}>: {selectedTP.grade}/Fase D</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: 'none', padding: '2px 8px', fontWeight: 'normal' }}>Tahun Pelajaran</td>
-                                <td style={{ border: 'none', padding: '2px 8px' }}>: 2025/2026</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <h1 className="text-2xl font-bold text-slate-800 text-center print:text-3xl">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
+                    <div className="my-6 w-full max-w-md mx-auto print:max-w-full">
+                         <table className="w-full text-sm">
+                            <tbody>
+                                <tr>
+                                    <td className="font-semibold pr-4 py-1 whitespace-nowrap w-1/3">Nama Madrasah</td>
+                                    <td className="w-2/3">: MTsN 4 Jombang</td>
+                                </tr>
+                                <tr>
+                                    <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
+                                    <td>: {selectedATP.subject}</td>
+                                </tr>
+                                <tr>
+                                    <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
+                                    <td>: {selectedTP.grade} / Fase D</td>
+                                </tr>
+                                <tr>
+                                    <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
+                                    <td>: 2025/2026</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                     
+                    <div className="my-6 p-4 border-2 border-dashed border-slate-300 rounded-md bg-slate-50 print:border-solid print:border-black">
+                        <h3 className="text-lg font-bold text-slate-700 mb-3">Capaian Pembelajaran (CP) Acuan</h3>
+                        <div className="space-y-4 text-sm">
+                            {selectedTP.cpElements.map((item, index) => (
+                                <div key={index}>
+                                    <p className="font-semibold text-slate-800">{item.element}</p>
+                                    <p className="text-slate-600 mt-1">{item.cp}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="overflow-x-auto mt-4">
                         <table className="min-w-full bg-white border border-slate-300 text-sm">
                             <thead className="bg-slate-100 text-left">
                                 <tr>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-12 text-center">No.</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-1/4">Capaian Pembelajaran (CP)</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-1/6">Topik Materi</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-1/3">Tujuan Pembelajaran (TP)</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center">Kode TP</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-24">Semester</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-12 text-center">No. ATP</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/4">Topik/Materi</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/2">Tujuan Pembelajaran (TP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-16 text-center">Kode TP</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center">Semester</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
-                                {selectedATP.content.map((row, index) => (
-                                    <tr key={index} className="hover:bg-slate-50">
-                                        <td className="px-3 py-2 align-top border-r text-center">{index + 1}</td>
-                                        <td className="px-3 py-2 align-top border-r">{row.cp}</td>
+                                {selectedATP.content.map((row) => (
+                                    <tr key={row.atpSequence} className="hover:bg-slate-50">
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.atpSequence}</td>
                                         <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
                                         <td className="px-3 py-2 align-top border-r">{row.tp}</td>
-                                        <td className="px-3 py-2 align-top border-r text-center font-semibold">{tpCodeMap.get(row.tp) || row.atpSequence}</td>
-                                        <td className="px-3 py-2 align-top">{row.semester}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.kodeTp}</td>
+                                        <td className="px-3 py-2 align-top text-center">{row.semester}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
-
-                    <table className="w-full mt-12 text-sm" style={{ border: 'none' }}>
-                        <tbody>
-                            <tr>
-                                <td className="w-1/2 text-center" style={{ border: 'none', verticalAlign: 'top' }}>
-                                    Mengetahui,<br/>
-                                    Kepala Madrasah
-                                    <br/><br/><br/><br/><br/>
-                                    <strong><u>Sulthon Sulaiman, M.Pd.I</u></strong><br/>
-                                    NIP. 198106162005011003
-                                </td>
-                                <td className="w-1/2 text-center" style={{ border: 'none', verticalAlign: 'top' }}>
-                                    Jombang, {new Date(selectedATP.createdAt).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric'})}<br/>
-                                    Guru Mapel
-                                    <br/><br/><br/><br/><br/>
-                                    <strong><u>{selectedATP.creatorName}</u></strong><br/>
-                                    NIP. .........................
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </div>
         );
 
+      case 'view_prota_list':
+        if (!selectedTP) return null;
+        const protaExists = protas.length > 0;
+        const currentProta = protaExists ? protas[0] : null;
+        const totalJp = protaExists ? currentProta!.content.reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0) : 0;
+
+        return (
+          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+            <div className="flex justify-between items-center mb-6">
+               <button onClick={handleBackFromProta} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                  <BackIcon className="w-5 h-5" /> 
+                  {selectedATP ? 'Kembali ke Detail ATP' : 'Kembali ke Daftar TP'}
+               </button>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-800">Program Tahunan (PROTA)</h1>
+                <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {protaExists && (
+                  <>
+                    <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                      <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                    </button>
+                    <button onClick={handleExportProtaToWord} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                      <DownloadIcon className="w-5 h-5"/> Ekspor ke Word
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {protaError && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                  <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Terjadi Kesalahan</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{protaError}</p></div></div></div>
+                  <button onClick={() => setProtaError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+              </div>
+            )}
+            
+            {dataLoading ? (
+                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data PROTA...</p></div>
+            ) : !protaExists ? (
+                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
+                    <h3 className="text-xl font-semibold text-slate-700">Belum Ada PROTA</h3>
+                    <p className="text-slate-500 mt-2 max-w-xl mx-auto">Program Tahunan (PROTA) dibuat berdasarkan Alur Tujuan Pembelajaran (ATP). Silakan pilih ATP terlebih dahulu.</p>
+                    <button 
+                        onClick={() => setView('view_atp_list')} 
+                        className="mt-6 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700"
+                    >
+                        <FlowChartIcon className="w-5 h-5"/>
+                        Pilih ATP untuk Membuat PROTA
+                    </button>
+                </div>
+            ) : (
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                    <div className="overflow-x-auto mt-4">
+                        <table className="min-w-full bg-white border border-slate-300 text-sm">
+                            <thead className="bg-slate-100 text-left">
+                                <tr>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-10 text-center">No</th>
+                                    <th className="px-3 py-2 border-b border-slate-300">Topik / Materi Pokok</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Alur Tujuan Pembelajaran</th>
+                                    <th className="px-3 py-2 border-b border-slate-300">Tujuan Pembelajaran</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Alokasi Waktu</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Semester</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                                {currentProta!.content.map((row, index) => (
+                                    <tr key={index} className="hover:bg-slate-50">
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.no}</td>
+                                        <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.alurTujuanPembelajaran}</td>
+                                        <td className="px-3 py-2 align-top border-r">{row.tujuanPembelajaran}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.alokasiWaktu}</td>
+                                        <td className="px-3 py-2 align-top text-center">{row.semester}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                             <tfoot className="bg-slate-100 font-bold">
+                                <tr>
+                                    <td colSpan={4} className="px-3 py-2 text-right border-r">Total Jam Pertemuan (JP)</td>
+                                    <td className="px-3 py-2 text-center border-r">{totalJp} JP</td>
+                                    <td className="px-3 py-2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            )}
+          </div>
+        );
+
       case 'create_tp':
       case 'edit_tp':
-        if (!selectedSubject) return null;
         return <TPEditor 
                 mode={view === 'create_tp' ? 'create' : 'edit'}
                 initialData={editingTP || undefined}
-                subject={selectedSubject}
+                subject={selectedSubject!}
                 onSave={handleSave}
                 onCancel={() => setView('view_tp_list')}
                />;
       case 'edit_atp':
-        if (!editingATP) return null;
         return <ATPEditor 
-          initialData={editingATP}
+          initialData={editingATP!}
           onSave={handleSaveATP}
           onCancel={() => setView('view_atp_list')}
         />;
@@ -944,33 +1174,18 @@ const App: React.FC = () => {
   return (
     <div className="bg-slate-100 min-h-screen">
       <Header />
-
       {copyNotification && (
-          <div className="fixed top-5 right-5 bg-teal-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-transform transform animate-pulse">
+          <div className="fixed top-24 right-6 bg-slate-800 text-white text-sm font-semibold py-2 px-4 rounded-md shadow-lg z-50 animate-fade-in-out">
               {copyNotification}
           </div>
       )}
-      
-      {authPrompt && (
+       {authPrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-            <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
-            <div className="text-sm text-slate-600 mb-4">
-                <p>
-                  Untuk {
-                    authPrompt.action === 'create_atp' ? 'membuat ATP baru dari TP ini' :
-                    authPrompt.action === 'edit' ? `mengedit data ${authPrompt.type.toUpperCase()} ini` :
-                    `menghapus data ${authPrompt.type.toUpperCase()} ini`
-                  }, silakan masukkan email guru yang membuatnya: <span className="font-semibold">{authPrompt.type === 'tp' ? (authPrompt.data as TPData).creatorName : selectedTP?.creatorName}</span>.
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+                <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
+                <p className="text-sm text-slate-600 mb-4">
+                    Untuk {authPrompt.action === 'delete' ? 'menghapus' : authPrompt.action === 'edit' ? 'mengedit' : 'membuat turunan data'}, silakan masukkan email yang Anda gunakan saat membuat data ini.
                 </p>
-                {authPrompt.action === 'delete' && authPrompt.type === 'tp' && (
-                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
-                        <p className="font-bold text-red-800">Peringatan Penting</p>
-                        <p className="text-red-700">Menghapus TP ini juga akan menghapus <strong>semua Alur Tujuan Pembelajaran (ATP)</strong> yang terkait secara permanen. Tindakan ini tidak dapat diurungkan.</p>
-                    </div>
-                )}
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); handleAuthSubmit(); }}>
                 <input
                     type="email"
                     value={authEmailInput}
@@ -978,45 +1193,70 @@ const App: React.FC = () => {
                     placeholder="Masukkan email pembuat"
                     className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
                     autoFocus
-                    disabled={isAuthorizing}
                 />
-                {authError && (
-                  <p className="text-red-600 text-sm mt-2">{authError}</p>
-                )}
+                {authError && <p className="text-red-600 text-sm mt-2">{authError}</p>}
                 <div className="mt-6 flex justify-end gap-3">
-                    <button type="button" onClick={() => setAuthPrompt(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300" disabled={isAuthorizing}>
+                    <button onClick={() => setAuthPrompt(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
                     Batal
                     </button>
-                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400 disabled:cursor-wait w-32 text-center" disabled={isAuthorizing}>
-                      {isAuthorizing ? (
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
-                      ) : (
-                          'Konfirmasi'
-                      )}
+                    <button onClick={handleAuthSubmit} disabled={isAuthorizing} className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
+                    {isAuthorizing ? 'Memverifikasi...' : 'Lanjutkan'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+      {atpGenerationProgress.isLoading && (
+        <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
+            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
+                <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
+                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang bekerja...</h3>
+                <p className="text-slate-600 mt-2">Harap tunggu, Alur Tujuan Pembelajaran sedang dibuat berdasarkan data TP Anda.</p>
+                <div className="mt-6 w-full">
+                    <div className="bg-slate-200 rounded-full h-2.5"><div className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${atpGenerationProgress.progress}%` }}></div></div>
+                    <p className="text-teal-700 font-semibold mt-3 text-sm">{atpGenerationProgress.message} ({atpGenerationProgress.progress}%)</p>
+                </div>
+            </div>
+        </div>
+      )}
+       {isProtaJpModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+            <h3 className="text-lg font-bold mb-2 text-slate-800">Input Jam Pertemuan</h3>
+            <p className="text-sm text-slate-600 mb-4">
+                Masukkan jumlah Jam Pertemuan (JP) per minggu untuk mata pelajaran <span className="font-semibold">{selectedSubject}</span>. Data ini akan digunakan oleh AI untuk menghitung alokasi waktu.
+            </p>
+            <form onSubmit={(e) => { e.preventDefault(); handleProtaGenerationSubmit(); }}>
+                <input
+                    type="number"
+                    value={protaJpInput}
+                    onChange={(e) => setProtaJpInput(e.target.value === '' ? '' : parseInt(e.target.value))}
+                    placeholder="Contoh: 3"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+                    min="1"
+                    autoFocus
+                />
+                <div className="mt-6 flex justify-end gap-3">
+                    <button type="button" onClick={() => setIsProtaJpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                    Batal
+                    </button>
+                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
+                      Hasilkan PROTA
                     </button>
                 </div>
             </form>
           </div>
         </div>
       )}
-      
-      {atpGenerationProgress.isLoading && (
+      {protaGenerationProgress.isLoading && (
          <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
             <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
                 <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
-                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang bekerja...</h3>
-                <p className="text-slate-600 mt-2">Harap tunggu, ATP sedang dibuat berdasarkan TP yang Anda susun.</p>
-                
+                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang menyusun PROTA...</h3>
+                <p className="text-slate-600 mt-2">Harap tunggu, Program Tahunan sedang dibuat berdasarkan data TP Anda.</p>
                 <div className="mt-6 w-full">
-                    <div className="bg-slate-200 rounded-full h-2.5">
-                        <div 
-                            className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" 
-                            style={{ width: `${atpGenerationProgress.progress}%` }}
-                        ></div>
-                    </div>
-                    <p className="text-teal-700 font-semibold mt-3 text-sm">
-                        {atpGenerationProgress.message} ({atpGenerationProgress.progress}%)
-                    </p>
+                    <div className="bg-slate-200 rounded-full h-2.5"><div className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${protaGenerationProgress.progress}%` }}></div></div>
+                    <p className="text-teal-700 font-semibold mt-3 text-sm">{protaGenerationProgress.message} ({protaGenerationProgress.progress}%)</p>
                 </div>
             </div>
         </div>

@@ -1,3 +1,5 @@
+
+
 export interface SubMateriGroup {
   subMateri: string;
   tps: string[];
@@ -25,9 +27,9 @@ export interface TPData {
 }
 
 export interface ATPTableRow {
-  cp: string;
   topikMateri: string;
   tp: string;
+  kodeTp: string;
   atpSequence: number;
   semester: 'Ganjil' | 'Genap';
 }
@@ -42,4 +44,23 @@ export interface ATPData {
   createdAt: string;
 }
 
-export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp';
+export interface PROTARow {
+  no: number | string;
+  topikMateri: string;
+  alurTujuanPembelajaran: string; // ATP codes like "1.1, 1.2"
+  tujuanPembelajaran: string; // The full TP text
+  alokasiWaktu: string; // e.g., "4 JP" or "120 Menit"
+  semester: 'Ganjil' | 'Genap';
+}
+
+export interface PROTAData {
+  id: string;
+  tpId: string;
+  subject: string;
+  jamPertemuan: number; // Store the JP used for generation
+  content: PROTARow[];
+  creatorName: string;
+  createdAt: string;
+}
+
+export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list';

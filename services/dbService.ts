@@ -1,3 +1,4 @@
+
 // ====================================================================================
 // PENTING: Layanan ini sekarang menggunakan Google Sheets sebagai database.
 // Ini memerlukan skrip Google Apps Script yang disebarkan sebagai aplikasi web
@@ -7,10 +8,10 @@
 // FIX: Explicitly type GOOGLE_APPS_SCRIPT_URL as string to prevent a compile-time error
 // on the validation check below. The compiler is smart enough to know the two const
 // literals are different, but we want to keep the check for future developers.
-const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbw92L7ROQoEGvHJo2RUGcPwk1TvH5ay3KYzBM-dqS44u3GnvjmiSGoDeaBncSSiq7Yk/exec';
+const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycby3TkDWG4P5kWFSGw_SlJTi6X_Y7zTUhoNlRNG0z1MlKcEqEM9gK4uopHzR9bkpgvE/exec';
 const PLACEHOLDER_URL = '';
 
-import { TPData, ATPData } from '../types';
+import { TPData, ATPData, PROTAData } from '../types';
 
 // FIX: Changed `params` type from `object` to `Record<string, any>` to allow safe spreading.
 const apiRequest = async (action: string, method: 'GET' | 'POST', params: Record<string, any> = {}) => {
@@ -117,4 +118,26 @@ export const deleteATP = (id: string): Promise<{ success: boolean }> => {
 
 export const updateATP = (id: string, data: Partial<ATPData>): Promise<ATPData> => {
     return apiRequest('updateATP', 'POST', { id, data });
+};
+
+// --- PROTA Functions ---
+export const deletePROTAsByTPId = (tpId: string): Promise<{ success: boolean }> => {
+    return apiRequest('deletePROTAsByTPId', 'POST', { tpId });
+};
+
+export const getPROTAsByTPId = async (tpId: string): Promise<PROTAData[]> => {
+    const data = await apiRequest('getPROTAsByTPId', 'GET', { tpId });
+    return Array.isArray(data) ? data : [];
+};
+
+export const savePROTA = (data: Omit<PROTAData, 'id' | 'createdAt'>): Promise<PROTAData> => {
+    return apiRequest('savePROTA', 'POST', { data });
+};
+
+export const deletePROTA = (id: string): Promise<{ success: boolean }> => {
+    return apiRequest('deletePROTA', 'POST', { id });
+};
+
+export const updatePROTA = (id: string, data: Partial<PROTAData>): Promise<PROTAData> => {
+    return apiRequest('updatePROTA', 'POST', { id, data });
 };

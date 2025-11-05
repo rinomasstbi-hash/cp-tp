@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { TPGroup, TPData, ATPTableRow } from "../types";
+import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData } from "../types";
 
 // The 'ai' instance is no longer created here at the top level.
 
@@ -39,6 +40,7 @@ ${cpElementsString}
     4.  **Progresi & HOTS:** Dalam lingkup setiap sub-materi, rancang TP secara berurutan. TP awal untuk pemahaman dasar, diikuti oleh TP untuk penerapan. Pastikan **satu atau dua TP terakhir** untuk setiap sub-materi adalah HOTS (level C4-C6 Taksonomi Bloom revisi).
     5.  **Format ABCD:** Setiap TP HARUS ditulis dalam format ABCD (Audience, Behavior, Condition, Degree), diawali dengan "Murid dapat...". Contoh: "Murid dapat menganalisis (B) tiga perbedaan utama antara sel hewan dan sel tumbuhan (D) setelah melakukan pengamatan menggunakan mikroskop (C)."
     6.  **Format Output JSON:** Hasilkan respons HANYA dalam format JSON yang valid. Strukturnya harus berupa array objek. Setiap objek merepresentasikan satu MATERI POKOK dan memiliki properti: "semester", "materi", dan "subMateriGroups". "subMateriGroups" adalah sebuah array objek, di mana setiap objek merepresentasikan satu SUB-MATERI dan memiliki properti "subMateri" dan "tps".
+    7.  **Aturan Escaping JSON:** Jika ada teks yang Anda hasilkan (terutama di dalam properti "tps") yang mengandung karakter kutip ganda ("), Anda WAJIB melakukan escaping dengan menambahkan backslash sebelumnya (contoh: \\"). Ini untuk memastikan output JSON selalu valid.
 
     Contoh Format Output JSON:
     [
@@ -205,73 +207,209 @@ ${cpElementsString}
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    // Combine all CP elements into a single string for context.
-    const cpContext = JSON.stringify(tpData.cpElements, null, 2);
-    const tpContext = JSON.stringify(tpData.tpGroups, null, 2);
+    // Step 1: Create the "source of truth" data structure locally. This contains all TP info.
+    const tpCodeMap = new Map<string, string>();
+    let materiPokokNumber = 1;
+    tpData.tpGroups.forEach(group => {
+        let tpCounterWithinGroup = 1;
+        group.subMateriGroups.forEach(subGroup => {
+            subGroup.tps.forEach(tpText => {
+                tpCodeMap.set(tpText, `${materiPokokNumber}.${tpCounterWithinGroup++}`);
+            });
+        });
+        materiPokokNumber++;
+    });
+
+    const sourceOfTruthData = tpData.tpGroups.flatMap(group => 
+        group.subMateriGroups.flatMap(subGroup => 
+            subGroup.tps.map(tp => ({
+                semester: group.semester,
+                materi: group.materi,
+                tpText: tp,
+                tpCode: tpCodeMap.get(tp) || 'N/A'
+            }))
+        )
+    );
+
+    // Step 2: Create a data structure for the AI with indices and text.
+    const tpsForAI = sourceOfTruthData.map((d, index) => ({
+        index: index,
+        tp: d.tpText
+    }));
 
     const prompt = `
-    Anda adalah seorang ahli perancangan kurikulum pendidikan di Indonesia yang sangat teliti dan akurat.
-    Tugas Anda adalah mengubah data Tujuan Pembelajaran (TP) menjadi format tabel Alur Tujuan Pembelajaran (ATP) dalam bentuk JSON. Fokus utama Anda adalah memetakan setiap TP ke Capaian Pembelajaran (CP) yang paling relevan.
+    Anda adalah seorang ahli perancangan kurikulum dan pedagogi di Indonesia.
+    Tugas Anda adalah menyusun Alur Tujuan Pembelajaran (ATP) yang logis dari sekumpulan Tujuan Pembelajaran (TP) yang tidak berurutan.
 
     Konteks:
     - Mata Pelajaran: ${tpData.subject}
     - Kelas: ${tpData.grade}
-    - Daftar Capaian Pembelajaran (CP) yang menjadi acuan. Ini adalah sumber kebenaran untuk kolom 'cp':
+    - Berikut adalah daftar lengkap Tujuan Pembelajaran (TP) yang perlu Anda susun. Setiap TP memiliki 'index' asli.
     \`\`\`json
-    ${cpContext}
-    \`\`\`
-    - Data Tujuan Pembelajaran (TP) yang perlu dianalisis dan dikonversi:
-    \`\`\`json
-    ${tpContext}
+    ${JSON.stringify(tpsForAI, null, 2)}
     \`\`\`
 
     Instruksi Wajib (Ikuti dengan SANGAT SEKSAMA):
-    1.  **Struktur Output:** Hasilkan sebuah array JSON. Setiap objek dalam array merepresentasikan satu baris tabel ATP, yang sesuai dengan satu TP dari input.
-    2.  **Urutan Presisi:** Proses semua TP **secara berurutan** sesuai urutan yang diberikan dalam data input. **JANGAN MENGUBAH URUTAN TP YANG SUDAH ADA.** Urutan output harus sama persis dengan urutan TP di input.
-    3.  **Penomoran ATP:** Buat kolom "atpSequence" yang merupakan nomor urut berkelanjutan (dimulai dari 1, 2, 3, ...) untuk keseluruhan alur.
+    1.  **Analisis Menyeluruh:** Baca dan pahami setiap TP dalam daftar. Identifikasi keterkaitan antar TP, tingkat kesulitannya (dari konkret ke abstrak, dari mudah ke sulit), dan prasyarat pengetahuan.
+    2.  **Prinsip Penyusunan Alur:** Susun ulang TP-TP tersebut ke dalam urutan yang paling logis untuk diajarkan.
+    3.  **FOKUS PADA INDEKS:** Hasil akhir Anda HARUS berupa sebuah array JSON yang berisi **HANYA ANGKA-ANGKA** dari properti \`index\` asli, tetapi dalam URutan BARU yang sudah Anda tentukan. JANGAN mengembalikan teks TP.
+    4.  **Kelengkapan:** Pastikan jumlah indeks dalam output Anda sama persis dengan jumlah TP dalam input. Tidak boleh ada indeks yang hilang atau diduplikasi.
+    5.  **Format Output JSON Sederhana:** Hasilkan HANYA sebuah array JSON berisi ANGKA (integer).
+
+    Contoh Format Input:
+    [
+      { "index": 0, "tp": "TP tentang konsep dasar." },
+      { "index": 1, "tp": "TP tentang penerapan konsep." },
+      { "index": 2, "tp": "TP tentang evaluasi konsep." }
+    ]
+
+    Contoh Format Output JSON yang Diharapkan (jika urutannya tetap sama):
+    [
+      0,
+      1,
+      2
+    ]
     
-    4.  **ATURAN PEMETAAN CP PER BARIS (PALING PENTING):**
-        Prinsipnya adalah **akurasi baris-demi-baris**.
-        a. Untuk **SETIAP** Tujuan Pembelajaran (TP) dari data input, Anda harus menganalisis teks TP tersebut secara individual.
-        b. Bandingkan teks TP individual tersebut dengan daftar CP yang tersedia dalam konteks.
-        c. Pilih **SATU** CP yang paling relevan dan paling cocok untuk TP tersebut.
-        d. Salin teks CP yang lengkap dan **SAMA PERSIS** dari daftar acuan ke dalam kolom \`cp\` untuk baris TP yang sedang Anda proses.
-        e. **PENTING:** Jangan berasumsi semua TP dalam satu 'materi' memiliki CP yang sama. Lakukan analisis individu untuk setiap TP untuk memastikan akurasi maksimal.
+    Contoh Format Output JSON yang Diharapkan (jika urutannya diubah):
+    [
+      1,
+      0,
+      2
+    ]
 
-    5.  **Pemetaan Kolom Lainnya:**
-        - \`cp\`: Teks CP lengkap yang sudah Anda tentukan untuk TP spesifik tersebut, sesuai Aturan #4.
-        - \`topikMateri\`: Salin nama \`materi\` dari data input yang menjadi induk dari TP tersebut.
-        - \`tp\`: Salin teks lengkap dari Tujuan Pembelajaran.
-        - \`atpSequence\`: Nomor urut alur (integer).
-        - \`semester\`: Salin "Ganjil" atau "Genap" dari data input yang menjadi induk dari TP tersebut.
-    6.  **Kelengkapan:** Pastikan setiap TP yang ada di input muncul tepat satu kali di output.
+    PENTING: Hasilkan HANYA output JSON array berisi ANGKA yang valid tanpa teks pembuka, penutup, atau markdown.
+    `;
 
-    Contoh Format Output JSON:
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.NUMBER,
+                    }
+                }
+            }
+        });
+        
+        let jsonStr = response.text.trim();
+        if (jsonStr.startsWith("```json")) {
+            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
+        } else if (jsonStr.startsWith("```")) {
+            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
+        }
+
+        const reorderedIndices = JSON.parse(jsonStr) as number[];
+
+        // Step 3: Critical post-processing and validation on indices.
+        if (!Array.isArray(reorderedIndices) || !reorderedIndices.every(i => typeof i === 'number')) {
+            console.error("Unexpected AI JSON structure for ATP sequencing:", reorderedIndices);
+            throw new Error("Struktur JSON pengurutan ATP yang dihasilkan AI tidak sesuai format array angka yang diharapkan.");
+        }
+        
+        if (reorderedIndices.length !== sourceOfTruthData.length) {
+            throw new Error(`Inkonsistensi data dari AI: Jumlah TP yang dikirim (${sourceOfTruthData.length}) tidak cocok dengan jumlah indeks yang diurutkan kembali (${reorderedIndices.length}). Coba generate lagi.`);
+        }
+        
+        const originalIndicesSet = new Set(sourceOfTruthData.map((_, i) => i));
+        const returnedIndicesSet = new Set(reorderedIndices);
+
+        if (returnedIndicesSet.size !== originalIndicesSet.size) {
+            throw new Error("Inkonsistensi data dari AI: Terdeteksi ada indeks TP yang hilang atau diduplikasi dalam respons. Coba generate lagi.");
+        }
+
+        for (const index of reorderedIndices) {
+            if (!originalIndicesSet.has(index)) {
+                throw new Error(`Inkonsistensi data dari AI: AI mengembalikan indeks tidak valid (${index}) yang tidak ada di input asli. Coba generate lagi.`);
+            }
+        }
+
+
+        // Step 4: Reconstruct the full ATP table using the new, validated order of indices.
+        const finalATPTable: ATPTableRow[] = reorderedIndices.map((originalIndex, newSequenceIndex) => {
+            const originalData = sourceOfTruthData[originalIndex];
+            if (!originalData) {
+                // This case should be prevented by the validation above, but it's a safe fallback.
+                throw new Error(`Kesalahan internal: Tidak dapat menemukan data asli untuk indeks: ${originalIndex}`);
+            }
+            
+            return {
+                topikMateri: originalData.materi,
+                tp: originalData.tpText,
+                kodeTp: originalData.tpCode,
+                atpSequence: newSequenceIndex + 1, // The new sequence is based on the reordered array index.
+                semester: originalData.semester,
+            };
+        });
+        
+        return finalATPTable;
+
+    } catch (error: any) {
+        console.error("Error generating ATP:", error);
+         if (error instanceof SyntaxError) {
+            throw new Error("Gagal memproses respons pengurutan ATP dari AI karena format tidak valid. Silakan coba generate lagi.");
+        }
+        throw new Error(`Gagal menghasilkan alur ATP dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
+    }
+};
+
+
+export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const tpsForAI = atpData.content.map((row, index) => ({
+        index: index,
+        topikMateri: row.topikMateri,
+        tujuanPembelajaran: row.tp,
+    }));
+    
+    const tpsForAIString = JSON.stringify(tpsForAI, null, 2);
+    const totalJpSetahun = jamPertemuan * 32;
+    const totalJpEfektif = totalJpSetahun;
+
+    const prompt = `
+    Anda adalah seorang ahli perancangan kurikulum pendidikan di Indonesia yang sangat teliti dan akurat dalam menghitung alokasi waktu.
+    Tugas Anda adalah memberikan alokasi waktu (dalam Jam Pertemuan atau JP) untuk setiap Tujuan Pembelajaran (TP) yang diberikan.
+
+    Konteks:
+    - Mata Pelajaran: ${atpData.subject}
+    - Jam Pertemuan (JP) per minggu: ${jamPertemuan} JP.
+    - Berikut adalah daftar Tujuan Pembelajaran (TP) yang perlu Anda alokasikan waktunya. Setiap TP memiliki 'index' asli.
+    \`\`\`json
+    ${tpsForAIString}
+    \`\`\`
+
+    Instruksi Wajib (Ikuti dengan SANGAT SEKSAMA):
+    1.  **Pahami Anggaran Waktu:** Total alokasi waktu yang harus Anda distribusikan untuk SEMUA TP adalah **${totalJpEfektif} JP**. Angka ini bersifat final dan jumlah akhir dari alokasi Anda HARUS SAMA PERSIS dengan angka ini. Ini dihitung dari (${jamPertemuan} JP/minggu * 32 minggu efektif).
+    2.  **Proses Berpikir untuk Alokasi (Ikuti Langkah Ini):**
+        a. **Analisis Kompleksitas:** Baca dan analisis setiap TP. Beri bobot pada setiap TP berdasarkan kesulitannya. TP yang memerlukan pemikiran tingkat tinggi (analisis, evaluasi, kreasi C4-C6) atau kegiatan praktik (proyek, eksperimen) harus diberi bobot lebih tinggi. TP yang bersifat pengenalan dasar (mengingat, memahami C1-C2) diberi bobot lebih rendah.
+        b. **Distribusi Proporsional:** Bagikan **${totalJpEfektif} JP** secara proporsional berdasarkan bobot yang telah Anda tentukan. TP dengan bobot lebih tinggi mendapatkan JP lebih banyak (misalnya 4-8 JP), dan TP dengan bobot lebih rendah mendapatkan JP lebih sedikit (misalnya 2-3 JP).
+        c. **Verifikasi Total (LANGKAH KRITIS):** Setelah mendistribusikan JP, JUMLAHKAN semua nilai JP yang telah Anda alokasikan. Jika totalnya tidak sama persis dengan **${totalJpEfektif} JP**, lakukan penyesuaian (tambah atau kurangi JP dari beberapa TP yang paling sesuai) hingga totalnya TEPAT **${totalJpEfektif} JP**.
+    3.  **ATURAN PENTING:**
+        a. **LARANGAN KERAS:** Jangan pernah memberikan alokasi waktu yang seragam untuk semua TP (contoh: semua diberi "2 JP"). Alokasi harus bervariasi dan mencerminkan analisis kompleksitas Anda.
+        b. **Format Alokasi:** Nilai \`alokasiWaktu\` WAJIB berupa string yang berisi angka bulat positif diikuti oleh spasi dan "JP" (contoh: "4 JP").
+    4.  **Format Output JSON:**
+        a. Hasilkan sebuah array JSON.
+        b. Setiap elemen dalam array adalah objek dengan dua properti: \`index\` (salin dari input) dan \`alokasiWaktu\` (hasil perhitungan Anda).
+        c. Urutan objek dalam output HARUS sama dengan urutan input.
+    5.  **ATURAN FINAL:** Output Anda harus **HANYA** berupa array JSON yang valid tanpa teks pembuka, penjelasan, komentar, atau markdown.
+
+    Contoh Format Output JSON yang Diharapkan:
     [
       {
-        "cp": "Pada akhir fase D, peserta didik dapat membaca, menulis, mempresentasikan, dan mengurutkan bilangan bulat, pecahan, desimal, dan bilangan berpangkat.",
-        "topikMateri": "Bilangan",
-        "tp": "Murid dapat menjelaskan konsep bilangan bulat dan posisinya pada garis bilangan dengan benar setelah mengikuti penjelasan guru.",
-        "atpSequence": 1,
-        "semester": "Ganjil"
+        "index": 0,
+        "alokasiWaktu": "4 JP"
       },
       {
-        "cp": "Pada akhir fase D, peserta didik dapat membaca, menulis, mempresentasikan, dan mengurutkan bilangan bulat, pecahan, desimal, dan bilangan berpangkat.",
-        "topikMateri": "Bilangan",
-        "tp": "Murid dapat membandingkan dan mengurutkan bilangan pecahan dengan tepat setelah menggunakan model visual.",
-        "atpSequence": 2,
-        "semester": "Ganjil"
-      },
-      {
-        "cp": "Pada akhir fase D, peserta didik dapat mengenali, menggunakan, dan menginterpretasi variabel dalam ekspresi aljabar.",
-        "topikMateri": "Aljabar",
-        "tp": "Murid dapat mengidentifikasi variabel, koefisien, dan konstanta dalam bentuk aljabar dengan benar setelah diberikan beberapa contoh.",
-        "atpSequence": 3,
-        "semester": "Ganjil"
+        "index": 1,
+        "alokasiWaktu": "6 JP"
       }
     ]
 
-    PENTING: Hasilkan HANYA output JSON array yang valid tanpa teks pembuka, penutup, atau markdown.
+    PENTING: Hasilkan HANYA output JSON array yang valid.
     `;
 
     try {
@@ -285,12 +423,10 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
                     items: {
                         type: Type.OBJECT,
                         properties: {
-                            cp: { type: Type.STRING },
-                            topikMateri: { type: Type.STRING },
-                            tp: { type: Type.STRING },
-                            atpSequence: { type: Type.INTEGER },
-                            semester: { type: Type.STRING },
-                        }
+                            index: { type: Type.NUMBER },
+                            alokasiWaktu: { type: Type.STRING },
+                        },
+                        required: ['index', 'alokasiWaktu'],
                     }
                 }
             }
@@ -303,19 +439,43 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
             jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
         }
 
-        const parsed = JSON.parse(jsonStr);
-        if (Array.isArray(parsed)) {
-            return parsed;
-        } else {
-            console.error("Unexpected AI JSON structure for ATP:", parsed);
-            throw new Error("Struktur JSON ATP yang dihasilkan AI tidak sesuai format array yang diharapkan.");
+        const parsedAllocations = JSON.parse(jsonStr) as { index: number; alokasiWaktu: string }[];
+
+        // --- Post-processing Validation & Reconstruction ---
+        if (!Array.isArray(parsedAllocations) || parsedAllocations.length !== atpData.content.length) {
+            throw new Error(`Respons AI tidak valid. Jumlah alokasi waktu (${parsedAllocations.length}) tidak cocok dengan jumlah TP (${atpData.content.length}).`);
         }
 
+        const finalProtaData: PROTARow[] = atpData.content.map((originalRow, index) => {
+            const allocationData = parsedAllocations[index];
+            let allocatedTime = '2 JP'; // Default value
+
+            // Validate the allocation for this index
+            if (allocationData && allocationData.index === index && typeof allocationData.alokasiWaktu === 'string' && allocationData.alokasiWaktu.match(/^\d+\s*JP$/i)) {
+                allocatedTime = allocationData.alokasiWaktu;
+            } else {
+                console.warn(`Alokasi waktu tidak valid atau indeks tidak cocok untuk index ${index}. Menggunakan nilai default '2 JP'.`, allocationData);
+            }
+            
+            const safeKodeTp = originalRow.kodeTp || String(originalRow.atpSequence || index + 1);
+
+            return {
+                no: index + 1,
+                topikMateri: originalRow.topikMateri,
+                alurTujuanPembelajaran: safeKodeTp,
+                tujuanPembelajaran: originalRow.tp,
+                alokasiWaktu: allocatedTime,
+                semester: originalRow.semester,
+            };
+        });
+
+        return finalProtaData;
+
     } catch (error: any) {
-        console.error("Error generating ATP:", error);
+        console.error("Error generating PROTA:", error);
          if (error instanceof SyntaxError) {
-            throw new Error("Gagal memproses respons ATP dari AI karena format tidak valid. Silakan coba generate lagi.");
+            throw new Error("Gagal memproses respons PROTA dari AI karena format tidak valid. Silakan coba generate lagi.");
         }
-        throw new Error(`Gagal menghasilkan ATP dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
+        throw new Error(`Gagal menghasilkan PROTA dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
     }
 };

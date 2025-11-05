@@ -22,9 +22,9 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
 
     const addRow = () => {
         const newRow: ATPTableRow = {
-            cp: '',
             topikMateri: '',
             tp: '',
+            kodeTp: '',
             atpSequence: content.length + 1, // Will be re-sequenced on save
             semester: 'Ganjil',
         };
@@ -47,8 +47,8 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
 
     const handleSave = async () => {
         setError('');
-        if (content.some(row => !row.cp || !row.tp || !row.topikMateri)) {
-            setError('Semua kolom (CP, Topik Materi, TP) harus diisi untuk setiap baris.');
+        if (content.some(row => !row.tp || !row.topikMateri || !row.kodeTp)) {
+            setError('Semua kolom (Topik Materi, TP, Kode TP) harus diisi untuk setiap baris.');
             return;
         }
 
@@ -84,9 +84,9 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
                         <thead className="bg-slate-100 text-left">
                             <tr>
                                 <th className="px-3 py-2 border-b border-slate-300 w-24">Aksi</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-1/4">Capaian Pembelajaran (CP)</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-1/6">Topik Materi</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-1/3">Tujuan Pembelajaran (TP)</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-1/5">Topik Materi</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-2/5">Tujuan Pembelajaran (TP)</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-20">Kode TP</th>
                                 <th className="px-3 py-2 border-b border-slate-300 w-28">Semester</th>
                             </tr>
                         </thead>
@@ -100,9 +100,9 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
                                             <button onClick={() => removeRow(index)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4" /></button>
                                         </div>
                                     </td>
-                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.cp} onChange={(e) => handleContentChange(index, 'cp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
                                     <td className="px-3 py-2 align-top border-b"><textarea value={row.topikMateri} onChange={(e) => handleContentChange(index, 'topikMateri', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
                                     <td className="px-3 py-2 align-top border-b"><textarea value={row.tp} onChange={(e) => handleContentChange(index, 'tp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
+                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.kodeTp} onChange={(e) => handleContentChange(index, 'kodeTp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
                                     <td className="px-3 py-2 align-top border-b">
                                         <select value={row.semester} onChange={(e) => handleContentChange(index, 'semester', e.target.value)} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500">
                                             <option value="Ganjil">Ganjil</option>
