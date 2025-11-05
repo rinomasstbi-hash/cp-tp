@@ -41,6 +41,7 @@ export interface ATPData {
   subject: string;
   content: ATPTableRow[];
   creatorName: string;
+  creatorEmail: string;
   createdAt: string;
 }
 

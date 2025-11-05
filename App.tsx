@@ -101,7 +101,7 @@ const App: React.FC = () => {
   
   // State for ownership verification modal
   const [authPrompt, setAuthPrompt] = useState<{
-    action: 'edit' | 'delete' | 'create_atp';
+    action: 'edit' | 'delete';
     type: 'tp' | 'atp';
     data: TPData | ATPData;
   } | null>(null);
@@ -117,6 +117,9 @@ const App: React.FC = () => {
   const [selectedATP, setSelectedATP] = useState<ATPData | null>(null);
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
   const [atpError, setAtpError] = useState<string | null>(null);
+  const [isCreateAtpModalOpen, setIsCreateAtpModalOpen] = useState(false);
+  const [atpCreatorInfo, setAtpCreatorInfo] = useState({ name: '', email: '' });
+  const [createAtpError, setCreateAtpError] = useState<string | null>(null);
   
   // State for PROTA Management
   const [protas, setProtas] = useState<PROTAData[]>([]);
@@ -240,7 +243,7 @@ const App: React.FC = () => {
     setView('view_tp_detail');
   };
 
-  const openAuthModal = (action: 'edit' | 'delete' | 'create_atp', type: 'tp' | 'atp', data: TPData | ATPData) => {
+  const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
     setAuthEmailInput('');
     setAuthError(null);
     setAuthPrompt({ action, type, data });
@@ -276,22 +279,12 @@ const App: React.FC = () => {
     setIsAuthorizing(true);
     
     try {
-        const creatorEmail = authPrompt.type === 'tp'
-            ? (authPrompt.data as TPData).creatorEmail
-            : selectedTP?.creatorEmail;
-            
-        if (!creatorEmail) {
-            throw new Error('Tidak dapat menemukan email pembuat untuk verifikasi.');
-        }
+        const targetEmail = (authPrompt.type === 'atp' && (authPrompt.data as ATPData).creatorEmail)
+            ? (authPrompt.data as ATPData).creatorEmail
+            : (authPrompt.data as TPData).creatorEmail;
 
-        if (authEmailInput.trim().toLowerCase() !== creatorEmail.trim().toLowerCase()) {
-          throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
-        }
-        
-        if (authPrompt.action === 'create_atp') {
-            setAuthPrompt(null);
-            _proceedWithAtpGeneration(); 
-            return; 
+        if (authEmailInput.trim().toLowerCase() !== targetEmail.trim().toLowerCase()) {
+            throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
         }
 
         if (authPrompt.type === 'tp') {
@@ -301,7 +294,6 @@ const App: React.FC = () => {
                 setView('edit_tp');
                 setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                // Cascade Delete: Delete ATPs, PROTAs, KKTPs, then the TP.
                 await apiService.deleteATPsByTPId(tpData.id!);
                 await apiService.deletePROTAsByTPId(tpData.id!);
                 await apiService.deleteKKTPsByTPId(tpData.id!);
@@ -316,15 +308,8 @@ const App: React.FC = () => {
                 setView('edit_atp');
                 setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                if (!atpToProcess?.id) {
-                    setAtpError("ID ATP tidak ditemukan. Tidak dapat menghapus.");
-                    setAuthPrompt(null);
-                    return;
-                }
-
                 setAtpError(null);
                 const originalAtps = [...atps];
-                
                 setAtps(currentAtps => currentAtps.filter(atp => atp.id !== atpToProcess.id));
                 setAuthPrompt(null); 
 
@@ -364,7 +349,7 @@ const App: React.FC = () => {
     setView('view_atp_detail');
   };
 
-  const _proceedWithAtpGeneration = async () => {
+  const _proceedWithAtpGeneration = async (creatorName: string, creatorEmail: string) => {
       if (!selectedTP) return;
       setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
       setAtpError(null);
@@ -376,7 +361,8 @@ const App: React.FC = () => {
               tpId: selectedTP.id!,
               subject: selectedTP.subject,
               content: generatedContent,
-              creatorName: selectedTP.creatorName,
+              creatorName: creatorName,
+              creatorEmail: creatorEmail,
           };
           const savedAtp = await apiService.saveATP(newAtpData);
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang daftar ATP...', progress: 90 }));
@@ -393,8 +379,24 @@ const App: React.FC = () => {
   };
 
   const handleCreateNewAtp = () => {
-      if (!selectedTP) return;
-      openAuthModal('create_atp', 'tp', selectedTP);
+    if (!selectedTP) return;
+    setAtpCreatorInfo({ name: '', email: '' });
+    setCreateAtpError(null);
+    setIsCreateAtpModalOpen(true);
+  };
+
+  const handleStartAtpGeneration = () => {
+    if (!atpCreatorInfo.name.trim() || !atpCreatorInfo.email.trim()) {
+        setCreateAtpError("Nama dan Email wajib diisi.");
+        return;
+    }
+    if (!/\S+@\S+\.\S+/.test(atpCreatorInfo.email)) {
+        setCreateAtpError("Format email tidak valid.");
+        return;
+    }
+    setCreateAtpError(null);
+    setIsCreateAtpModalOpen(false);
+    _proceedWithAtpGeneration(atpCreatorInfo.name, atpCreatorInfo.email);
   };
   
   const handleCreateNewProta = () => {
@@ -423,7 +425,7 @@ const App: React.FC = () => {
             subject: selectedTP.subject,
             jamPertemuan: protaJpInput,
             content: generatedContent,
-            creatorName: selectedTP.creatorName,
+            creatorName: selectedATP.creatorName,
         };
         await apiService.savePROTA(newProtaData);
 
@@ -463,20 +465,7 @@ const App: React.FC = () => {
         if (view === 'create_tp') {
           await apiService.saveTP(data);
         } else if (view === 'edit_tp' && editingTP?.id) {
-          const nameHasChanged = editingTP.creatorName !== data.creatorName;
           await apiService.updateTP(editingTP.id, data);
-          if (nameHasChanged && data.creatorName) {
-            try {
-              const associatedATPs = await apiService.getATPsByTPId(editingTP.id);
-              if (associatedATPs.length > 0) {
-                 const updatePromises = associatedATPs.map(atp => apiService.updateATP(atp.id, { creatorName: data.creatorName }));
-                 await Promise.all(updatePromises);
-              }
-            } catch (cascadeError: any) {
-              console.error("Gagal melakukan sinkronisasi update ke ATP terkait:", cascadeError);
-              throw new Error(`TP berhasil diperbarui, tetapi gagal menyinkronkan nama pembuat ke ATP terkait. Detail: ${cascadeError.message}`);
-            }
-          }
         }
         setView('view_tp_list');
       } catch (error: any) {
@@ -1210,11 +1199,11 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
-                                    <td>: {selectedATP.subject}</td>
+                                    <td>: ${selectedATP.subject}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
-                                    <td>: {selectedTP.grade} / Fase D</td>
+                                    <td>: ${selectedTP.grade} / Fase D</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
@@ -1480,7 +1469,7 @@ const App: React.FC = () => {
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
                 <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
                 <p className="text-sm text-slate-600 mb-4">
-                    Untuk {authPrompt.action === 'delete' ? 'menghapus' : authPrompt.action === 'edit' ? 'mengedit' : 'membuat turunan data'}, silakan masukkan email yang Anda gunakan saat membuat data ini.
+                    Untuk {authPrompt.action === 'delete' ? 'menghapus' : 'mengedit'} data yang dibuat oleh <span className="font-semibold">{authPrompt.data.creatorName}</span>, silakan masukkan email yang digunakan saat membuat data ini.
                 </p>
                 <input
                     type="email"
@@ -1499,6 +1488,54 @@ const App: React.FC = () => {
                     {isAuthorizing ? 'Memverifikasi...' : 'Lanjutkan'}
                     </button>
                 </div>
+            </div>
+        </div>
+      )}
+      {isCreateAtpModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+                <h3 className="text-lg font-bold mb-2 text-slate-800">Buat ATP Baru</h3>
+                <p className="text-sm text-slate-600 mb-4">
+                    Masukkan nama dan email Anda. Informasi ini akan digunakan untuk memvalidasi jika Anda ingin mengedit atau menghapus ATP ini di kemudian hari.
+                </p>
+                <form onSubmit={(e) => { e.preventDefault(); handleStartAtpGeneration(); }}>
+                    <div className="space-y-4">
+                        <div>
+                            <label htmlFor="atpCreatorName" className="block text-sm font-medium text-slate-700 mb-1">Nama Lengkap</label>
+                            <input
+                                type="text"
+                                id="atpCreatorName"
+                                value={atpCreatorInfo.name}
+                                onChange={(e) => setAtpCreatorInfo(prev => ({ ...prev, name: e.target.value }))}
+                                placeholder="Masukkan nama Anda"
+                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+                                required
+                                autoFocus
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="atpCreatorEmail" className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                            <input
+                                type="email"
+                                id="atpCreatorEmail"
+                                value={atpCreatorInfo.email}
+                                onChange={(e) => setAtpCreatorInfo(prev => ({ ...prev, email: e.target.value }))}
+                                placeholder="Masukkan email Anda"
+                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+                                required
+                            />
+                        </div>
+                    </div>
+                    {createAtpError && <p className="text-red-600 text-sm mt-2">{createAtpError}</p>}
+                    <div className="mt-6 flex justify-end gap-3">
+                        <button type="button" onClick={() => setIsCreateAtpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                        Batal
+                        </button>
+                        <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
+                          Lanjutkan & Hasilkan
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
       )}

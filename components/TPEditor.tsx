@@ -161,6 +161,10 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
       setError('Email dan Nama Guru pembuat harus diisi untuk menyimpan.');
       return;
     }
+    if (!/\S+@\S+\.\S+/.test(formData.creatorEmail)) {
+        setError('Format email yang Anda masukkan tidak valid.');
+        return;
+    }
     if (tpGroups.length === 0 || tpGroups.every(g => g.subMateriGroups.length === 0)) {
         setError('Harus ada setidaknya satu Materi & Sub-Materi untuk disimpan.');
         return;
