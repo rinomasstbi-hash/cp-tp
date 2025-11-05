@@ -809,25 +809,31 @@ const App: React.FC = () => {
               <div className="space-y-4">
                 {tps.map((tp) => (
                   <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer">
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
                       <div>
-                        <p className="text-xs text-slate-400">Kelas {tp.grade}</p>
-                        <h3 className="text-lg font-bold text-slate-800">Dibuat oleh: {tp.creatorName}</h3>
-                        <p className="text-sm text-slate-500">{tp.creatorEmail}</p>
-                        <p className="text-xs text-slate-400 mt-2">Terakhir diperbarui: {new Date(tp.updatedAt).toLocaleString('id-ID')}</p>
+                        <p className="font-bold text-lg text-slate-800">
+                          Kelas {tp.grade}
+                        </p>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Dibuat oleh {tp.creatorName} | {new Date(tp.createdAt).toLocaleString('id-ID')}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToProtaListFromList(tp); }} title="Lihat & Kelola PROTA" className="p-2 text-purple-600 bg-purple-100 hover:bg-purple-200 rounded-full">
-                           <BookOpenIcon className="w-5 h-5"/>
+                      <div className="flex flex-row flex-wrap items-center gap-2 flex-shrink-0 w-full sm:w-auto sm:justify-end">
+                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToProtaListFromList(tp); }} title="Lihat & Kelola PROTA" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-md transition-colors">
+                           <BookOpenIcon className="w-4 h-4"/>
+                           <span>PROTA</span>
                          </button>
-                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToAtpList(tp); }} title="Lihat ATP" className="p-2 text-indigo-600 bg-indigo-100 hover:bg-indigo-200 rounded-full">
-                           <FlowChartIcon className="w-5 h-5"/>
+                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToAtpList(tp); }} title="Lihat & Kelola ATP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-md transition-colors">
+                           <FlowChartIcon className="w-4 h-4"/>
+                           <span>ATP</span>
                          </button>
-                         <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="p-2 text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-full">
-                           <EditIcon className="w-5 h-5"/>
+                         <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
+                           <EditIcon className="w-4 h-4"/>
+                           <span>Edit</span>
                          </button>
-                         <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="p-2 text-red-600 bg-red-100 hover:bg-red-200 rounded-full">
-                           <TrashIcon className="w-5 h-5"/>
+                         <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors">
+                           <TrashIcon className="w-4 h-4"/>
+                           <span>Hapus</span>
                          </button>
                       </div>
                     </div>
