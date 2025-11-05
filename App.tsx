@@ -1172,6 +1172,7 @@ const App: React.FC = () => {
                 subject={selectedSubject!}
                 onSave={handleSave}
                 onCancel={() => setView('view_tp_list')}
+                existingTPsForSubject={view === 'create_tp' ? tps : undefined}
                />;
       case 'edit_atp':
         return <ATPEditor 

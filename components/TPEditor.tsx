@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
-import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
+import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon, ChevronUpIcon, ChevronDownIcon, ClipboardIcon } from './icons';
 
 interface TPEditorProps {
   mode: 'create' | 'edit';
@@ -11,9 +11,10 @@ interface TPEditorProps {
   subject: string;
   onSave: (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
+  existingTPsForSubject?: TPData[];
 }
 
-const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave, onCancel }) => {
+const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave, onCancel, existingTPsForSubject }) => {
   const [formData, setFormData] = useState({
     grade: initialData?.grade || '7',
     creatorEmail: initialData?.creatorEmail || '',
@@ -32,6 +33,7 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [isReuseModalOpen, setIsReuseModalOpen] = useState(false);
   
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -52,6 +54,23 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     if (cpElements.length > 1) {
       setCpElements(cpElements.filter((_, i) => i !== index));
     }
+  };
+  
+  const handleReuseCp = (tp: TPData) => {
+    setCpElements(tp.cpElements);
+    setFormData(prev => ({
+      ...prev,
+      cpSourceVersion: tp.cpSourceVersion,
+      additionalNotes: '', // PENTING: Kosongkan catatan untuk memaksa input baru
+    }));
+    setIsReuseModalOpen(false);
+    const notesElement = document.getElementById('additionalNotes');
+    if (notesElement) {
+        notesElement.focus();
+        notesElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    setError('CP telah dimuat. Harap sesuaikan kelas (jika perlu) dan isi urutan materi yang baru di bawah.');
+    setTimeout(() => setError(''), 5000); // Hapus pesan setelah 5 detik
   };
 
   // --- Handlers for TP Groups & Sub-Materi Groups ---
@@ -176,6 +195,31 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+       {isReuseModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-2xl">
+            <h3 className="text-xl font-bold mb-4 text-slate-800">Pilih CP untuk Digunakan Ulang</h3>
+            <p className="text-sm text-slate-600 mb-6">Pilih salah satu set data di bawah ini untuk menyalin Capaian Pembelajaran (CP) dan Elemennya ke formulir. Anda **wajib** mengisi ulang urutan materi untuk menghasilkan TP yang baru.</p>
+            <div className="max-h-96 overflow-y-auto space-y-3">
+              {existingTPsForSubject?.map(tp => (
+                <button 
+                  key={tp.id} 
+                  onClick={() => handleReuseCp(tp)}
+                  className="w-full text-left p-4 border rounded-lg hover:bg-teal-50 hover:border-teal-400 transition-colors"
+                >
+                  <p className="font-semibold text-slate-700">Dibuat oleh: {tp.creatorName} (Kelas {tp.grade})</p>
+                  <p className="text-xs text-slate-500 mt-1">Dibuat pada: {new Date(tp.createdAt).toLocaleString('id-ID')}</p>
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 text-right">
+              <button type="button" onClick={() => setIsReuseModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-4xl mx-auto">
         <button onClick={onCancel} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-4 font-semibold">
           <BackIcon className="w-5 h-5" />
@@ -211,7 +255,19 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
           </div>
           
           <div className="space-y-4 mb-6">
-            <h3 className="text-lg font-semibold text-slate-700 mb-2 border-b pb-2">Detail Capaian Pembelajaran</h3>
+             <div className="flex justify-between items-center mb-2 border-b pb-2">
+                <h3 className="text-lg font-semibold text-slate-700">Detail Capaian Pembelajaran</h3>
+                {mode === 'create' && existingTPsForSubject && existingTPsForSubject.length > 0 && (
+                  <button 
+                    type="button" 
+                    onClick={() => setIsReuseModalOpen(true)}
+                    className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1.5 p-2 rounded-md hover:bg-indigo-50"
+                  >
+                    <ClipboardIcon className="w-4 h-4" />
+                    Gunakan CP yang Ada
+                  </button>
+                )}
+              </div>
             {cpElements.map((item, index) => (
               <div key={index} className="grid grid-cols-12 gap-4 items-start p-4 border rounded-lg bg-slate-50 relative">
                 <div className="col-span-12 md:col-span-5">
@@ -238,7 +294,7 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
           </div>
           
            <div>
-            <label htmlFor="additionalNotes" className="block text-sm font-medium text-slate-700 mb-1">Tambahkan urutan bab/materi semester ganjil dan genap</label>
+            <label htmlFor="additionalNotes" className="block text-sm font-medium text-slate-700 mb-1">Tambahkan urutan bab/materi semester ganjil dan genap (WAJIB diisi)</label>
             <textarea
               name="additionalNotes"
               id="additionalNotes"
