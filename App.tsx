@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData } from './types';
+import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData } from './types';
 import * as apiService from './services/dbService';
 import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon } from './components/icons';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon } from './components/icons';
 
 const Header: React.FC = () => {
   return (
@@ -125,6 +124,11 @@ const App: React.FC = () => {
   const [isProtaJpModalOpen, setIsProtaJpModalOpen] = useState(false);
   const [protaJpInput, setProtaJpInput] = useState<number | ''>('');
 
+  // State for KKTP Management
+  const [kktpData, setKktpData] = useState<{ ganjil: KKTPData | null; genap: KKTPData | null } | null>(null);
+  const [kktpError, setKktpError] = useState<string | null>(null);
+  const [kktpGenerationProgress, setKktpGenerationProgress] = useState({ isLoading: false, message: '' });
+
 
   // State for AI generation progress
   const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
@@ -177,7 +181,7 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-      if (selectedTP?.id && (view === 'view_atp_list' || view === 'view_atp_detail')) {
+      if (selectedTP?.id && (view === 'view_atp_list' || view === 'view_atp_detail' || view === 'view_kktp')) {
           loadATPsForTP(selectedTP.id);
       }
   }, [selectedTP, view, loadATPsForTP]);
@@ -297,9 +301,10 @@ const App: React.FC = () => {
                 setView('edit_tp');
                 setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                // Cascade Delete: Delete ATPs, PROTAs, then the TP.
+                // Cascade Delete: Delete ATPs, PROTAs, KKTPs, then the TP.
                 await apiService.deleteATPsByTPId(tpData.id!);
                 await apiService.deletePROTAsByTPId(tpData.id!);
+                await apiService.deleteKKTPsByTPId(tpData.id!);
                 await apiService.deleteTP(tpData.id!);
                 if (selectedSubject) await loadTPsForSubject(selectedSubject);
                 setAuthPrompt(null);
@@ -325,6 +330,7 @@ const App: React.FC = () => {
 
                 try {
                     await apiService.deleteATP(atpToProcess.id);
+                    await apiService.deleteKKTPsByATPId(atpToProcess.id);
                     if (selectedTP?.id) {
                         await loadATPsForTP(selectedTP.id);
                     }
@@ -349,20 +355,8 @@ const App: React.FC = () => {
     setView('view_atp_list');
   };
 
-  const handleNavigateToProtaListFromList = (tp: TPData) => {
-    setSelectedTP(tp);
-    setSelectedATP(null); // Explicitly clear selected ATP to adjust back button logic
-    setProtas([]);
-    setProtaError(null);
-    setView('view_prota_list');
-  };
-  
   const handleBackFromProta = () => {
-    if (selectedATP) {
-        setView('view_atp_detail');
-    } else {
-        setView('view_tp_list');
-    }
+    setView('view_atp_detail');
   };
 
   const handleViewAtpDetail = (atp: ATPData) => {
@@ -507,6 +501,69 @@ const App: React.FC = () => {
     }
   };
 
+  const handleViewAndGenerateKktp = async () => {
+    if (!selectedTP || !selectedATP) {
+        setKktpError("Data TP atau ATP tidak ditemukan.");
+        return;
+    }
+
+    setKktpGenerationProgress({ isLoading: true, message: 'Memeriksa data KKTP...' });
+    setKktpError(null);
+    setKktpData(null); 
+
+    try {
+        const existingKktps = await apiService.getKKTPsByATPId(selectedATP.id);
+        
+        if (existingKktps.length > 0) {
+            setKktpGenerationProgress({ isLoading: true, message: 'Data ditemukan, memuat...' });
+            const ganjilData = existingKktps.find(k => k.semester === 'Ganjil') || null;
+            const genapData = existingKktps.find(k => k.semester === 'Genap') || null;
+            setKktpData({ ganjil: ganjilData, genap: genapData });
+            setView('view_kktp');
+        } else {
+            setKktpGenerationProgress({ isLoading: true, message: 'Data tidak ditemukan. Memulai proses generate...' });
+
+            // Generate Ganjil
+            setKktpGenerationProgress({ isLoading: true, message: 'Menyusun KKTP untuk Semester Ganjil...' });
+            const ganjilContent = await geminiService.generateKKTP(selectedATP, 'Ganjil', selectedTP.grade);
+            let savedGanjilData: KKTPData | null = null;
+            if (ganjilContent.length > 0) {
+                const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = {
+                    atpId: selectedATP.id,
+                    subject: selectedTP.subject,
+                    grade: selectedTP.grade,
+                    semester: 'Ganjil',
+                    content: ganjilContent,
+                };
+                savedGanjilData = await apiService.saveKKTP(ganjilPayload);
+            }
+
+            // Generate Genap
+            setKktpGenerationProgress({ isLoading: true, message: 'Menyusun KKTP untuk Semester Genap...' });
+            const genapContent = await geminiService.generateKKTP(selectedATP, 'Genap', selectedTP.grade);
+            let savedGenapData: KKTPData | null = null;
+            if (genapContent.length > 0) {
+                const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = {
+                    atpId: selectedATP.id,
+                    subject: selectedTP.subject,
+                    grade: selectedTP.grade,
+                    semester: 'Genap',
+                    content: genapContent,
+                };
+                savedGenapData = await apiService.saveKKTP(genapPayload);
+            }
+            
+            setKktpData({ ganjil: savedGanjilData, genap: savedGenapData });
+            setView('view_kktp');
+        }
+    } catch (error: any) {
+        setKktpError(error.message);
+    } finally {
+        setKktpGenerationProgress({ isLoading: false, message: '' });
+    }
+};
+
+
   const handleCopy = (text: string, message: string = 'Teks berhasil disalin!') => {
     navigator.clipboard.writeText(text).then(() => {
         setCopyNotification(message);
@@ -591,6 +648,7 @@ const App: React.FC = () => {
 
     const signatureBlock = `
       <div class="signature-table-container">
+        <br>
         <table style="width: 100%; border: none; text-align: center;">
           <tbody>
             <tr>
@@ -625,7 +683,6 @@ const App: React.FC = () => {
         </head>
         <body>
           ${mainContent}
-          <br>
           ${signatureBlock}
         </body>
       </html>
@@ -662,7 +719,7 @@ const App: React.FC = () => {
         .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
-        .signature-table-container { page-break-inside: avoid; margin-top: 25px; }
+        .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
       </style>
     `;
@@ -723,6 +780,7 @@ const App: React.FC = () => {
     
     const signatureBlock = `
       <div class="signature-table-container">
+        <br>
         <table style="width: 100%; border: none; text-align: center;">
           <tbody>
             <tr>
@@ -758,7 +816,6 @@ const App: React.FC = () => {
         </head>
         <body>
           ${mainContent}
-          <br>
           ${signatureBlock}
         </body>
       </html>
@@ -778,6 +835,142 @@ const App: React.FC = () => {
     setCopyNotification('File Word PROTA berhasil diunduh!');
     setTimeout(() => setCopyNotification(''), 2000);
   };
+
+  const handleExportKktpToWord = (semester: 'Ganjil' | 'Genap') => {
+    const dataToExport = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
+    if (!dataToExport || !selectedTP || !selectedATP) return;
+    
+    const styles = `
+      <style>
+        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; }
+        p, li, h2, h1 { margin: 0; padding: 0; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; }
+        th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
+        .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 5px; }
+        .header-table { margin-bottom: 15px; width: auto; }
+        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .text-center { text-align: center; }
+        .kriteria-cell { padding: 0; margin: 0; }
+        .kriteria-table { width: 100%; height: 100%; border: none; }
+        .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; }
+        .kriteria-table tr:last-child td { border-bottom: none; }
+        .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
+        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+      </style>
+    `;
+
+    const identityTable = `
+      <table class="header-table">
+        <tr><td style="padding-right: 10px;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td>Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
+        <tr><td>Kelas/Fase</td><td>: ${dataToExport.grade} / Fase D</td></tr>
+        <tr><td>Semester</td><td>: ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
+      </table>
+    `;
+
+    const kktpRows = dataToExport.content.map(row => `
+      <tr>
+        <td class="text-center" rowspan="4" style="vertical-align: top;">${row.no}</td>
+        <td rowspan="4" style="vertical-align: top;">${row.materiPokok}</td>
+        <td rowspan="4" style="vertical-align: top;">${row.tp}</td>
+        <td>${row.kriteria.sangatMahir}</td>
+        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'sangatMahir' ? 'P' : ''}</td>
+      </tr>
+      <tr>
+        <td>${row.kriteria.mahir}</td>
+        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'mahir' ? 'P' : ''}</td>
+      </tr>
+      <tr>
+        <td>${row.kriteria.cukupMahir}</td>
+        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'cukupMahir' ? 'P' : ''}</td>
+      </tr>
+       <tr>
+        <td>${row.kriteria.perluBimbingan}</td>
+        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'perluBimbingan' ? 'P' : ''}</td>
+      </tr>
+    `).join('');
+
+
+    const mainContent = `
+      <p class="title">KRITERIA KETERCAPAIAN TUJUAN PEMBELAJARAN (KKTP)</p>
+      <br>
+      ${identityTable}
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 3%;">No</th>
+            <th style="width: 20%;">Materi Pokok</th>
+            <th style="width: 32%;">Tujuan Pembelajaran</th>
+            <th style="width: 35%;">Kriteria</th>
+            <th style="width: 10%;">KKTP</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${kktpRows}
+        </tbody>
+      </table>
+    `;
+    
+    const signatureBlock = `
+      <div class="signature-table-container">
+        <br>
+        <table style="width: 100%; border: none; text-align: center;">
+          <tbody>
+            <tr>
+              <td class="signature-td">Mengetahui,</td>
+              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">Kepala Madrasah,</td>
+              <td class="signature-td">Guru Mata Pelajaran,</td>
+            </tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. -</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Note for checkmark: Using 'P' with Wingdings 2 font is a common trick for a checkmark in Word.
+    // The user's Word processor needs to have this font. A regular '✓' might not always render correctly.
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          ${styles}
+        </head>
+        <body>
+          ${mainContent}
+          ${signatureBlock}
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `KKTP_${dataToExport.subject.replace(/ /g, '_')}_Kelas_${dataToExport.grade}_${dataToExport.semester}.doc`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    setCopyNotification(`File Word KKTP ${semester} berhasil diunduh!`);
+    setTimeout(() => setCopyNotification(''), 2000);
+  };
+
 
   const renderContent = () => {
     switch (view) {
@@ -826,14 +1019,6 @@ const App: React.FC = () => {
                         </p>
                       </div>
                       <div className="flex flex-row flex-wrap items-center gap-2 flex-shrink-0 w-full sm:w-auto sm:justify-end">
-                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToProtaListFromList(tp); }} title="Lihat & Kelola PROTA" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 rounded-md transition-colors">
-                           <BookOpenIcon className="w-4 h-4"/>
-                           <span>PROTA</span>
-                         </button>
-                         <button onClick={(e) => { e.stopPropagation(); handleNavigateToAtpList(tp); }} title="Lihat & Kelola ATP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-100 hover:bg-indigo-200 rounded-md transition-colors">
-                           <FlowChartIcon className="w-4 h-4"/>
-                           <span>ATP</span>
-                         </button>
                          <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
                            <EditIcon className="w-4 h-4"/>
                            <span>Edit</span>
@@ -981,14 +1166,17 @@ const App: React.FC = () => {
                         <BackIcon className="w-5 h-5" />
                         Kembali ke Daftar ATP
                     </button>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                         <button onClick={handleViewAndGenerateKktp} disabled={kktpGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 disabled:bg-slate-400">
+                            <ChecklistIcon className="w-5 h-5"/> Lihat KKTP
+                         </button>
                          {protas.length > 0 ? (
-                            <button onClick={() => setView('view_prota_list')} className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700">
+                            <button onClick={() => setView('view_prota_list')} className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700">
                                 <BookOpenIcon className="w-5 h-5" /> Lihat PROTA
                             </button>
                         ) : (
                             <button onClick={handleCreateNewProta} disabled={protaGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
-                                <SparklesIcon className="w-5 h-5" /> Buat PROTA dari ATP Ini
+                                <SparklesIcon className="w-5 h-5" /> Buat PROTA
                             </button>
                         )}
                         <button onClick={handleExportAtpToWord} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
@@ -1003,6 +1191,13 @@ const App: React.FC = () => {
                       <button onClick={() => setProtaError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
                   </div>
                 )}
+                
+                 {kktpError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                        <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Gagal Membuat KKTP</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{kktpError}</p></div></div></div>
+                        <button onClick={() => setKktpError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+                    </div>
+                 )}
 
                 <div className="bg-white rounded-lg shadow-lg p-6 print:shadow-none print:border">
                     <h1 className="text-2xl font-bold text-slate-800 text-center print:text-3xl">ALUR TUJUAN PEMBELAJARAN (ATP)</h1>
@@ -1080,7 +1275,7 @@ const App: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
                <button onClick={handleBackFromProta} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                   <BackIcon className="w-5 h-5" /> 
-                  {selectedATP ? 'Kembali ke Detail ATP' : 'Kembali ke Daftar TP'}
+                  Kembali ke Detail ATP
                </button>
             </div>
             
@@ -1163,6 +1358,93 @@ const App: React.FC = () => {
             )}
           </div>
         );
+      
+      case 'view_kktp':
+        if (!selectedTP) return null;
+         const KKTPTable: React.FC<{ data: KKTPData }> = ({ data }) => (
+            <div className="bg-white rounded-lg shadow-lg p-6">
+                 <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-slate-800">
+                        Semester {data.semester}
+                    </h2>
+                     <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                        <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                    </button>
+                </div>
+                <div className="overflow-x-auto mt-4">
+                    <table className="min-w-full bg-white border border-slate-300 text-sm">
+                        <thead className="bg-slate-100 text-left">
+                            <tr>
+                                <th className="px-3 py-2 border-b border-slate-300 text-center w-[5%]">No</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-[20%]">Materi Pokok</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-[30%]">Tujuan Pembelajaran</th>
+                                <th className="px-3 py-2 border-b border-slate-300 w-[35%]">Kriteria</th>
+                                <th className="px-3 py-2 border-b border-slate-300 text-center w-[10%]">KKTP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.content.map((row) => (
+                              <React.Fragment key={row.no}>
+                                <tr className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 align-top border-r text-center" rowSpan={4}>{row.no}</td>
+                                    <td className="px-3 py-2 align-top border-r" rowSpan={4}>{row.materiPokok}</td>
+                                    <td className="px-3 py-2 align-top border-r" rowSpan={4}>{row.tp}</td>
+                                    <td className="px-3 py-2 align-top border-r">{row.kriteria.sangatMahir}</td>
+                                    <td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'sangatMahir' && '✓'}</td>
+                                </tr>
+                                <tr className="hover:bg-slate-50"><td className="px-3 py-2 align-top border-r">{row.kriteria.mahir}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'mahir' && '✓'}</td></tr>
+                                <tr className="hover:bg-slate-50"><td className="px-3 py-2 align-top border-r">{row.kriteria.cukupMahir}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'cukupMahir' && '✓'}</td></tr>
+                                <tr className="hover:bg-slate-50 border-b"><td className="px-3 py-2 align-top border-r">{row.kriteria.perluBimbingan}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'perluBimbingan' && '✓'}</td></tr>
+                              </React.Fragment>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+
+        return (
+            <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+                <div className="flex justify-between items-center mb-6">
+                     <button onClick={() => setView('view_atp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                        <BackIcon className="w-5 h-5" />
+                        Kembali ke Detail ATP
+                    </button>
+                </div>
+
+                <div className="mb-6">
+                    <h1 className="text-3xl font-bold text-slate-800">Kriteria Ketercapaian Tujuan Pembelajaran (KKTP)</h1>
+                    <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+                </div>
+
+                 {kktpError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                        <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Gagal Membuat KKTP</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{kktpError}</p></div></div></div>
+                        <button onClick={() => setKktpError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+                    </div>
+                 )}
+                
+                <div className="space-y-8">
+                  {kktpData?.ganjil ? (
+                        <KKTPTable data={kktpData.ganjil} />
+                    ) : (
+                        <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
+                            Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.
+                        </div>
+                    )}
+
+                    {kktpData?.genap ? (
+                         <KKTPTable data={kktpData.genap} />
+                    ) : (
+                        <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
+                             Tidak ada data KKTP yang dihasilkan untuk Semester Genap.
+                        </div>
+                    )}
+                </div>
+
+            </div>
+        );
+
 
       case 'create_tp':
       case 'edit_tp':
@@ -1260,6 +1542,15 @@ const App: React.FC = () => {
                 </div>
             </form>
           </div>
+        </div>
+      )}
+      {kktpGenerationProgress.isLoading && (
+        <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
+            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
+                <SparklesIcon className="w-16 h-16 text-blue-500 mx-auto animate-pulse" />
+                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang menyusun KKTP...</h3>
+                <p className="text-slate-600 mt-2">{kktpGenerationProgress.message}</p>
+            </div>
         </div>
       )}
       {protaGenerationProgress.isLoading && (

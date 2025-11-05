@@ -63,4 +63,30 @@ export interface PROTAData {
   createdAt: string;
 }
 
-export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list';
+export interface KKTPKriteria {
+  sangatMahir: string;
+  mahir: string;
+  cukupMahir: string;
+  perluBimbingan: string;
+}
+
+export interface KKTPRow {
+  no: number;
+  materiPokok: string;
+  tp: string;
+  kriteria: KKTPKriteria;
+  targetKktp: 'sangatMahir' | 'mahir' | 'cukupMahir' | 'perluBimbingan';
+}
+
+export interface KKTPData {
+  id: string;
+  atpId: string;
+  subject: string;
+  grade: string;
+  semester: 'Ganjil' | 'Genap';
+  content: KKTPRow[];
+  createdAt: string;
+}
+
+
+export type View = 'select_subject' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list' | 'view_kktp';

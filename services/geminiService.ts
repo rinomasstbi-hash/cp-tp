@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData } from "../types";
+import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../types";
 
 // The 'ai' instance is no longer created here at the top level.
 
@@ -477,5 +477,144 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             throw new Error("Gagal memproses respons PROTA dari AI karena format tidak valid. Silakan coba generate lagi.");
         }
         throw new Error(`Gagal menghasilkan PROTA dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
+    }
+};
+
+export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap', grade: string): Promise<KKTPRow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // Filter ATP content for the selected semester
+    const semesterContent = atpData.content.filter(row => row.semester === semester);
+    
+    // Create a simplified data structure for the AI prompt
+    const tpsForAI = semesterContent.map((row, index) => ({
+        index: index, // Use the new index within the filtered array
+        materiPokok: row.topikMateri,
+        tp: row.tp,
+    }));
+
+    if (tpsForAI.length === 0) {
+        throw new Error(`Tidak ada Tujuan Pembelajaran (TP) yang ditemukan untuk semester ${semester}.`);
+    }
+
+    const prompt = `
+    Anda adalah seorang ahli evaluasi pembelajaran dan pakar desain kurikulum di Indonesia.
+    Tugas Anda adalah membuat Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) yang sangat rinci dan menentukan target ketercapaian minimal untuk setiap Tujuan Pembelajaran (TP) yang diberikan.
+
+    Konteks:
+    - Mata Pelajaran: ${atpData.subject}
+    - Kelas: ${grade}
+    - Semester: ${semester}
+    - Daftar Tujuan Pembelajaran (TP) yang perlu dibuatkan kriteria:
+    \`\`\`json
+    ${JSON.stringify(tpsForAI, null, 2)}
+    \`\`\`
+
+    Instruksi Wajib (Ikuti dengan SANGAT SEKSAMA):
+    1.  **Buat 4 Level Kriteria:** Untuk setiap TP dalam input, buatlah deskripsi kriteria yang jelas dan terukur untuk 4 level pemahaman:
+        -   \`sangatMahir\`: Deskripsikan kondisi di mana murid menunjukkan penguasaan materi yang mendalam, mampu menerapkan dalam konteks baru, menganalisis, mengevaluasi, atau mencipta (level C4-C6 Taksonomi Bloom).
+        -   \`mahir\`: Deskripsikan kondisi di mana murid mampu mengerjakan tugas secara mandiri dengan benar dan konsisten sesuai prosedur (level C3).
+        -   \`cukupMahir\`: Deskripsikan kondisi di mana murid mampu mengerjakan tugas namun terkadang masih memerlukan sedikit bimbingan atau melakukan kesalahan-kesalahan kecil yang tidak prinsipil (level C2).
+        -   \`perluBimbingan\`: Deskripsikan kondisi pemahaman dasar, di mana murid hanya mampu mengerjakan tugas dengan bimbingan intensif dari guru (level C1).
+    2.  **Tentukan Target KKTP:** Setelah membuat 4 level kriteria untuk sebuah TP, analisis kompleksitas, pentingnya materi, dan beban kognitif dari TP tersebut. Tentukan SATU level mana yang menjadi TARGET MINIMAL ketercapaian (KKTP) bagi murid.
+        -   Gunakan pertimbangan pedagogis: TP yang bersifat fundamental dan prasyarat mungkin memiliki target 'Mahir', sedangkan TP yang lebih kompleks atau bersifat pengayaan bisa memiliki target 'Sangat Mahir'. TP pengenalan mungkin targetnya 'Cukup Mahir'.
+        -   Nilai untuk properti \`targetKktp\` HARUS berupa SALAH SATU dari nilai string berikut: "sangatMahir", "mahir", "cukupMahir", atau "perluBimbingan".
+    3.  **Format Output JSON:** Hasilkan HANYA sebuah array JSON yang valid. Setiap objek dalam array adalah hasil analisis untuk SATU TP dari input. Urutan objek dalam output harus sama dengan urutan TP dalam input.
+    4.  **Kelengkapan:** Pastikan jumlah objek dalam array output Anda sama persis dengan jumlah TP dalam input.
+
+    Contoh Format Output JSON yang Diharapkan (untuk 2 TP input):
+    [
+      {
+        "index": 0,
+        "kriteria": {
+          "sangatMahir": "Murid dapat merancang dan melakukan eksperimen mandiri untuk membuktikan hukum Archimedes dalam skenario non-standar, serta menganalisis variabel-variabel yang memengaruhinya.",
+          "mahir": "Murid dapat secara mandiri dan akurat menerapkan rumus hukum Archimedes untuk menyelesaikan soal-soal perhitungan yang kompleks.",
+          "cukupMahir": "Murid dapat menjelaskan konsep hukum Archimedes menggunakan bahasanya sendiri dan menyelesaikan soal perhitungan sederhana dengan sedikit bantuan.",
+          "perluBimbingan": "Murid dapat menyebutkan bunyi hukum Archimedes dan mengidentifikasi contohnya setelah diberikan arahan oleh guru."
+        },
+        "targetKktp": "mahir"
+      },
+      {
+        "index": 1,
+        "kriteria": {
+            "sangatMahir": "...",
+            "mahir": "...",
+            "cukupMahir": "...",
+            "perluBimbingan": "..."
+        },
+        "targetKktp": "cukupMahir"
+      }
+    ]
+
+    PENTING: Hasilkan HANYA output JSON array yang valid tanpa teks pembuka, penutup, atau markdown.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            index: { type: Type.NUMBER },
+                            kriteria: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    sangatMahir: { type: Type.STRING },
+                                    mahir: { type: Type.STRING },
+                                    cukupMahir: { type: Type.STRING },
+                                    perluBimbingan: { type: Type.STRING },
+                                },
+                                required: ['sangatMahir', 'mahir', 'cukupMahir', 'perluBimbingan'],
+                            },
+                            targetKktp: { type: Type.STRING },
+                        },
+                        required: ['index', 'kriteria', 'targetKktp'],
+                    }
+                }
+            }
+        });
+
+        let jsonStr = response.text.trim();
+        if (jsonStr.startsWith("```json")) {
+            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
+        } else if (jsonStr.startsWith("```")) {
+            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
+        }
+
+        const parsedResult = JSON.parse(jsonStr) as { index: number; kriteria: any; targetKktp: any }[];
+
+        if (!Array.isArray(parsedResult) || parsedResult.length !== tpsForAI.length) {
+            throw new Error(`Respons AI tidak valid. Jumlah kriteria yang diterima (${parsedResult.length}) tidak cocok dengan jumlah TP yang dikirim (${tpsForAI.length}).`);
+        }
+
+        // Reconstruct the full KKTP table using the AI's response
+        const finalKKTPTable: KKTPRow[] = parsedResult.map((result, index) => {
+            const originalData = semesterContent[result.index];
+            if (!originalData || result.index !== index) {
+                 throw new Error(`Kesalahan data dari AI: Ditemukan indeks yang tidak berurutan atau tidak cocok (indeks diharapkan: ${index}, diterima: ${result.index}). Coba generate lagi.`);
+            }
+            
+            return {
+                no: index + 1,
+                materiPokok: originalData.topikMateri,
+                tp: originalData.tp,
+                kriteria: result.kriteria,
+                targetKktp: result.targetKktp,
+            };
+        });
+
+        return finalKKTPTable;
+
+    } catch (error: any) {
+        console.error("Error generating KKTP:", error);
+        if (error instanceof SyntaxError) {
+            throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid. Silakan coba generate lagi.");
+        }
+        throw new Error(`Gagal menghasilkan KKTP dari AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
     }
 };
