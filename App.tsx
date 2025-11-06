@@ -168,6 +168,7 @@ const App: React.FC = () => {
   const [kktpData, setKktpData] = useState<{ ganjil: KKTPData | null; genap: KKTPData | null } | null>(null);
   const [kktpError, setKktpError] = useState<string | null>(null);
   const [kktpGenerationProgress, setKktpGenerationProgress] = useState({ isLoading: false, message: '' });
+  const [expandedKktpSemester, setExpandedKktpSemester] = useState<'Ganjil' | 'Genap' | null>('Ganjil');
 
 
   // State for AI generation progress
@@ -242,7 +243,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (selectedTP?.id && (view === 'view_prota_list' || view === 'view_atp_detail')) {
+    if (selectedTP?.id && (view === 'view_prota_list' || view === 'view_atp_detail' || view === 'view_kktp')) {
         loadPROTAsForTP(selectedTP.id);
     }
   }, [selectedTP, view, loadPROTAsForTP]);
@@ -267,6 +268,7 @@ const App: React.FC = () => {
   const handleBackToTPList = () => {
     setSelectedTP(null);
     setIsCpInfoVisible(false);
+    setExpandedKktpSemester('Ganjil'); // Reset state
     setView('view_tp_list');
   };
 
@@ -383,6 +385,7 @@ const App: React.FC = () => {
 
   const handleViewAtpDetail = (atp: ATPData) => {
     setSelectedATP(atp);
+    setExpandedKktpSemester('Ganjil'); // Reset state
     setView('view_atp_detail');
   };
 
@@ -1387,7 +1390,7 @@ const App: React.FC = () => {
             <div className="bg-white rounded-lg shadow-lg p-6">
                  <div className="flex justify-between items-center mb-4">
                     <h2 className="text-2xl font-bold text-slate-800">
-                        Semester {data.semester}
+                        Rincian KKTP
                     </h2>
                      <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                         <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
@@ -1427,10 +1430,17 @@ const App: React.FC = () => {
 
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-                <div className="flex justify-between items-center mb-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                      <button onClick={() => setView('view_atp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                         <BackIcon className="w-5 h-5" />
                         Kembali ke Detail ATP
+                    </button>
+                    <button 
+                        onClick={protas.length > 0 ? () => setView('view_prota_list') : handleCreateNewProta}
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700"
+                    >
+                        <BookOpenIcon className="w-5 h-5" />
+                        {protas.length > 0 ? 'Lihat PROTA' : 'Buat PROTA'}
                     </button>
                 </div>
 
@@ -1446,9 +1456,26 @@ const App: React.FC = () => {
                     </div>
                  )}
                 
-                <div className="space-y-8">
+                <div className="space-y-4">
                   {kktpData?.ganjil ? (
-                        <KKTPTable data={kktpData.ganjil} />
+                       <div className="rounded-lg bg-white border">
+                          <button 
+                            onClick={() => setExpandedKktpSemester(prev => prev === 'Ganjil' ? null : 'Ganjil')}
+                            className="w-full flex justify-between items-center text-left p-4 hover:bg-slate-50 transition-colors rounded-t-lg"
+                            aria-expanded={expandedKktpSemester === 'Ganjil'}
+                          >
+                            <h2 className="text-2xl font-bold text-slate-700">Semester Ganjil</h2>
+                            {expandedKktpSemester === 'Ganjil' ? 
+                                <ChevronUpIcon className="w-6 h-6 text-slate-500 flex-shrink-0" /> : 
+                                <ChevronDownIcon className="w-6 h-6 text-slate-500 flex-shrink-0" />
+                            }
+                          </button>
+                          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedKktpSemester === 'Ganjil' ? 'max-h-[5000px]' : 'max-h-0'}`}>
+                              <div className="border-t">
+                                 <KKTPTable data={kktpData.ganjil} />
+                              </div>
+                          </div>
+                      </div>
                     ) : (
                         <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
                             Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.
@@ -1456,7 +1483,24 @@ const App: React.FC = () => {
                     )}
 
                     {kktpData?.genap ? (
-                         <KKTPTable data={kktpData.genap} />
+                         <div className="rounded-lg bg-white border">
+                           <button 
+                            onClick={() => setExpandedKktpSemester(prev => prev === 'Genap' ? null : 'Genap')}
+                            className="w-full flex justify-between items-center text-left p-4 hover:bg-slate-50 transition-colors rounded-t-lg"
+                            aria-expanded={expandedKktpSemester === 'Genap'}
+                          >
+                            <h2 className="text-2xl font-bold text-slate-700">Semester Genap</h2>
+                            {expandedKktpSemester === 'Genap' ? 
+                                <ChevronUpIcon className="w-6 h-6 text-slate-500 flex-shrink-0" /> : 
+                                <ChevronDownIcon className="w-6 h-6 text-slate-500 flex-shrink-0" />
+                            }
+                          </button>
+                          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedKktpSemester === 'Genap' ? 'max-h-[5000px]' : 'max-h-0'}`}>
+                              <div className="border-t">
+                                 <KKTPTable data={kktpData.genap} />
+                              </div>
+                          </div>
+                        </div>
                     ) : (
                         <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
                              Tidak ada data KKTP yang dihasilkan untuk Semester Genap.
@@ -1497,6 +1541,7 @@ const App: React.FC = () => {
             return { title: 'Memuat Data ATP', message: 'Sedang mengambil daftar Alur Tujuan Pembelajaran dari server...' };
         case 'view_prota_list':
         case 'view_atp_detail':
+        case 'view_kktp':
             return { title: 'Memuat Data', message: 'Sedang mengambil data dari server...' };
         default:
             return { title: 'Memuat Data', message: 'Harap tunggu sebentar...' };
