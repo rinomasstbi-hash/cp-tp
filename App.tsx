@@ -5,6 +5,7 @@ import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
+import LoadingOverlay from './components/LoadingOverlay';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon } from './components/icons';
 
 const Header: React.FC = () => {
@@ -998,6 +999,11 @@ const App: React.FC = () => {
 
 
   const renderContent = () => {
+    // The loading overlay is now handled globally, so we can remove the individual spinners
+    if (dataLoading) {
+      return null; 
+    }
+
     switch (view) {
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} />;
@@ -1025,12 +1031,7 @@ const App: React.FC = () => {
                   <button onClick={() => setGlobalError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
               </div>
             )}
-            {dataLoading ? (
-              <div className="text-center py-16">
-                <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="mt-4 text-slate-600">Memuat data...</p>
-              </div>
-            ) : tps.length > 0 ? (
+            {tps.length > 0 ? (
               <div className="space-y-4">
                 {tps.map((tp) => (
                   <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer">
@@ -1156,9 +1157,7 @@ const App: React.FC = () => {
                     <button onClick={() => setTransientMessage(null)} className="absolute top-2 right-2 p-1.5 text-blue-500 hover:bg-blue-200 rounded-full" title="Tutup"><CloseIcon className="w-5 h-5" /></button>
                 </div>
             )}
-            {dataLoading ? (
-                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data ATP...</p></div>
-            ) : atps.length > 0 ? (
+            {atps.length > 0 ? (
                 <div className="space-y-4">
                 {atps.map((atp) => (
                     <div key={atp.id} onClick={() => handleViewAtpDetail(atp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-indigo-500 transition-all duration-300 cursor-pointer">
@@ -1330,9 +1329,7 @@ const App: React.FC = () => {
               </div>
             )}
             
-            {dataLoading ? (
-                <div className="text-center py-16"><div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div><p className="mt-4 text-slate-600">Memuat data PROTA...</p></div>
-            ) : !protaExists ? (
+            {!protaExists ? (
                 <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
                     <h3 className="text-xl font-semibold text-slate-700">Belum Ada PROTA</h3>
                     <p className="text-slate-500 mt-2 max-w-xl mx-auto">Program Tahunan (PROTA) dibuat berdasarkan Alur Tujuan Pembelajaran (ATP). Silakan pilih ATP terlebih dahulu.</p>
@@ -1492,6 +1489,20 @@ const App: React.FC = () => {
     }
   };
 
+  const getDataLoadingState = (): { title: string; message: string } => {
+    switch (view) {
+        case 'view_tp_list':
+            return { title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' };
+        case 'view_atp_list':
+            return { title: 'Memuat Data ATP', message: 'Sedang mengambil daftar Alur Tujuan Pembelajaran dari server...' };
+        case 'view_prota_list':
+        case 'view_atp_detail':
+            return { title: 'Memuat Data', message: 'Sedang mengambil data dari server...' };
+        default:
+            return { title: 'Memuat Data', message: 'Harap tunggu sebentar...' };
+    }
+  };
+
   return (
     <div className="bg-slate-100 min-h-screen">
       <Header />
@@ -1575,19 +1586,7 @@ const App: React.FC = () => {
             </div>
         </div>
       )}
-      {atpGenerationProgress.isLoading && (
-        <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
-            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
-                <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
-                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang bekerja...</h3>
-                <p className="text-slate-600 mt-2">Harap tunggu, Alur Tujuan Pembelajaran sedang dibuat berdasarkan data TP Anda.</p>
-                <div className="mt-6 w-full">
-                    <div className="bg-slate-200 rounded-full h-2.5"><div className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${atpGenerationProgress.progress}%` }}></div></div>
-                    <p className="text-teal-700 font-semibold mt-3 text-sm">{atpGenerationProgress.message} ({atpGenerationProgress.progress}%)</p>
-                </div>
-            </div>
-        </div>
-      )}
+      
        {isProtaJpModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
@@ -1617,28 +1616,30 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {kktpGenerationProgress.isLoading && (
-        <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
-            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
-                <SparklesIcon className="w-16 h-16 text-blue-500 mx-auto animate-pulse" />
-                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang menyusun KKTP...</h3>
-                <p className="text-slate-600 mt-2">{kktpGenerationProgress.message}</p>
-            </div>
-        </div>
-      )}
-      {protaGenerationProgress.isLoading && (
-         <div className="fixed inset-0 bg-slate-900 bg-opacity-70 flex flex-col justify-center items-center z-50 p-4 text-center">
-            <div className="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full">
-                <SparklesIcon className="w-16 h-16 text-teal-500 mx-auto animate-pulse" />
-                <h3 className="text-2xl font-bold text-slate-800 mt-4">AI sedang menyusun PROTA...</h3>
-                <p className="text-slate-600 mt-2">Harap tunggu, Program Tahunan sedang dibuat berdasarkan data TP Anda.</p>
-                <div className="mt-6 w-full">
-                    <div className="bg-slate-200 rounded-full h-2.5"><div className="bg-teal-500 h-2.5 rounded-full transition-all duration-500 ease-out" style={{ width: `${protaGenerationProgress.progress}%` }}></div></div>
-                    <p className="text-teal-700 font-semibold mt-3 text-sm">{protaGenerationProgress.message} ({protaGenerationProgress.progress}%)</p>
-                </div>
-            </div>
-        </div>
-      )}
+      
+      {/* --- Loading & Generation Overlays --- */}
+      <LoadingOverlay
+        isLoading={dataLoading}
+        title={getDataLoadingState().title}
+        message={getDataLoadingState().message}
+      />
+      <LoadingOverlay
+        isLoading={atpGenerationProgress.isLoading}
+        title="AI sedang bekerja..."
+        message={atpGenerationProgress.message || 'Harap tunggu, Alur Tujuan Pembelajaran sedang dibuat.'}
+        progress={atpGenerationProgress.progress}
+      />
+      <LoadingOverlay
+        isLoading={protaGenerationProgress.isLoading}
+        title="AI sedang menyusun PROTA..."
+        message={protaGenerationProgress.message || 'Harap tunggu, Program Tahunan sedang dibuat.'}
+        progress={protaGenerationProgress.progress}
+      />
+      <LoadingOverlay
+        isLoading={kktpGenerationProgress.isLoading}
+        title="AI sedang menyusun KKTP..."
+        message={kktpGenerationProgress.message || 'Memproses permintaan Anda...'}
+      />
 
       <main>
         {renderContent()}
