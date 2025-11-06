@@ -35,49 +35,85 @@ const Header: React.FC = () => {
   );
 };
 
-// Moved SemesterDisplay outside of the App component for better performance and code organization.
+// Updated SemesterDisplay component to include accordion functionality
 const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[]; numberingOffset?: number, onCopy: (text: string, message?: string) => void }> = ({ title, groups, numberingOffset = 0, onCopy }) => {
+    const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
+
+    const handleToggleGroup = (index: number) => {
+        setExpandedGroups(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(index)) {
+                newSet.delete(index);
+            } else {
+                newSet.add(index);
+            }
+            return newSet;
+        });
+    };
+
     if (groups.length === 0) return null;
+    
     return (
         <div className="mb-8">
             <h2 className="text-2xl font-bold text-slate-700 border-b-2 border-teal-500 pb-2 mb-4">{title}</h2>
-            <div className="space-y-8">
+            <div className="space-y-4">
                 {groups.map((group, groupIndex) => {
                     let tpCounterWithinGroup = 1;
                     const materiPokokNumber = groupIndex + 1 + numberingOffset;
+                    const isExpanded = expandedGroups.has(groupIndex);
+
                     return (
-                      <div key={groupIndex} className="p-4 rounded-lg bg-slate-50 border">
-                          <h3 className="text-xl font-bold text-slate-800 mb-4">Materi Pokok {materiPokokNumber}: <span className="font-normal">{group.materi}</span></h3>
-                          <div className="space-y-6 pl-4 border-l-2 border-teal-300">
-                            {group.subMateriGroups.map((subGroup, subIndex) => (
-                                <div key={subIndex}>
-                                    <h4 className="text-lg font-semibold text-slate-700 mb-2">Sub-Materi: <span className="font-normal">{subGroup.subMateri}</span></h4>
-                                    <div className="overflow-x-auto">
-                                       <table className="min-w-full bg-white border border-slate-200">
-                                            <thead className="bg-slate-100">
-                                                <tr>
-                                                    <th className="w-16 px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No.</th>
-                                                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tujuan Pembelajaran</th>
-                                                    <th className="w-20 px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-200">
-                                                {subGroup.tps.map((item, index) => (
-                                                    <tr key={index}>
-                                                        <td className="px-4 py-3 align-top text-slate-500">{`${materiPokokNumber}.${tpCounterWithinGroup++}`}</td>
-                                                        <td className="px-4 py-3 text-slate-700">{item}</td>
-                                                        <td className="px-4 py-3 align-top text-center">
-                                                            <button onClick={() => onCopy(item, 'Tujuan Pembelajaran berhasil disalin!')} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
-                                                                <ClipboardIcon className="w-5 h-5"/>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                      <div key={groupIndex} className="rounded-lg bg-white border">
+                          <button 
+                            onClick={() => handleToggleGroup(groupIndex)}
+                            className="w-full flex justify-between items-center text-left p-4 hover:bg-slate-50 transition-colors rounded-t-lg"
+                            aria-expanded={isExpanded}
+                            aria-controls={`content-${title}-${groupIndex}`}
+                          >
+                            <h3 className="text-xl font-bold text-slate-800">Materi Pokok {materiPokokNumber}: <span className="font-normal">{group.materi}</span></h3>
+                            {isExpanded ? 
+                                <ChevronUpIcon className="w-6 h-6 text-slate-500 flex-shrink-0" /> : 
+                                <ChevronDownIcon className="w-6 h-6 text-slate-500 flex-shrink-0" />
+                            }
+                          </button>
+                          
+                          <div
+                            id={`content-${title}-${groupIndex}`}
+                            className={`overflow-hidden transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-[3000px]' : 'max-h-0'}`}
+                          >
+                            <div className="p-4 border-t">
+                                <div className="space-y-6 pl-4 border-l-2 border-teal-300">
+                                  {group.subMateriGroups.map((subGroup, subIndex) => (
+                                      <div key={subIndex}>
+                                          <h4 className="text-lg font-semibold text-slate-700 mb-2">Sub-Materi: <span className="font-normal">{subGroup.subMateri}</span></h4>
+                                          <div className="overflow-x-auto">
+                                             <table className="min-w-full bg-white border border-slate-200">
+                                                  <thead className="bg-slate-100">
+                                                      <tr>
+                                                          <th className="w-16 px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">No.</th>
+                                                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tujuan Pembelajaran</th>
+                                                          <th className="w-20 px-4 py-2 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Aksi</th>
+                                                      </tr>
+                                                  </thead>
+                                                  <tbody className="divide-y divide-slate-200">
+                                                      {subGroup.tps.map((item, index) => (
+                                                          <tr key={index}>
+                                                              <td className="px-4 py-3 align-top text-slate-500">{`${materiPokokNumber}.${tpCounterWithinGroup++}`}</td>
+                                                              <td className="px-4 py-3 text-slate-700">{item}</td>
+                                                              <td className="px-4 py-3 align-top text-center">
+                                                                  <button onClick={() => onCopy(item, 'Tujuan Pembelajaran berhasil disalin!')} title="Salin TP" className="p-2 text-slate-500 hover:bg-slate-200 rounded-full transition-colors">
+                                                                      <ClipboardIcon className="w-5 h-5"/>
+                                                                  </button>
+                                                              </td>
+                                                          </tr>
+                                                      ))}
+                                                  </tbody>
+                                              </table>
+                                          </div>
+                                      </div>
+                                  ))}
                                 </div>
-                            ))}
+                            </div>
                           </div>
                       </div>
                     )
