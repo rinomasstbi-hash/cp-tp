@@ -34,6 +34,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
     title: string;
     description: string;
     icon: React.ReactNode;
+    backgroundIcon: React.ReactNode;
     status: 'completed' | 'next' | 'locked';
     action: () => void;
     actionLabel: string;
@@ -42,6 +43,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       title: "Tujuan Pembelajaran (TP)",
       description: "Fondasi utama yang berisi rincian semua tujuan pembelajaran yang telah dibuat.",
       icon: <BookOpenIcon />,
+      backgroundIcon: <BookOpenIcon />,
       status: 'completed',
       action: () => onNavigate('detail'),
       actionLabel: 'Lihat Detail TP',
@@ -50,6 +52,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       title: "Alur Tujuan Pembelajaran (ATP)",
       description: "Menyusun semua TP ke dalam urutan pembelajaran yang paling logis dan efektif.",
       icon: <FlowChartIcon />,
+      backgroundIcon: <FlowChartIcon />,
       status: atpExists ? 'completed' : 'next',
       action: () => onNavigate('atp'),
       actionLabel: atpExists ? 'Lihat/Kelola ATP' : 'Buat ATP dengan AI',
@@ -58,6 +61,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       title: "Kriteria Ketercapaian (KKTP)",
       description: "Menentukan kriteria dan rubrik penilaian untuk setiap tujuan pembelajaran.",
       icon: <ChecklistIcon />,
+      backgroundIcon: <ChecklistIcon />,
       status: !atpExists ? 'locked' : (kktpExists ? 'completed' : 'next'),
       action: () => onNavigate('kktp'),
       actionLabel: kktpExists ? 'Lihat/Kelola KKTP' : 'Buat KKTP dengan AI',
@@ -66,6 +70,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       title: "Program Tahunan (PROTA)",
       description: "Mengalokasikan total jam pertemuan (JP) untuk setiap TP dalam satu tahun ajaran.",
       icon: <CalendarIcon />,
+      backgroundIcon: <CalendarIcon />,
       status: !atpExists ? 'locked' : (protaExists ? 'completed' : 'next'),
       action: () => onNavigate('prota'),
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
@@ -121,43 +126,50 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
             return (
               <div 
                 key={index} 
-                className={`relative p-6 rounded-2xl shadow-lg transition-all duration-300 flex flex-col justify-between h-40 
+                className={`group relative p-6 rounded-2xl shadow-lg transition-all duration-300 h-40 overflow-hidden 
                   ${isLocked 
                     ? 'bg-slate-100 cursor-not-allowed' 
                     : `bg-gradient-to-br ${gradients[index]} text-white hover:shadow-xl transform hover:-translate-y-1`
                   }`
                 }
               >
-                
-                <div className="absolute top-4 right-4">
-                  {getStatusIndicator(step.status)}
-                </div>
-
-                <div>
-                    <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg inline-block ${
-                          isLocked ? 'bg-slate-200' : 'bg-white/20'
-                      }`}>
-                        {React.cloneElement(step.icon as React.ReactElement, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
-                      </div>
-                      <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
+                {/* Decorative Background Icon */}
+                {!isLocked && (
+                    <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
+                        {React.cloneElement(step.backgroundIcon as React.ReactElement, { className: 'h-28 w-28 text-white' })}
                     </div>
-                </div>
-
-                <div>
-                  <button
-                    onClick={step.action}
-                    disabled={isLocked}
-                    className={`w-full px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-sm
-                      ${isLocked 
-                        ? 'bg-slate-200 text-slate-500' 
-                        : step.status === 'completed' 
-                          ? 'bg-white/20 text-white hover:bg-white/30'
-                          : 'bg-white text-teal-600 hover:bg-slate-100 transform hover:scale-105'}
-                    `}
-                  >
-                    {step.actionLabel}
-                  </button>
+                )}
+                
+                <div className="relative z-10 flex flex-col justify-between h-full">
+                    {/* Top section: Main Icon + Title + Status */}
+                    <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-4">
+                            <div className={`flex-shrink-0 p-3 rounded-lg inline-block ${
+                                isLocked ? 'bg-slate-200' : 'bg-white/20'
+                            }`}>
+                                {React.cloneElement(step.icon as React.ReactElement, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
+                            </div>
+                            <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
+                        </div>
+                        {getStatusIndicator(step.status)}
+                    </div>
+                    
+                    {/* Bottom section: Button */}
+                    <div className="self-start">
+                      <button
+                        onClick={step.action}
+                        disabled={isLocked}
+                        className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-sm
+                          ${isLocked 
+                            ? 'bg-slate-200 text-slate-500' 
+                            : step.status === 'completed' 
+                              ? 'bg-white/20 text-white hover:bg-white/30'
+                              : 'bg-white text-teal-600 hover:bg-slate-100 transform hover:scale-105'}
+                        `}
+                      >
+                        {step.actionLabel}
+                      </button>
+                    </div>
                 </div>
               </div>
             );

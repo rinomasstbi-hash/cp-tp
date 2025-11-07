@@ -1,6 +1,6 @@
 import React from 'react';
 import { TPData } from '../types';
-import { PlusIcon, BackIcon } from './icons';
+import { PlusIcon, BackIcon, BookOpenIcon } from './icons';
 
 interface SubjectDashboardProps {
   subjectName: string;
@@ -43,16 +43,6 @@ const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, o
         ) : (
              <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {/* Create New Card */}
-                    <button
-                        onClick={onCreateNew}
-                        className="group flex flex-col justify-center items-center p-6 h-40 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-teal-500 hover:text-teal-600 transition-all duration-300"
-                    >
-                        <PlusIcon className="h-12 w-12 mb-2" />
-                        <h3 className="text-xl font-semibold">Buat TP Baru</h3>
-                        <p className="text-base">Mulai dari awal dengan AI</p>
-                    </button>
-
                     {/* Existing TP Cards */}
                     {tps.map((tp, index) => (
                         <button
@@ -60,6 +50,9 @@ const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, o
                             onClick={() => onSelectTP(tp)}
                             className={`group relative flex justify-start items-center text-left p-6 h-40 rounded-2xl shadow-lg text-white overflow-hidden transition-transform duration-300 transform hover:scale-105 bg-gradient-to-br ${gradients[index % gradients.length]}`}
                         >
+                            <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
+                                <BookOpenIcon className="h-28 w-28 text-white" />
+                            </div>
                             <div className="relative z-10 flex w-full items-center gap-5">
                                 <div className="flex-shrink-0 w-20 h-20 flex justify-center items-center bg-white/20 rounded-lg backdrop-blur-sm">
                                     <span className="text-5xl font-black text-white">{tp.grade}</span>
@@ -74,6 +67,16 @@ const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, o
                             </div>
                         </button>
                     ))}
+
+                    {/* Create New Card - Moved to the end */}
+                    <button
+                        onClick={onCreateNew}
+                        className="group flex flex-col justify-center items-center p-6 h-40 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-teal-500 hover:text-teal-600 transition-all duration-300"
+                    >
+                        <PlusIcon className="h-12 w-12 mb-2" />
+                        <h3 className="text-xl font-semibold">Buat TP Baru</h3>
+                        <p className="text-base">Mulai dari awal dengan AI</p>
+                    </button>
                 </div>
 
                 {!isLoading && tps.length === 0 && (
