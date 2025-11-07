@@ -66,7 +66,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       title: "Program Tahunan (PROTA)",
       description: "Mengalokasikan total jam pertemuan (JP) untuk setiap TP dalam satu tahun ajaran.",
       icon: <CalendarIcon />,
-      status: !kktpExists ? 'locked' : (protaExists ? 'completed' : 'next'),
+      status: !atpExists ? 'locked' : (protaExists ? 'completed' : 'next'),
       action: () => onNavigate('prota'),
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
     }
@@ -121,7 +121,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
             return (
               <div 
                 key={index} 
-                className={`relative p-6 rounded-xl shadow-md transition-all duration-300 flex flex-col h-full 
+                className={`relative p-6 rounded-2xl shadow-lg transition-all duration-300 flex flex-col justify-between h-40 
                   ${isLocked 
                     ? 'bg-slate-100 cursor-not-allowed' 
                     : `bg-gradient-to-br ${gradients[index]} text-white hover:shadow-xl transform hover:-translate-y-1`
@@ -133,21 +133,22 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
                   {getStatusIndicator(step.status)}
                 </div>
 
-                <div className="flex-grow">
-                    <div className={`mb-4 p-3 rounded-lg inline-block ${
-                        isLocked ? 'bg-slate-200' : 'bg-white/20'
-                    }`}>
-                      {React.cloneElement(step.icon as React.ReactElement, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
+                <div>
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-lg inline-block ${
+                          isLocked ? 'bg-slate-200' : 'bg-white/20'
+                      }`}>
+                        {React.cloneElement(step.icon as React.ReactElement, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
+                      </div>
+                      <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
                     </div>
-                    <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
-                    <p className={`text-base mt-2 ${isLocked ? 'text-slate-500' : 'text-white/80'}`}>{step.description}</p>
                 </div>
 
-                <div className="mt-6">
+                <div>
                   <button
                     onClick={step.action}
                     disabled={isLocked}
-                    className={`w-full px-5 py-3 rounded-lg font-semibold text-base transition-all duration-300 shadow-sm
+                    className={`w-full px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-sm
                       ${isLocked 
                         ? 'bg-slate-200 text-slate-500' 
                         : step.status === 'completed' 
