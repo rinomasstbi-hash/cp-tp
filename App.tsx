@@ -1,8 +1,12 @@
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData } from './types';
 import * as apiService from './services/dbService';
 import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
+import SubjectDashboard from './components/SubjectDashboard';
+import TPMenu from './components/TPMenu';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
@@ -131,7 +135,7 @@ const App: React.FC = () => {
   const [tps, setTps] = useState<TPData[]>([]);
   const [selectedTP, setSelectedTP] = useState<TPData | null>(null);
   const [editingTP, setEditingTP] = useState<TPData | null>(null);
-  const [dataLoading, setDataLoading] = useState(false);
+  const [loadingState, setLoadingState] = useState({ isLoading: false, title: '', message: '' });
   const [copyNotification, setCopyNotification] = useState('');
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [transientMessage, setTransientMessage] = useState<string | null>(null);
@@ -152,6 +156,7 @@ const App: React.FC = () => {
   // State for ATP Management
   const [atps, setAtps] = useState<ATPData[]>([]);
   const [selectedATP, setSelectedATP] = useState<ATPData | null>(null);
+  // FIX: Corrected typo ATPDa to ATPData
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
   const [atpError, setAtpError] = useState<string | null>(null);
   const [isCreateAtpModalOpen, setIsCreateAtpModalOpen] = useState(false);
@@ -168,7 +173,7 @@ const App: React.FC = () => {
   const [kktpData, setKktpData] = useState<{ ganjil: KKTPData | null; genap: KKTPData | null } | null>(null);
   const [kktpError, setKktpError] = useState<string | null>(null);
   const [kktpGenerationProgress, setKktpGenerationProgress] = useState({ isLoading: false, message: '' });
-  const [expandedKktpSemester, setExpandedKktpSemester] = useState<'Ganjil' | 'Genap' | null>('Ganjil');
+  const [activeKktpSemester, setActiveKktpSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
 
 
   // State for AI generation progress
@@ -178,7 +183,7 @@ const App: React.FC = () => {
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
-    setDataLoading(true);
+    setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
     setGlobalError(null);
     try {
       const data = await apiService.getTPsBySubject(subject);
@@ -188,12 +193,12 @@ const App: React.FC = () => {
       setGlobalError(error.message);
       setTps([]); // Reset state on error
     } finally {
-      setDataLoading(false);
+      setLoadingState({ isLoading: false, title: '', message: '' });
     }
   }, []);
   
   useEffect(() => {
-    if (selectedSubject && view === 'view_tp_list') {
+    if (selectedSubject && (view === 'subject_dashboard' || view === 'view_tp_list')) {
         loadTPsForSubject(selectedSubject);
     }
   }, [selectedSubject, view, loadTPsForSubject]);
@@ -202,12 +207,12 @@ const App: React.FC = () => {
       const savedSubject = localStorage.getItem(SELECTED_SUBJECT_KEY);
       if (savedSubject) {
         setSelectedSubject(savedSubject);
-        setView('view_tp_list');
+        setView('subject_dashboard');
       }
   }, []);
 
   const loadATPsForTP = useCallback(async (tpId: string) => {
-    setDataLoading(true);
+    setLoadingState({ isLoading: true, title: 'Memuat Data ATP', message: 'Sedang mengambil daftar Alur Tujuan Pembelajaran dari server...' });
     setAtpError(null);
     try {
       const data = await apiService.getATPsByTPId(tpId);
@@ -217,18 +222,12 @@ const App: React.FC = () => {
       setAtpError(error.message);
       setAtps([]);
     } finally {
-      setDataLoading(false);
+      setLoadingState({ isLoading: false, title: '', message: '' });
     }
   }, []);
-  
-  useEffect(() => {
-      if (selectedTP?.id && (view === 'view_atp_list' || view === 'view_atp_detail' || view === 'view_kktp')) {
-          loadATPsForTP(selectedTP.id);
-      }
-  }, [selectedTP, view, loadATPsForTP]);
 
   const loadPROTAsForTP = useCallback(async (tpId: string) => {
-    setDataLoading(true);
+    setLoadingState({ isLoading: true, title: 'Memuat Data PROTA', message: 'Memeriksa Program Tahunan yang ada...' });
     setProtaError(null);
     try {
       const data = await apiService.getPROTAsByTPId(tpId);
@@ -238,15 +237,48 @@ const App: React.FC = () => {
       setProtaError(error.message);
       setProtas([]);
     } finally {
-      setDataLoading(false);
+      setLoadingState({ isLoading: false, title: '', message: '' });
     }
   }, []);
-
+  
+    // New effect to load all device statuses when entering the TP menu
   useEffect(() => {
-    if (selectedTP?.id && (view === 'view_prota_list' || view === 'view_atp_detail' || view === 'view_kktp')) {
-        loadPROTAsForTP(selectedTP.id);
+    const loadAllDeviceStatus = async (tpId: string) => {
+        setLoadingState({ isLoading: true, title: 'Memuat Status', message: 'Memeriksa perangkat ajar yang sudah ada...' });
+        try {
+            const [atpsData, protasData] = await Promise.all([
+                apiService.getATPsByTPId(tpId),
+                apiService.getPROTAsByTPId(tpId)
+            ]);
+            
+            setAtps(atpsData);
+            setProtas(protasData);
+
+            if (atpsData.length > 0) {
+                // Only check for KKTP if an ATP exists
+                const kktpsData = await apiService.getKKTPsByATPId(atpsData[0].id);
+                setKktpData({
+                    ganjil: kktpsData.find(k => k.semester === 'Ganjil') || null,
+                    genap: kktpsData.find(k => k.semester === 'Genap') || null,
+                });
+            } else {
+                setKktpData(null); // No ATP means no KKTP
+            }
+        } catch (error: any) {
+            setGlobalError(error.message);
+            // Reset all states on error
+            setAtps([]);
+            setProtas([]);
+            setKktpData(null);
+        } finally {
+            setLoadingState({ isLoading: false, title: '', message: '' });
+        }
+    };
+
+    if (view === 'tp_menu' && selectedTP?.id) {
+        loadAllDeviceStatus(selectedTP.id);
     }
-  }, [selectedTP, view, loadPROTAsForTP]);
+  }, [view, selectedTP]);
 
 
   const handleSelectSubject = (subject: string) => {
@@ -254,7 +286,7 @@ const App: React.FC = () => {
     setTps([]);
     setGlobalError(null);
     setSelectedSubject(subject);
-    setView('view_tp_list'); 
+    setView('subject_dashboard'); 
   };
   
   const handleBackToSubjects = () => {
@@ -264,22 +296,19 @@ const App: React.FC = () => {
     setGlobalError(null);
     setView('select_subject');
   };
-  
-  const handleBackToTPList = () => {
-    setSelectedTP(null);
-    setIsCpInfoVisible(false);
-    setExpandedKktpSemester('Ganjil'); // Reset state
-    setView('view_tp_list');
-  };
 
   const handleCreateNew = () => {
     setEditingTP(null);
     setView('create_tp');
   };
 
-  const handleViewTPDetail = (tp: TPData) => {
+  const handleSelectTP = (tp: TPData) => {
     setSelectedTP(tp);
-    setView('view_tp_detail');
+    // Reset related data before entering menu to ensure fresh load via useEffect
+    setAtps([]);
+    setProtas([]);
+    setKktpData(null);
+    setView('tp_menu');
   };
 
   const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
@@ -337,7 +366,10 @@ const App: React.FC = () => {
                 await apiService.deletePROTAsByTPId(tpData.id!);
                 await apiService.deleteKKTPsByTPId(tpData.id!);
                 await apiService.deleteTP(tpData.id!);
-                if (selectedSubject) await loadTPsForSubject(selectedSubject);
+                if (selectedSubject) {
+                    await loadTPsForSubject(selectedSubject);
+                    setView('subject_dashboard'); // Go back to dashboard after deletion
+                }
                 setAuthPrompt(null);
             }
         } else if (authPrompt.type === 'atp') {
@@ -379,13 +411,9 @@ const App: React.FC = () => {
     setView('view_atp_list');
   };
 
-  const handleBackFromProta = () => {
-    setView('view_atp_detail');
-  };
-
   const handleViewAtpDetail = (atp: ATPData) => {
     setSelectedATP(atp);
-    setExpandedKktpSemester('Ganjil'); // Reset state
+    setActiveKktpSemester('Ganjil'); // Reset state
     setView('view_atp_detail');
   };
 
@@ -484,7 +512,7 @@ const App: React.FC = () => {
   const handleDeleteAndRegenerateProta = async () => {
     if (!selectedTP) return;
     
-    setDataLoading(true);
+    setLoadingState({ isLoading: true, title: 'Menghapus PROTA', message: 'Sedang menghapus data PROTA lama...' });
     setProtaError(null);
     try {
         await apiService.deletePROTAsByTPId(selectedTP.id!);
@@ -494,7 +522,7 @@ const App: React.FC = () => {
     } catch (error: any) {
         setProtaError(`Gagal menghapus PROTA lama: ${error.message}`);
     } finally {
-        setDataLoading(false);
+        setLoadingState({ isLoading: false, title: '', message: '' });
     }
   };
 
@@ -503,11 +531,13 @@ const App: React.FC = () => {
       setGlobalError(null);
       try {
         if (view === 'create_tp') {
-          await apiService.saveTP(data);
+          const savedTP = await apiService.saveTP(data);
+          setSelectedTP(savedTP);
+          setView('view_tp_detail');
         } else if (view === 'edit_tp' && editingTP?.id) {
           await apiService.updateTP(editingTP.id, data);
+          setView('view_tp_list');
         }
-        setView('view_tp_list');
       } catch (error: any) {
         console.error(error);
         setGlobalError(error.message);
@@ -531,66 +561,65 @@ const App: React.FC = () => {
   };
 
   const handleViewAndGenerateKktp = async () => {
-    if (!selectedTP || !selectedATP) {
-        setKktpError("Data TP atau ATP tidak ditemukan.");
-        return;
+    if (!selectedTP) {
+      setKktpError("Data TP tidak ditemukan.");
+      return;
     }
+    
+    // Simplifikasi: Langsung tampilkan view KKTP, pemuatan terjadi di sana.
+    // Ini membuat alur lebih bersih dari perspektif pengguna.
+    setView('view_kktp');
 
-    setKktpGenerationProgress({ isLoading: true, message: 'Memeriksa data KKTP...' });
+    // Mulai proses pemuatan/pembuatan di latar belakang
+    setKktpGenerationProgress({ isLoading: true, message: 'Memuat data KKTP...' });
     setKktpError(null);
-    setKktpData(null); 
+    setKktpData(null); // Reset data sebelumnya
 
     try {
-        const existingKktps = await apiService.getKKTPsByATPId(selectedATP.id);
-        
-        if (existingKktps.length > 0) {
-            setKktpGenerationProgress({ isLoading: true, message: 'Data ditemukan, memuat...' });
-            const ganjilData = existingKktps.find(k => k.semester === 'Ganjil') || null;
-            const genapData = existingKktps.find(k => k.semester === 'Genap') || null;
-            setKktpData({ ganjil: ganjilData, genap: genapData });
-            setView('view_kktp');
-        } else {
-            setKktpGenerationProgress({ isLoading: true, message: 'Data tidak ditemukan. Memulai proses generate...' });
+        // Step 1: Dapatkan ATP yang diperlukan secara diam-diam.
+        const atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
+        if (atpsForKktp.length === 0) {
+            setKktpGenerationProgress({ isLoading: false, message: '' }); // Hentikan pemuatan
+            setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat KKTP.');
+            setView('view_atp_list'); // Arahkan pengguna ke tempat yang benar
+            return;
+        }
+        const atp = atpsForKktp[0]; // Asumsikan yang pertama adalah yang relevan
+        setSelectedATP(atp); // Simpan ATP yang dipilih untuk digunakan nanti
+
+        // Step 2: Periksa apakah KKTP sudah ada.
+        const existingKktps = await apiService.getKKTPsByATPId(atp.id);
+
+        let finalGanjilData: KKTPData | null = existingKktps.find(k => k.semester === 'Ganjil') || null;
+        let finalGenapData: KKTPData | null = existingKktps.find(k => k.semester === 'Genap') || null;
+
+        // Step 3: Jika tidak ada, buat.
+        if (!finalGanjilData && !finalGenapData) {
+            setKktpGenerationProgress({ isLoading: true, message: 'Membuat KKTP dengan AI...' });
 
             // Generate Ganjil
-            setKktpGenerationProgress({ isLoading: true, message: 'Menyusun KKTP untuk Semester Ganjil...' });
-            const ganjilContent = await geminiService.generateKKTP(selectedATP, 'Ganjil', selectedTP.grade);
-            let savedGanjilData: KKTPData | null = null;
+            const ganjilContent = await geminiService.generateKKTP(atp, 'Ganjil', selectedTP.grade);
             if (ganjilContent.length > 0) {
-                const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = {
-                    atpId: selectedATP.id,
-                    subject: selectedTP.subject,
-                    grade: selectedTP.grade,
-                    semester: 'Ganjil',
-                    content: ganjilContent,
-                };
-                savedGanjilData = await apiService.saveKKTP(ganjilPayload);
+              const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', content: ganjilContent };
+              finalGanjilData = await apiService.saveKKTP(ganjilPayload);
             }
 
             // Generate Genap
-            setKktpGenerationProgress({ isLoading: true, message: 'Menyusun KKTP untuk Semester Genap...' });
-            const genapContent = await geminiService.generateKKTP(selectedATP, 'Genap', selectedTP.grade);
-            let savedGenapData: KKTPData | null = null;
+            const genapContent = await geminiService.generateKKTP(atp, 'Genap', selectedTP.grade);
             if (genapContent.length > 0) {
-                const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = {
-                    atpId: selectedATP.id,
-                    subject: selectedTP.subject,
-                    grade: selectedTP.grade,
-                    semester: 'Genap',
-                    content: genapContent,
-                };
-                savedGenapData = await apiService.saveKKTP(genapPayload);
+              const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', content: genapContent };
+              finalGenapData = await apiService.saveKKTP(genapPayload);
             }
-            
-            setKktpData({ ganjil: savedGanjilData, genap: savedGenapData });
-            setView('view_kktp');
         }
+        
+        setKktpData({ ganjil: finalGanjilData, genap: finalGenapData });
+        setActiveKktpSemester('Ganjil'); // Selalu mulai dari Ganjil
     } catch (error: any) {
         setKktpError(error.message);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
-};
+  };
 
 
   const handleCopy = (text: string, message: string = 'Teks berhasil disalin!') => {
@@ -1000,33 +1029,103 @@ const App: React.FC = () => {
     setTimeout(() => setCopyNotification(''), 2000);
   };
 
+  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota') => {
+    if (!selectedTP) return;
+
+    setGlobalError(null);
+    setTransientMessage(null);
+
+    if (destination === 'detail') {
+        setView('view_tp_detail');
+        return;
+    }
+    
+    if (destination === 'kktp') {
+        await handleViewAndGenerateKktp();
+        return;
+    }
+    
+    if (destination === 'prota') {
+        if(protas.length > 0) {
+            setView('view_prota_list');
+        } else {
+            // Logic to create new PROTA
+            if (atps.length > 0) {
+                setSelectedATP(atps[0]); // Assume first ATP
+                handleCreateNewProta();
+            } else {
+                setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat PROTA.');
+                setView('view_atp_list');
+            }
+        }
+        return;
+    }
+
+
+    try {
+        switch (destination) {
+            case 'atp': {
+                // This logic is simplified because data is pre-loaded by the time user clicks.
+                setView('view_atp_list');
+                break;
+            }
+        }
+    } catch (error: any) {
+        setGlobalError(error.message);
+        setView('tp_menu');
+    } finally {
+        setLoadingState({ isLoading: false, title: '', message: '' });
+    }
+};
+
 
   const renderContent = () => {
-    // The loading overlay is now handled globally, so we can remove the individual spinners
-    if (dataLoading) {
+    if (loadingState.isLoading && view !== 'subject_dashboard' && view !== 'tp_menu') {
       return null; 
     }
 
     switch (view) {
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} />;
+
+      case 'subject_dashboard':
+        return (
+          <SubjectDashboard
+            subjectName={selectedSubject!}
+            tps={tps}
+            onCreateNew={() => setView('create_tp')}
+            onSelectTP={handleSelectTP}
+            onBack={handleBackToSubjects}
+            isLoading={loadingState.isLoading}
+          />
+        );
       
+      case 'tp_menu':
+        if (!selectedTP) return null;
+        return (
+            <TPMenu 
+                tp={selectedTP}
+                atps={atps}
+                protas={protas}
+                kktpData={kktpData}
+                onNavigate={handleNavigateFromMenu}
+                onBack={() => setView('subject_dashboard')}
+                isLoading={loadingState.isLoading}
+            />
+        );
+
       case 'view_tp_list':
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <div>
-                <button onClick={handleBackToSubjects} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
+                <button onClick={() => setView('subject_dashboard')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
                   <BackIcon className="w-5 h-5" />
-                  Ganti Mata Pelajaran
+                  Kembali ke Dasbor
                 </button>
                 <h1 className="text-3xl font-bold text-slate-800">Tujuan Pembelajaran</h1>
                 <p className="text-slate-500">Mata Pelajaran: {selectedSubject}</p>
               </div>
-              <button onClick={handleCreateNew} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700">
-                <PlusIcon className="w-5 h-5"/>
-                Buat TP Baru
-              </button>
             </div>
             {globalError && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
@@ -1034,40 +1133,49 @@ const App: React.FC = () => {
                   <button onClick={() => setGlobalError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
               </div>
             )}
-            {tps.length > 0 ? (
-              <div className="space-y-4">
-                {tps.map((tp) => (
-                  <div key={tp.id} onClick={() => handleViewTPDetail(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-                      <div>
-                        <p className="text-lg text-slate-800">
-                          <span className="font-bold">Kelas {tp.grade}</span>
-                        </p>
-                        <p className="text-sm text-slate-500 mt-1">
-                          Dibuat oleh <span className="font-semibold">{tp.creatorName}</span> | {new Date(tp.createdAt).toLocaleString('id-ID')}
-                        </p>
+            <div className="space-y-4">
+              {tps.map((tp) => (
+                <div key={tp.id} onClick={() => handleSelectTP(tp)} className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl hover:ring-2 hover:ring-teal-500 transition-all duration-300 cursor-pointer flex items-center">
+                   <div className="flex items-center gap-5 w-full">
+                      <div className="flex-shrink-0 w-20 h-20 bg-slate-100 rounded-xl flex items-center justify-center">
+                          <span className="text-5xl font-black text-slate-400">{tp.grade}</span>
                       </div>
-                      <div className="flex flex-row flex-wrap items-center gap-2 flex-shrink-0 w-full sm:w-auto sm:justify-end">
+                      <div className="flex-grow">
+                          <p className="text-sm text-slate-500">
+                              Dibuat oleh <span className="font-semibold text-slate-700">{tp.creatorName}</span>
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                              Pada: {new Date(tp.createdAt).toLocaleString('id-ID')}
+                          </p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
                          <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
-                           <EditIcon className="w-4 h-4"/>
-                           <span>Edit</span>
-                         </button>
-                         <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors">
-                           <TrashIcon className="w-4 h-4"/>
-                           <span>Hapus</span>
-                         </button>
+                          <EditIcon className="w-4 h-4"/>
+                          <span>Edit</span>
+                        </button>
+                        <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors">
+                          <TrashIcon className="w-4 h-4"/>
+                          <span>Hapus</span>
+                        </button>
                       </div>
-                    </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
-                <h3 className="text-xl font-semibold text-slate-700">Belum Ada Data</h3>
-                <p className="text-slate-500 mt-2">Belum ada Tujuan Pembelajaran yang dibuat untuk mata pelajaran ini.</p>
-                <p className="text-slate-500">Silakan klik tombol "Buat TP Baru" untuk memulai.</p>
-              </div>
-            )}
+                </div>
+              ))}
+              <button 
+                onClick={handleCreateNew} 
+                className="group w-full bg-transparent p-4 rounded-lg border-2 border-dashed border-slate-300 hover:border-teal-500 hover:bg-slate-50 transition-all duration-300 cursor-pointer flex items-center text-slate-500 hover:text-teal-600"
+              >
+                <div className="flex items-center gap-5 w-full">
+                    <div className="flex-shrink-0 w-20 h-20 bg-slate-200/50 rounded-xl flex items-center justify-center group-hover:bg-teal-100/50 transition-colors">
+                        <PlusIcon className="w-10 h-10" />
+                    </div>
+                    <div className="flex-grow text-left">
+                        <h3 className="text-lg font-semibold">Buat Tujuan Pembelajaran Baru</h3>
+                        <p className="text-sm mt-1">Mulai dari awal untuk membuat set TP, ATP, dan perangkat ajar lainnya.</p>
+                    </div>
+                </div>
+              </button>
+            </div>
           </div>
         );
 
@@ -1077,25 +1185,39 @@ const App: React.FC = () => {
         const genapGroups = selectedTP.tpGroups.filter(g => g.semester === 'Genap');
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <button onClick={handleBackToTPList} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
-                  <BackIcon className="w-5 h-5" />
-                  Kembali ke Daftar TP
-              </button>
-              <button onClick={() => handleNavigateToAtpList(selectedTP)} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700">
-                  <FlowChartIcon className="w-5 h-5"/>
-                  Lihat & Kelola ATP
-              </button>
+            <div className="mb-6">
+                <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                    <BackIcon className="w-5 h-5" />
+                    Kembali ke Menu TP
+                </button>
             </div>
             
             <div className="bg-white p-6 rounded-lg shadow-lg">
-                <div className="border-b pb-4 mb-4">
-                   <h1 className="text-3xl font-bold text-slate-800">Detail Tujuan Pembelajaran</h1>
-                   <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm text-slate-600">
-                        <span><span className="font-semibold">Mapel:</span> {selectedTP.subject}</span>
-                        <span><span className="font-semibold">Kelas:</span> {selectedTP.grade}</span>
-                        <span><span className="font-semibold">Penyusun:</span> {selectedTP.creatorName}</span>
-                   </div>
+                <div className="border-b pb-4 mb-4 flex flex-col sm:flex-row justify-between items-start gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-800">Detail Tujuan Pembelajaran</h1>
+                        <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm text-slate-600">
+                            <span><span className="font-semibold">Mapel:</span> {selectedTP.subject}</span>
+                            <span><span className="font-semibold">Kelas:</span> {selectedTP.grade}</span>
+                            <span><span className="font-semibold">Penyusun:</span> {selectedTP.creatorName}</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                        <button 
+                            onClick={(e) => handleEdit(e, selectedTP)} 
+                            className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 font-semibold rounded-md shadow-sm hover:bg-blue-200 transition-colors text-sm"
+                        >
+                            <EditIcon className="w-4 h-4"/>
+                            <span>Edit TP</span>
+                        </button>
+                        <button 
+                            onClick={(e) => handleDelete(e, selectedTP)} 
+                            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-100 text-red-700 font-semibold rounded-md shadow-sm hover:bg-red-200 transition-colors text-sm"
+                        >
+                            <TrashIcon className="w-4 h-4"/>
+                            <span>Hapus TP</span>
+                        </button>
+                    </div>
                 </div>
 
                  <div>
@@ -1136,9 +1258,9 @@ const App: React.FC = () => {
           <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div>
-                  <button onClick={() => setView('view_tp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
+                  <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
                       <BackIcon className="w-5 h-5" />
-                      Kembali ke Detail TP
+                      Kembali ke Menu TP
                   </button>
                   <h1 className="text-3xl font-bold text-slate-800">Alur Tujuan Pembelajaran (ATP)</h1>
                   <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
@@ -1189,23 +1311,11 @@ const App: React.FC = () => {
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 <div className="print:hidden flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                    <button onClick={() => setView('view_atp_list')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                    <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                         <BackIcon className="w-5 h-5" />
-                        Kembali ke Daftar ATP
+                        Kembali ke Menu Perangkat Ajar
                     </button>
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                         <button onClick={handleViewAndGenerateKktp} disabled={kktpGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 disabled:bg-slate-400">
-                            <ChecklistIcon className="w-5 h-5"/> Lihat KKTP
-                         </button>
-                         {protas.length > 0 ? (
-                            <button onClick={() => setView('view_prota_list')} className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700">
-                                <BookOpenIcon className="w-5 h-5" /> Lihat PROTA
-                            </button>
-                        ) : (
-                            <button onClick={handleCreateNewProta} disabled={protaGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
-                                <SparklesIcon className="w-5 h-5" /> Buat PROTA
-                            </button>
-                        )}
                         <button onClick={handleExportAtpToWord} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                         </button>
@@ -1237,11 +1347,11 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
-                                    <td>: ${selectedATP.subject}</td>
+                                    <td>: {selectedATP.subject}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
-                                    <td>: ${selectedTP.grade} / Fase D</td>
+                                    <td>: {selectedTP.grade} / Fase D</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
@@ -1300,9 +1410,9 @@ const App: React.FC = () => {
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
-               <button onClick={handleBackFromProta} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+               <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                   <BackIcon className="w-5 h-5" /> 
-                  Kembali ke Detail ATP
+                  Kembali ke Menu Perangkat Ajar
                </button>
             </div>
             
@@ -1386,11 +1496,11 @@ const App: React.FC = () => {
       
       case 'view_kktp':
         if (!selectedTP) return null;
-         const KKTPTable: React.FC<{ data: KKTPData }> = ({ data }) => (
+        const KKTPTable: React.FC<{ data: KKTPData }> = ({ data }) => (
             <div className="bg-white rounded-lg shadow-lg p-6">
                  <div className="flex justify-between items-center mb-4">
                     <h2 className="text-2xl font-bold text-slate-800">
-                        Rincian KKTP
+                        Rincian KKTP - Semester {data.semester}
                     </h2>
                      <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                         <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
@@ -1431,16 +1541,9 @@ const App: React.FC = () => {
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                     <button onClick={() => setView('view_atp_detail')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                     <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                         <BackIcon className="w-5 h-5" />
-                        Kembali ke Detail ATP
-                    </button>
-                    <button 
-                        onClick={protas.length > 0 ? () => setView('view_prota_list') : handleCreateNewProta}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white font-semibold rounded-md shadow-sm hover:bg-purple-700"
-                    >
-                        <BookOpenIcon className="w-5 h-5" />
-                        {protas.length > 0 ? 'Lihat PROTA' : 'Buat PROTA'}
+                        Kembali ke Menu Perangkat Ajar
                     </button>
                 </div>
 
@@ -1456,58 +1559,37 @@ const App: React.FC = () => {
                     </div>
                  )}
                 
-                <div className="space-y-4">
-                  {kktpData?.ganjil ? (
-                       <div className="rounded-lg bg-white border">
-                          <button 
-                            onClick={() => setExpandedKktpSemester(prev => prev === 'Ganjil' ? null : 'Ganjil')}
-                            className="w-full flex justify-between items-center text-left p-4 hover:bg-slate-50 transition-colors rounded-t-lg"
-                            aria-expanded={expandedKktpSemester === 'Ganjil'}
-                          >
-                            <h2 className="text-2xl font-bold text-slate-700">Semester Ganjil</h2>
-                            {expandedKktpSemester === 'Ganjil' ? 
-                                <ChevronUpIcon className="w-6 h-6 text-slate-500 flex-shrink-0" /> : 
-                                <ChevronDownIcon className="w-6 h-6 text-slate-500 flex-shrink-0" />
-                            }
-                          </button>
-                          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedKktpSemester === 'Ganjil' ? 'max-h-[5000px]' : 'max-h-0'}`}>
-                              <div className="border-t">
-                                 <KKTPTable data={kktpData.ganjil} />
-                              </div>
-                          </div>
-                      </div>
-                    ) : (
-                        <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
-                            Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.
-                        </div>
-                    )}
-
-                    {kktpData?.genap ? (
-                         <div className="rounded-lg bg-white border">
-                           <button 
-                            onClick={() => setExpandedKktpSemester(prev => prev === 'Genap' ? null : 'Genap')}
-                            className="w-full flex justify-between items-center text-left p-4 hover:bg-slate-50 transition-colors rounded-t-lg"
-                            aria-expanded={expandedKktpSemester === 'Genap'}
-                          >
-                            <h2 className="text-2xl font-bold text-slate-700">Semester Genap</h2>
-                            {expandedKktpSemester === 'Genap' ? 
-                                <ChevronUpIcon className="w-6 h-6 text-slate-500 flex-shrink-0" /> : 
-                                <ChevronDownIcon className="w-6 h-6 text-slate-500 flex-shrink-0" />
-                            }
-                          </button>
-                          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedKktpSemester === 'Genap' ? 'max-h-[5000px]' : 'max-h-0'}`}>
-                              <div className="border-t">
-                                 <KKTPTable data={kktpData.genap} />
-                              </div>
-                          </div>
-                        </div>
-                    ) : (
-                        <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">
-                             Tidak ada data KKTP yang dihasilkan untuk Semester Genap.
-                        </div>
-                    )}
+                <div className="mb-6">
+                    <div className="border-b border-slate-200">
+                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                            <button
+                                onClick={() => setActiveKktpSemester('Ganjil')}
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base transition-colors ${activeKktpSemester === 'Ganjil' ? 'border-teal-500 text-teal-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}
+                            >
+                                Semester Ganjil
+                            </button>
+                            <button
+                                onClick={() => setActiveKktpSemester('Genap')}
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base transition-colors ${activeKktpSemester === 'Genap' ? 'border-teal-500 text-teal-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}
+                            >
+                                Semester Genap
+                            </button>
+                        </nav>
+                    </div>
                 </div>
 
+                <div>
+                  {activeKktpSemester === 'Ganjil' && (
+                    kktpData?.ganjil 
+                      ? <KKTPTable data={kktpData.ganjil} /> 
+                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.</div>
+                  )}
+                  {activeKktpSemester === 'Genap' && (
+                    kktpData?.genap 
+                      ? <KKTPTable data={kktpData.genap} /> 
+                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Genap.</div>
+                  )}
+                </div>
             </div>
         );
 
@@ -1519,7 +1601,7 @@ const App: React.FC = () => {
                 initialData={editingTP || undefined}
                 subject={selectedSubject!}
                 onSave={handleSave}
-                onCancel={() => setView('view_tp_list')}
+                onCancel={() => setView(view === 'create_tp' ? 'subject_dashboard' : 'view_tp_list')}
                 existingTPsForSubject={view === 'create_tp' ? tps : undefined}
                />;
       case 'edit_atp':
@@ -1530,21 +1612,6 @@ const App: React.FC = () => {
         />;
       default:
         return null;
-    }
-  };
-
-  const getDataLoadingState = (): { title: string; message: string } => {
-    switch (view) {
-        case 'view_tp_list':
-            return { title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' };
-        case 'view_atp_list':
-            return { title: 'Memuat Data ATP', message: 'Sedang mengambil daftar Alur Tujuan Pembelajaran dari server...' };
-        case 'view_prota_list':
-        case 'view_atp_detail':
-        case 'view_kktp':
-            return { title: 'Memuat Data', message: 'Sedang mengambil data dari server...' };
-        default:
-            return { title: 'Memuat Data', message: 'Harap tunggu sebentar...' };
     }
   };
 
@@ -1664,9 +1731,9 @@ const App: React.FC = () => {
       
       {/* --- Loading & Generation Overlays --- */}
       <LoadingOverlay
-        isLoading={dataLoading}
-        title={getDataLoadingState().title}
-        message={getDataLoadingState().message}
+        isLoading={loadingState.isLoading && view !== 'subject_dashboard'}
+        title={loadingState.title}
+        message={loadingState.message}
       />
       <LoadingOverlay
         isLoading={atpGenerationProgress.isLoading}
@@ -1682,7 +1749,7 @@ const App: React.FC = () => {
       />
       <LoadingOverlay
         isLoading={kktpGenerationProgress.isLoading}
-        title="AI sedang menyusun KKTP..."
+        title="Memproses KKTP..."
         message={kktpGenerationProgress.message || 'Memproses permintaan Anda...'}
       />
 
