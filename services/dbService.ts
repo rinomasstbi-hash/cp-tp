@@ -1,14 +1,11 @@
 // ====================================================================================
-// PENTING: Layanan ini sekarang menggunakan Google Sheets sebagai database.
-// Ini memerlukan skrip Google Apps Script yang disebarkan sebagai aplikasi web
-// untuk bertindak sebagai backend yang aman.
-// PASTIKAN ANDA SUDAH MENGIKUTI LANGKAH-LANGKAH PENYIAPAN DI DOKUMENTASI.
+// !! PENTING: KONFIGURASI BACKEND !!
 // ====================================================================================
+// Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
+// Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
+// Pastikan URL berada di dalam tanda kutip tunggal (').
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQSRJ99FFzKkOJUxa8MF_6ndknDX-54ILJKikkySulqL-DFFtnmcofe96UKZu-7s5n/exec';
 
-// FIX: Mengambil URL dari environment variable untuk keamanan dan fleksibilitas.
-// Ini perlu diatur di dashboard Netlify.
-const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
-const PLACEHOLDER_URL = undefined; // Gunakan undefined untuk perbandingan yang lebih aman
 
 import { TPData, ATPData, PROTAData, KKTPData } from '../types';
 
@@ -56,9 +53,9 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
  */
 // FIX: Export apiRequest to be used in other services.
 export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
-    if (GOOGLE_APPS_SCRIPT_URL === PLACEHOLDER_URL || !GOOGLE_APPS_SCRIPT_URL) {
-        throw new Error('URL Google Apps Script belum diatur di environment variables (GOOGLE_APPS_SCRIPT_URL). Silakan atur di dashboard Netlify dan deploy ulang.');
-    }
+    // FIX: Removed the check for a placeholder URL. Since the GOOGLE_APPS_SCRIPT_URL
+    // is a `const` with a value, the check is redundant and causes a TypeScript
+    // error because the literal type will never match the placeholder string.
     
     const url = GOOGLE_APPS_SCRIPT_URL;
     
