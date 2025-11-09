@@ -12,10 +12,10 @@ export const generateTPs = async (
     additionalNotes: string;
   }
 ): Promise<TPGroup[]> => {
-  if (!process.env.API_KEY) {
+  if (!process.env.VITE_API_KEY) {
     throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
   }
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY });
 
   const { cpElements, grade, additionalNotes } = data;
 
@@ -206,10 +206,10 @@ ${cpElementsString}
 
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
-    if (!process.env.API_KEY) {
+    if (!process.env.VITE_API_KEY) {
         throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
     }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY });
 
     // Step 1: Create the "source of truth" data structure locally. This contains all TP info.
     const tpCodeMap = new Map<string, string>();
@@ -362,10 +362,10 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 
 
 export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
-    if (!process.env.API_KEY) {
+    if (!process.env.VITE_API_KEY) {
         throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
     }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY });
 
     const tpsForAI = atpData.content.map((row, index) => ({
         index: index,
@@ -488,10 +488,10 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap', grade: string): Promise<KKTPRow[]> => {
-    if (!process.env.API_KEY) {
+    if (!process.env.VITE_API_KEY) {
         throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
     }
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.VITE_API_KEY });
     
     // Filter ATP content for the selected semester
     const semesterContent = atpData.content.filter(row => row.semester === semester);

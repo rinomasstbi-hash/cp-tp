@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData } from './types';
 import * as apiService from './services/dbService';
@@ -311,6 +310,22 @@ const App: React.FC = () => {
     setView('tp_menu');
   };
 
+  const _performDeleteATP = async (atpToDelete: ATPData) => {
+    if (!selectedTP?.id) return;
+
+    setLoadingState({ isLoading: true, title: 'Menghapus ATP', message: 'Sedang menghapus data dari server...' });
+    setAtpError(null);
+    try {
+        await apiService.deleteATP(atpToDelete.id);
+        await apiService.deleteKKTPsByATPId(atpToDelete.id);
+        await loadATPsForTP(selectedTP.id); // Reload fresh data
+    } catch (error: any) {
+        setAtpError(`Gagal menghapus ATP: ${error.message}`);
+    } finally {
+        setLoadingState({ isLoading: false, title: '', message: '' });
+    }
+  };
+
   const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
     setAuthEmailInput('');
     setAuthError(null);
@@ -331,13 +346,26 @@ const App: React.FC = () => {
   const handleEditATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
     if (!selectedTP) return;
-    openAuthModal('edit', 'atp', atp);
+     // FIX: If no creator email exists (e.g., old data), bypass authentication.
+    if (!atp.creatorEmail) {
+        setEditingATP(atp);
+        setView('edit_atp');
+    } else {
+        openAuthModal('edit', 'atp', atp);
+    }
   };
 
   const handleDeleteATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
     if (!selectedTP) return;
-    openAuthModal('delete', 'atp', atp);
+    // FIX: If no creator email exists, bypass auth modal and use a simple confirm dialog.
+    if (!atp.creatorEmail) {
+        if (window.confirm('Data ATP ini tidak memiliki informasi pembuat. Apakah Anda yakin ingin menghapusnya? Tindakan ini tidak dapat diurungkan.')) {
+            _performDeleteATP(atp);
+        }
+    } else {
+        openAuthModal('delete', 'atp', atp);
+    }
   };
 
   const handleAuthSubmit = async () => {
@@ -355,7 +383,6 @@ const App: React.FC = () => {
             targetEmail = (authPrompt.data as TPData).creatorEmail;
         }
         
-        // BUG FIX: Added a guard to prevent 'trim of undefined' error if creatorEmail is missing from the data.
         if (!targetEmail) {
             throw new Error('Data email pembuat tidak ditemukan. Tidak dapat memverifikasi.');
         }
@@ -388,21 +415,8 @@ const App: React.FC = () => {
                 setView('edit_atp');
                 setAuthPrompt(null);
             } else if (authPrompt.action === 'delete') {
-                setAtpError(null);
-                const originalAtps = [...atps];
-                setAtps(currentAtps => currentAtps.filter(atp => atp.id !== atpToProcess.id));
-                setAuthPrompt(null); 
-
-                try {
-                    await apiService.deleteATP(atpToProcess.id);
-                    await apiService.deleteKKTPsByATPId(atpToProcess.id);
-                    if (selectedTP?.id) {
-                        await loadATPsForTP(selectedTP.id);
-                    }
-                } catch (error: any) {
-                    setAtps(originalAtps); 
-                    setAuthError(`Gagal menghapus ATP di server: ${error.message}`);
-                }
+                setAuthPrompt(null); // Close modal before async operation
+                await _performDeleteATP(atpToProcess);
             }
         }
     } catch (error: any) {
@@ -1356,11 +1370,11 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
-                                    <td>: {selectedATP.subject}</td>
+                                    <td>: ${selectedATP.subject}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
-                                    <td>: {selectedTP.grade} / Fase D</td>
+                                    <td>: ${selectedTP.grade} / Fase D</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
