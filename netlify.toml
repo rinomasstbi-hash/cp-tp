@@ -1,0 +1,19 @@
+# File: netlify.toml
+
+[build]
+  # Perintah ini memberitahu Netlify untuk menginstal dependensi 
+  # yang tercantum di package.json (yaitu @google/genai)
+  # sebelum mencoba membangun functions.
+  command = "npm install"
+  
+  # Direktori tempat Netlify akan menemukan serverless functions Anda.
+  functions = "netlify/functions"
+
+# Aturan redirect ini membuat proxy yang bersih. 
+# Semua permintaan yang masuk ke path /api/* di situs Anda
+# akan secara otomatis dialihkan ke serverless function yang sesuai.
+# Contoh: permintaan ke /api/gemini-proxy akan menjalankan /netlify/functions/gemini-proxy.ts
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
