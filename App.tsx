@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData } from './types';
 import * as apiService from './services/dbService';
@@ -1370,11 +1368,11 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
-                                    <td>: ${selectedATP.subject}</td>
+                                    <td>: {selectedATP.subject}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
-                                    <td>: ${selectedTP.grade} / Fase D</td>
+                                    <td>: {selectedTP.grade} / Fase D</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
