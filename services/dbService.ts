@@ -10,12 +10,38 @@ const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQSRJ99
 import { TPData, ATPData, PROTAData, KKTPData } from '../types';
 
 /**
- * Helper function to ensure nested JSON strings are parsed into arrays.
+ * Recursively cleans '$' symbols from all string values within an object or array.
+ * This is a defensive measure to ensure data integrity throughout the app.
+ * @param data The data to clean (object, array, string, etc.).
+ * @returns The cleaned data.
+ */
+const cleanStringsInObject = (data: any): any => {
+    if (Array.isArray(data)) {
+        return data.map(item => cleanStringsInObject(item));
+    }
+    if (data !== null && typeof data === 'object') {
+        const cleanedObject: { [key: string]: any } = {};
+        for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                cleanedObject[key] = cleanStringsInObject(data[key]);
+            }
+        }
+        return cleanedObject;
+    }
+    if (typeof data === 'string') {
+        return data.replace(/\$/g, '');
+    }
+    return data;
+};
+
+
+/**
+ * Helper function to ensure nested JSON strings are parsed into arrays and cleans all string fields.
  * This adds robustness, in case the backend returns stringified JSON for these fields.
  * It handles strings, null, or undefined values to prevent runtime errors.
  * @param data The data object to parse.
  * @param jsonFields An array of keys that should contain array data.
- * @returns The parsed data object.
+ * @returns The parsed and cleaned data object.
  */
 const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
     if (!data || typeof data !== 'object') {
@@ -40,7 +66,9 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
         }
         // If it's already a valid array, do nothing.
     }
-    return parsedData as T;
+    
+    // **FIX:** After parsing structure, clean all string values recursively.
+    return cleanStringsInObject(parsedData) as T;
 };
 
 

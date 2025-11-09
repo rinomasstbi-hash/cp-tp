@@ -56,32 +56,19 @@ export const generateTPs = async (
     }
     // --- END FIX ---
 
-    // --- FIX: Clean unwanted '$' symbols from AI-generated text ---
-    const cleanDollarSigns = (data: TPGroup[]): TPGroup[] => {
-      if (!Array.isArray(data)) return data;
-      return data.map(group => ({
-        ...group,
-        materi: group.materi ? group.materi.replace(/\$/g, '') : '',
-        subMateriGroups: Array.isArray(group.subMateriGroups) ? group.subMateriGroups.map(subGroup => ({
-          ...subGroup,
-          subMateri: subGroup.subMateri ? subGroup.subMateri.replace(/\$/g, '') : '',
-          tps: Array.isArray(subGroup.tps) ? subGroup.tps.map(tp => (typeof tp === 'string' ? tp.replace(/\$/g, '') : tp)) : []
-        })) : []
-      }));
-    };
-    // --- END FIX ---
+    // The cleaning of '$' is now handled globally in dbService.ts, so the local function is removed.
 
     const isValidTPGroupArray = (arr: any): arr is TPGroup[] => {
       return Array.isArray(arr) && arr.every(p => p && typeof p === 'object' && 'materi' in p && 'subMateriGroups' in p);
     };
 
     if (isValidTPGroupArray(parsed)) {
-        return cleanDollarSigns(parsed);
+        return parsed;
     } else if (typeof parsed === 'object' && parsed !== null) {
         for (const key in parsed) {
             const value = (parsed as any)[key];
             if (isValidTPGroupArray(value)) {
-                return cleanDollarSigns(value);
+                return value;
             }
         }
     }
@@ -139,9 +126,10 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
                 // Tambahkan fallback untuk mencegah crash jika AI memberikan indeks yang salah
                 throw new Error(`AI mengembalikan indeks yang tidak valid: ${originalIndex}.`);
             }
+            // The '$' cleaning is now handled by dbService, so it's removed from here.
             return {
-                topikMateri: originalData.materi.replace(/\$/g, ''),
-                tp: originalData.tpText.replace(/\$/g, ''),
+                topikMateri: originalData.materi,
+                tp: originalData.tpText,
                 kodeTp: originalData.tpCode,
                 atpSequence: newSequenceIndex + 1,
                 semester: originalData.semester,
