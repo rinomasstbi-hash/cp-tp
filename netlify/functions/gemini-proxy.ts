@@ -1,13 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../../types";
+import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../../types.ts";
 
 // Helper untuk mengirim respons standar
 const sendResponse = (statusCode: number, body: any) => ({
     statusCode,
     headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*", // Izinkan permintaan dari domain manapun
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
     },
     body: JSON.stringify(body),
 });
@@ -18,13 +19,12 @@ const sendError = (statusCode: number, message: string) => {
     return sendResponse(statusCode, { error: message });
 };
 
-// Impor fungsi-fungsi dari geminiService, kita akan memindahkannya ke sini
-// dan menyesuaikannya untuk lingkungan serverless.
-// Catatan: Impor ini tidak berfungsi di runtime, ini hanya untuk referensi.
-// Logika akan disalin langsung ke dalam handler.
-
 export const handler = async (event: any) => {
-    // Netlify Functions hanya mendukung metode POST untuk body
+    // Menangani permintaan pre-flight CORS
+    if (event.httpMethod === 'OPTIONS') {
+        return sendResponse(200, {});
+    }
+
     if (event.httpMethod !== 'POST') {
         return sendError(405, 'Method Not Allowed');
     }
@@ -41,7 +41,6 @@ export const handler = async (event: any) => {
     try {
         switch (action) {
             case 'generateTPs':
-                // Logika dari generateTPs di geminiService.ts dipindahkan ke sini
                 const { cpElements, grade, additionalNotes } = payload;
                 const cpElementsString = cpElements
                     .map((item: any, index: number) => `Elemen ${index + 1}: ${item.element}\\nCapaian Pembelajaran (CP) ${index + 1}: "${item.cp}"`)
@@ -223,7 +222,6 @@ export const handler = async (event: any) => {
                     tp: row.tp,
                 }));
                  if (tpsForAI_KKTP.length === 0) {
-                    // Return an empty array instead of throwing an error, client can handle this.
                     return sendResponse(200, { text: '[]' });
                 }
                 const promptKKTP = `

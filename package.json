@@ -1,12 +1,12 @@
 {
-  "name": "tp-generator-mtsn4jombang",
+  "name": "tp-generator-mtsn4jombang-serverless",
   "version": "1.0.0",
-  "description": "TP Generator App with Netlify Functions",
   "private": true,
+  "description": "Dependencies for Netlify serverless functions.",
   "scripts": {
-    "build": "echo 'No client-side build step needed'"
+    "build": "echo \"No client-side build required, functions are built by Netlify.\""
   },
   "dependencies": {
-    "@google/genai": "^1.28.0"
+    "@google/genai": "^1.29.0"
   }
 }

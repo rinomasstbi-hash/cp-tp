@@ -1,7 +1,7 @@
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../types";
 
-// Alamat proxy Netlify Function yang akan kita buat
-const GEMINI_PROXY_ENDPOINT = '/.netlify/functions/gemini-proxy';
+// Alamat proxy Netlify Function yang baru dan lebih bersih
+const GEMINI_PROXY_ENDPOINT = '/api/gemini-proxy';
 
 /**
  * Mengirim permintaan ke proxy Netlify Function yang aman.
