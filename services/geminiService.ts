@@ -56,17 +56,32 @@ export const generateTPs = async (
     }
     // --- END FIX ---
 
+    // --- FIX: Clean unwanted '$' symbols from AI-generated text ---
+    const cleanDollarSigns = (data: TPGroup[]): TPGroup[] => {
+      if (!Array.isArray(data)) return data;
+      return data.map(group => ({
+        ...group,
+        materi: group.materi ? group.materi.replace(/\$/g, '') : '',
+        subMateriGroups: Array.isArray(group.subMateriGroups) ? group.subMateriGroups.map(subGroup => ({
+          ...subGroup,
+          subMateri: subGroup.subMateri ? subGroup.subMateri.replace(/\$/g, '') : '',
+          tps: Array.isArray(subGroup.tps) ? subGroup.tps.map(tp => (typeof tp === 'string' ? tp.replace(/\$/g, '') : tp)) : []
+        })) : []
+      }));
+    };
+    // --- END FIX ---
+
     const isValidTPGroupArray = (arr: any): arr is TPGroup[] => {
       return Array.isArray(arr) && arr.every(p => p && typeof p === 'object' && 'materi' in p && 'subMateriGroups' in p);
     };
 
     if (isValidTPGroupArray(parsed)) {
-        return parsed;
+        return cleanDollarSigns(parsed);
     } else if (typeof parsed === 'object' && parsed !== null) {
         for (const key in parsed) {
             const value = (parsed as any)[key];
             if (isValidTPGroupArray(value)) {
-                return value;
+                return cleanDollarSigns(value);
             }
         }
     }
