@@ -54,7 +54,8 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
  * @param {Record<string, any>} params - Parameter untuk aksi tersebut.
  * @returns {Promise<any>} - Data yang dikembalikan dari API.
  */
-const apiRequest = async (action: string, params: Record<string, any> = {}) => {
+// FIX: Export apiRequest to be used in other services.
+export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
     if (GOOGLE_APPS_SCRIPT_URL === PLACEHOLDER_URL || !GOOGLE_APPS_SCRIPT_URL) {
         throw new Error('URL Google Apps Script belum diatur di environment variables (GOOGLE_APPS_SCRIPT_URL). Silakan atur di dashboard Netlify dan deploy ulang.');
     }

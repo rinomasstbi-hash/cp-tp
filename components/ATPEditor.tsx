@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { ATPData, ATPTableRow } from '../types';
 import { BackIcon, SaveIcon, TrashIcon, PlusIcon, ChevronUpIcon, ChevronDownIcon } from './icons';
@@ -9,30 +10,43 @@ interface ATPEditorProps {
     onCancel: () => void;
 }
 
+// Add a temporary unique ID for stable React keys during editing
+interface ATPTableRowWithId extends ATPTableRow {
+    id: string;
+}
+
 const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) => {
-    const [content, setContent] = useState<ATPTableRow[]>(initialData.content);
+    const [content, setContent] = useState<ATPTableRowWithId[]>(() =>
+        initialData.content.map((row) => ({
+            ...row,
+            id: `atp-row-${Math.random().toString(36).substr(2, 9)}`,
+        }))
+    );
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState('');
 
-    const handleContentChange = (index: number, field: keyof ATPTableRow, value: string | number) => {
-        const newContent = [...content];
-        (newContent[index] as any)[field] = value;
-        setContent(newContent);
+    const handleContentChange = (id: string, field: keyof ATPTableRow, value: string | number) => {
+        setContent(currentContent =>
+            currentContent.map(row =>
+                row.id === id ? { ...row, [field]: value } : row
+            )
+        );
     };
 
     const addRow = () => {
-        const newRow: ATPTableRow = {
+        const newRow: ATPTableRowWithId = {
             topikMateri: '',
             tp: '',
             kodeTp: '',
-            atpSequence: content.length + 1, // Will be re-sequenced on save
+            atpSequence: 0, // Will be re-sequenced on save
             semester: 'Ganjil',
+            id: `atp-row-${Math.random().toString(36).substr(2, 9)}`,
         };
         setContent([...content, newRow]);
     };
 
-    const removeRow = (index: number) => {
-        setContent(content.filter((_, i) => i !== index));
+    const removeRow = (id: string) => {
+        setContent(content.filter(row => row.id !== id));
     };
     
     const moveRow = (index: number, direction: 'up' | 'down') => {
@@ -53,9 +67,9 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
         }
 
         setIsSaving(true);
-        // Re-sequence before saving
-        const finalContent = content.map((row, index) => ({
-            ...row,
+        // Re-sequence and strip temporary ID before saving
+        const finalContent = content.map(({ id, ...rest }, index) => ({
+            ...rest,
             atpSequence: index + 1,
         }));
 
@@ -92,19 +106,19 @@ const ATPEditor: React.FC<ATPEditorProps> = ({ initialData, onSave, onCancel }) 
                         </thead>
                         <tbody>
                             {content.map((row, index) => (
-                                <tr key={index} className="hover:bg-slate-50">
+                                <tr key={row.id} className="hover:bg-slate-50">
                                     <td className="px-3 py-2 align-top border-b">
                                         <div className="flex items-center gap-1">
                                             <button onClick={() => moveRow(index, 'up')} disabled={index === 0} className="p-1.5 text-slate-500 hover:bg-slate-200 rounded-full disabled:opacity-30"><ChevronUpIcon className="w-4 h-4" /></button>
                                             <button onClick={() => moveRow(index, 'down')} disabled={index === content.length - 1} className="p-1.5 text-slate-500 hover:bg-slate-200 rounded-full disabled:opacity-30"><ChevronDownIcon className="w-4 h-4" /></button>
-                                            <button onClick={() => removeRow(index)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4" /></button>
+                                            <button onClick={() => removeRow(row.id)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full"><TrashIcon className="w-4 h-4" /></button>
                                         </div>
                                     </td>
-                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.topikMateri} onChange={(e) => handleContentChange(index, 'topikMateri', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
-                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.tp} onChange={(e) => handleContentChange(index, 'tp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
-                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.kodeTp} onChange={(e) => handleContentChange(index, 'kodeTp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
+                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.topikMateri} onChange={(e) => handleContentChange(row.id, 'topikMateri', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
+                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.tp} onChange={(e) => handleContentChange(row.id, 'tp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
+                                    <td className="px-3 py-2 align-top border-b"><textarea value={row.kodeTp} onChange={(e) => handleContentChange(row.id, 'kodeTp', e.target.value)} rows={4} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500"></textarea></td>
                                     <td className="px-3 py-2 align-top border-b">
-                                        <select value={row.semester} onChange={(e) => handleContentChange(index, 'semester', e.target.value)} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500">
+                                        <select value={row.semester} onChange={(e) => handleContentChange(row.id, 'semester', e.target.value)} className="w-full p-1 border border-slate-300 rounded-md focus:ring-1 focus:ring-teal-500">
                                             <option value="Ganjil">Ganjil</option>
                                             <option value="Genap">Genap</option>
                                         </select>

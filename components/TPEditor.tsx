@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TPData, TPGroup } from '../types';
 import { generateTPs } from '../services/geminiService';
 import { BackIcon, SaveIcon, SparklesIcon, TrashIcon, PlusIcon, ChevronUpIcon, ChevronDownIcon, ClipboardIcon } from './icons';
@@ -14,6 +14,15 @@ interface TPEditorProps {
   existingTPsForSubject?: TPData[];
 }
 
+// Helper to generate unique IDs for state management
+const newId = (prefix: string) => `${prefix}-${Math.random().toString(36).substr(2, 9)}`;
+
+// Define state shapes with unique IDs for stable keys in React
+interface CPElementWithId { element: string; cp: string; id: string; }
+interface TPWithValue { id: string; value: string; }
+interface SubMateriGroupWithId { subMateri: string; tps: TPWithValue[]; id: string; }
+interface TPGroupWithId { semester: 'Ganjil' | 'Genap'; materi: string; subMateriGroups: SubMateriGroupWithId[]; id: string; }
+
 const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave, onCancel, existingTPsForSubject }) => {
   const [formData, setFormData] = useState({
     grade: initialData?.grade || '7',
@@ -23,13 +32,25 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     additionalNotes: initialData?.additionalNotes || '',
   });
   
-  const [cpElements, setCpElements] = useState<{ element: string; cp: string }[]>(
-    initialData?.cpElements && initialData.cpElements.length > 0
+  const [cpElements, setCpElements] = useState<CPElementWithId[]>(() =>
+    (initialData?.cpElements && initialData.cpElements.length > 0
       ? initialData.cpElements
       : [{ element: '', cp: '' }]
+    ).map((el) => ({ ...el, id: newId('cp') }))
   );
 
-  const [tpGroups, setTpGroups] = useState<TPGroup[]>(initialData?.tpGroups || []);
+  const [tpGroups, setTpGroups] = useState<TPGroupWithId[]>(() =>
+    (initialData?.tpGroups || []).map((group) => ({
+      ...group,
+      id: newId('group'),
+      subMateriGroups: group.subMateriGroups.map((subGroup) => ({
+        ...subGroup,
+        id: newId('subgroup'),
+        tps: subGroup.tps.map(tpText => ({ id: newId('tp'), value: tpText }))
+      }))
+    }))
+  );
+  
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -40,24 +61,22 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleCpElementChange = (index: number, field: 'element' | 'cp', value: string) => {
-    const newItems = [...cpElements];
-    newItems[index][field] = value;
-    setCpElements(newItems);
+  const handleCpElementChange = (id: string, field: 'element' | 'cp', value: string) => {
+    setCpElements(elements => elements.map(el => el.id === id ? { ...el, [field]: value } : el));
   };
 
   const addCpElementRow = () => {
-    setCpElements([...cpElements, { element: '', cp: '' }]);
+    setCpElements([...cpElements, { element: '', cp: '', id: newId('cp') }]);
   };
 
-  const removeCpElementRow = (index: number) => {
+  const removeCpElementRow = (id: string) => {
     if (cpElements.length > 1) {
-      setCpElements(cpElements.filter((_, i) => i !== index));
+      setCpElements(cpElements.filter(el => el.id !== id));
     }
   };
   
   const handleReuseCp = (tp: TPData) => {
-    setCpElements(tp.cpElements);
+    setCpElements(tp.cpElements.map(el => ({ ...el, id: newId('cp') })));
     setFormData(prev => ({
       ...prev,
       cpSourceVersion: tp.cpSourceVersion,
@@ -74,63 +93,79 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
   };
 
   // --- Handlers for TP Groups & Sub-Materi Groups ---
-  const handleGroupChange = (groupIndex: number, field: 'semester' | 'materi', value: string) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex][field] = value as any;
-    setTpGroups(newGroups);
+  const handleGroupChange = (groupId: string, field: 'semester' | 'materi', value: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? { ...g, [field]: value } : g));
   };
   
-  const handleSubMateriChange = (groupIndex: number, subIndex: number, value: string) => {
-     const newGroups = [...tpGroups];
-     newGroups[groupIndex].subMateriGroups[subIndex].subMateri = value;
-     setTpGroups(newGroups);
+  const handleSubMateriChange = (groupId: string, subGroupId: string, value: string) => {
+     setTpGroups(groups => groups.map(g => g.id === groupId ? {
+         ...g,
+         subMateriGroups: g.subMateriGroups.map(sg => sg.id === subGroupId ? { ...sg, subMateri: value } : sg)
+     } : g));
   }
 
-  const handleTpChange = (groupIndex: number, subIndex: number, tpIndex: number, value: string) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex].subMateriGroups[subIndex].tps[tpIndex] = value;
-    setTpGroups(newGroups);
+  const handleTpChange = (groupId: string, subGroupId: string, tpId: string, value: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? {
+        ...g,
+        subMateriGroups: g.subMateriGroups.map(sg => sg.id === subGroupId ? {
+            ...sg,
+            tps: sg.tps.map(tp => tp.id === tpId ? { ...tp, value } : tp)
+        } : sg)
+    } : g));
   };
   
-  const addTpField = (groupIndex: number, subIndex: number) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex].subMateriGroups[subIndex].tps.push('');
-    setTpGroups(newGroups);
+  const addTpField = (groupId: string, subGroupId: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? {
+        ...g,
+        subMateriGroups: g.subMateriGroups.map(sg => sg.id === subGroupId ? {
+            ...sg,
+            tps: [...sg.tps, { id: newId('tp'), value: '' }]
+        } : sg)
+    } : g));
   };
 
-  const removeTpField = (groupIndex: number, subIndex: number, tpIndex: number) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex].subMateriGroups[subIndex].tps = newGroups[groupIndex].subMateriGroups[subIndex].tps.filter((_, i) => i !== tpIndex);
-    setTpGroups(newGroups);
+  const removeTpField = (groupId: string, subGroupId: string, tpId: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? {
+        ...g,
+        subMateriGroups: g.subMateriGroups.map(sg => sg.id === subGroupId ? {
+            ...sg,
+            tps: sg.tps.filter(tp => tp.id !== tpId)
+        } : sg)
+    } : g));
   };
 
-  const addSubMateriGroup = (groupIndex: number) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex].subMateriGroups.push({ subMateri: '', tps: [''] });
-    setTpGroups(newGroups);
+  const addSubMateriGroup = (groupId: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? {
+        ...g,
+        subMateriGroups: [...g.subMateriGroups, { subMateri: '', tps: [{ id: newId('tp'), value: '' }], id: newId('subgroup') }]
+    } : g));
   };
 
-  const removeSubMateriGroup = (groupIndex: number, subIndex: number) => {
-    const newGroups = [...tpGroups];
-    newGroups[groupIndex].subMateriGroups = newGroups[groupIndex].subMateriGroups.filter((_, i) => i !== subIndex);
-    setTpGroups(newGroups);
+  const removeSubMateriGroup = (groupId: string, subGroupId: string) => {
+    setTpGroups(groups => groups.map(g => g.id === groupId ? {
+        ...g,
+        subMateriGroups: g.subMateriGroups.filter(sg => sg.id !== subGroupId)
+    } : g));
   };
 
   const addTpGroup = () => {
-    setTpGroups([...tpGroups, { semester: 'Ganjil', materi: '', subMateriGroups: [{ subMateri: '', tps: ['']}] }]);
+    setTpGroups([...tpGroups, { 
+      semester: 'Ganjil', 
+      materi: '', 
+      subMateriGroups: [{ subMateri: '', tps: [{id: newId('tp'), value: ''}], id: newId('subgroup') }],
+      id: newId('group')
+    }]);
   };
 
-  const removeTpGroup = (groupIndex: number) => {
-    setTpGroups(tpGroups.filter((_, i) => i !== groupIndex));
+  const removeTpGroup = (id: string) => {
+    setTpGroups(tpGroups.filter(g => g.id !== id));
   };
   
   const handleReorderTpGroup = (index: number, direction: 'up' | 'down') => {
     const newGroups = [...tpGroups];
     if (direction === 'up' && index > 0) {
-      // Swap with the element before
       [newGroups[index - 1], newGroups[index]] = [newGroups[index], newGroups[index - 1]];
     } else if (direction === 'down' && index < newGroups.length - 1) {
-      // Swap with the element after
       [newGroups[index + 1], newGroups[index]] = [newGroups[index], newGroups[index + 1]];
     }
     setTpGroups(newGroups);
@@ -148,7 +183,15 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
 
     try {
       const generatedData = await generateTPs({ ...formData, cpElements });
-      setTpGroups(generatedData);
+      setTpGroups(generatedData.map((group) => ({
+        ...group,
+        id: newId('group'),
+        subMateriGroups: group.subMateriGroups.map((subGroup) => ({
+            ...subGroup,
+            id: newId('subgroup'),
+            tps: subGroup.tps.map(tpText => ({ id: newId('tp'), value: tpText }))
+        }))
+      })));
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan saat generate TP.');
     } finally {
@@ -181,11 +224,21 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     setError('');
     setIsSaving(true);
     
+    // Strip temporary IDs before saving
+    const finalCpElements = cpElements.map(({ id, ...rest }) => rest);
+    const finalTpGroups = tpGroups.map(({ id, ...restGroup }) => ({
+        ...restGroup,
+        subMateriGroups: restGroup.subMateriGroups.map(({ id, ...restSubGroup }) => ({
+            ...restSubGroup,
+            tps: restSubGroup.tps.map(tp => tp.value)
+        }))
+    }));
+
     const finalData = {
         subject,
         ...formData,
-        cpElements,
-        tpGroups,
+        cpElements: finalCpElements,
+        tpGroups: finalTpGroups,
     };
 
     try {
@@ -273,18 +326,18 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
                 )}
               </div>
             {cpElements.map((item, index) => (
-              <div key={index} className="grid grid-cols-12 gap-4 items-start p-4 border rounded-lg bg-slate-50 relative">
+              <div key={item.id} className="grid grid-cols-12 gap-4 items-start p-4 border rounded-lg bg-slate-50 relative">
                 <div className="col-span-12 md:col-span-5">
-                  <label htmlFor={`element-${index}`} className="block text-sm font-medium text-slate-700 mb-1">Elemen / Domain</label>
-                  <textarea id={`element-${index}`} value={item.element} onChange={(e) => handleCpElementChange(index, 'element', e.target.value)} rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Contoh: Bilangan"></textarea>
+                  <label htmlFor={`element-${item.id}`} className="block text-sm font-medium text-slate-700 mb-1">Elemen / Domain</label>
+                  <textarea id={`element-${item.id}`} value={item.element} onChange={(e) => handleCpElementChange(item.id, 'element', e.target.value)} rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Contoh: Bilangan"></textarea>
                 </div>
                 <div className="col-span-12 md:col-span-7">
-                  <label htmlFor={`cp-${index}`} className="block text-sm font-medium text-slate-700 mb-1">Capaian Pembelajaran (CP)</label>
-                  <textarea id={`cp-${index}`} value={item.cp} onChange={(e) => handleCpElementChange(index, 'cp', e.target.value)} rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Masukkan CP yang sesuai..."></textarea>
+                  <label htmlFor={`cp-${item.id}`} className="block text-sm font-medium text-slate-700 mb-1">Capaian Pembelajaran (CP)</label>
+                  <textarea id={`cp-${item.id}`} value={item.cp} onChange={(e) => handleCpElementChange(item.id, 'cp', e.target.value)} rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500" placeholder="Masukkan CP yang sesuai..."></textarea>
                 </div>
                 {cpElements.length > 1 && (
                     <div className="absolute top-2 right-2">
-                        <button onClick={() => removeCpElementRow(index)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full">
+                        <button onClick={() => removeCpElementRow(item.id)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full">
                             <TrashIcon className="w-4 h-4"/>
                         </button>
                     </div>
@@ -332,7 +385,7 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
             {tpGroups.length > 0 ? (
               <div className="space-y-6">
                 {tpGroups.map((group, groupIndex) => (
-                  <div key={groupIndex} className="p-4 border-2 border-slate-200 rounded-lg bg-white relative">
+                  <div key={group.id} className="p-4 border-2 border-slate-200 rounded-lg bg-white relative">
                      <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/50 backdrop-blur-sm p-1 rounded-full border">
                           <button 
                               onClick={() => handleReorderTpGroup(groupIndex, 'up')}
@@ -351,49 +404,49 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
                               <ChevronDownIcon className="w-5 h-5"/>
                           </button>
                           <div className="h-5 w-px bg-slate-200 mx-1"></div>
-                          <button onClick={() => removeTpGroup(groupIndex)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full" title="Hapus Materi Pokok">
+                          <button onClick={() => removeTpGroup(group.id)} className="p-1.5 text-red-500 hover:bg-red-100 rounded-full" title="Hapus Materi Pokok">
                               <TrashIcon className="w-5 h-5"/>
                           </button>
                       </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Semester</label>
-                        <select value={group.semester} onChange={(e) => handleGroupChange(groupIndex, 'semester', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
+                        <select value={group.semester} onChange={(e) => handleGroupChange(group.id, 'semester', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500">
                           <option value="Ganjil">Ganjil</option>
                           <option value="Genap">Genap</option>
                         </select>
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-slate-700 mb-1">Materi Pokok</label>
-                        <input type="text" value={group.materi} onChange={(e) => handleGroupChange(groupIndex, 'materi', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"/>
+                        <input type="text" value={group.materi} onChange={(e) => handleGroupChange(group.id, 'materi', e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"/>
                       </div>
                     </div>
                     
                     <div className="space-y-4 pl-4 border-l-2 border-teal-200">
-                      {group.subMateriGroups.map((subGroup, subIndex) => (
-                        <div key={subIndex} className="p-4 border rounded-lg bg-slate-50 relative">
-                           <button onClick={() => removeSubMateriGroup(groupIndex, subIndex)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-100 rounded-full">
+                      {group.subMateriGroups.map((subGroup) => (
+                        <div key={subGroup.id} className="p-4 border rounded-lg bg-slate-50 relative">
+                           <button onClick={() => removeSubMateriGroup(group.id, subGroup.id)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-100 rounded-full">
                                 <TrashIcon className="w-4 h-4"/>
                             </button>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Sub-Materi</label>
-                                <input type="text" value={subGroup.subMateri} onChange={(e) => handleSubMateriChange(groupIndex, subIndex, e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 mb-3"/>
+                                <input type="text" value={subGroup.subMateri} onChange={(e) => handleSubMateriChange(group.id, subGroup.id, e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 mb-3"/>
                             </div>
                              <div className="space-y-3">
                               {subGroup.tps.map((tp, tpIndex) => (
-                                <div key={tpIndex} className="flex items-start gap-2">
+                                <div key={tp.id} className="flex items-start gap-2">
                                   <span className="pt-2 text-slate-500 font-semibold">{tpIndex + 1}.</span>
-                                  <textarea value={tp} onChange={(e) => handleTpChange(groupIndex, subIndex, tpIndex, e.target.value)} rows={2} className="flex-grow px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"></textarea>
-                                  <button onClick={() => removeTpField(groupIndex, subIndex, tpIndex)} className="p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full mt-1">
+                                  <textarea value={tp.value} onChange={(e) => handleTpChange(group.id, subGroup.id, tp.id, e.target.value)} rows={2} className="flex-grow px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"></textarea>
+                                  <button onClick={() => removeTpField(group.id, subGroup.id, tp.id)} className="p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-full mt-1">
                                       <TrashIcon className="w-5 h-5"/>
                                   </button>
                                 </div>
                               ))}
                             </div>
-                             <button onClick={() => addTpField(groupIndex, subIndex)} className="mt-3 text-teal-600 hover:text-teal-800 font-semibold text-sm">+ Tambah TP</button>
+                             <button onClick={() => addTpField(group.id, subGroup.id)} className="mt-3 text-teal-600 hover:text-teal-800 font-semibold text-sm">+ Tambah TP</button>
                         </div>
                       ))}
-                       <button onClick={() => addSubMateriGroup(groupIndex)} className="mt-2 text-indigo-600 hover:text-indigo-800 font-semibold text-sm">+ Tambah Grup Sub-Materi</button>
+                       <button onClick={() => addSubMateriGroup(group.id)} className="mt-2 text-indigo-600 hover:text-indigo-800 font-semibold text-sm">+ Tambah Grup Sub-Materi</button>
                     </div>
                   </div>
                 ))}
@@ -404,6 +457,10 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
                 <p className="text-sm text-slate-400 mt-1">Klik tombol "Hasilkan TP dengan AI" di atas.</p>
               </div>
             )}
+             <button onClick={addTpGroup} className="mt-6 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1">
+              <PlusIcon className="w-4 h-4" />
+              Tambah Grup Materi Pokok
+            </button>
           </div>
 
           <div className="mt-8 border-t pt-6 flex justify-end">

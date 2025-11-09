@@ -1,39 +1,21 @@
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../types";
-
-// Alamat proxy Netlify Function yang baru dan lebih bersih
-const GEMINI_PROXY_ENDPOINT = '/api/gemini-proxy';
+// Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
+import { apiRequest } from './dbService';
 
 /**
- * Mengirim permintaan ke proxy Netlify Function yang aman.
- * @param action - Jenis generasi yang diminta (misalnya, 'generateTPs').
- * @param payload - Data yang diperlukan untuk generasi tersebut.
- * @returns {Promise<any>} - Data yang dikembalikan dari AI.
+ * Helper function untuk membersihkan respons JSON dari AI.
+ * @param text Respons mentah dari AI.
+ * @returns String JSON yang sudah dibersihkan.
  */
-const callGeminiProxy = async (action: string, payload: any): Promise<any> => {
-  try {
-    const response = await fetch(GEMINI_PROXY_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action, payload }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      // Menangkap pesan error dari serverless function
-      throw new Error(data.error || `HTTP error ${response.status}`);
-    }
-
-    return data;
-  } catch (error: any) {
-    console.error(`Error calling Gemini proxy for action "${action}":`, error);
-    // Melempar error dengan pesan yang lebih informatif untuk ditangkap oleh UI
-    throw new Error(`Gagal berkomunikasi dengan server AI. Detail: ${error.message}`);
+const cleanJsonString = (text: string): string => {
+  let jsonStr = text.trim();
+  if (jsonStr.startsWith("```json")) {
+    jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
+  } else if (jsonStr.startsWith("```")) {
+    jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
   }
+  return jsonStr;
 };
-
 
 export const generateTPs = async (
   data: {
@@ -43,15 +25,10 @@ export const generateTPs = async (
   }
 ): Promise<TPGroup[]> => {
   try {
-    const response = await callGeminiProxy('generateTPs', data);
+    // Memanggil Google Apps Script dengan action 'generateTPs'
+    const response = await apiRequest('generateTPs', data);
     
-    let jsonStr = response.text.trim();
-    if (jsonStr.startsWith("```json")) {
-        jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
-    } else if (jsonStr.startsWith("```")) {
-        jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
-    }
-
+    const jsonStr = cleanJsonString(response.text);
     let parsed = JSON.parse(jsonStr);
 
     // --- FIX: Proactively fix a common AI error where 'materi' is missing ---
@@ -97,29 +74,24 @@ export const generateTPs = async (
     console.error("Unexpected AI JSON structure:", JSON.stringify(JSON.parse(jsonStr), null, 2));
     throw new Error("Struktur JSON yang dihasilkan AI tidak sesuai format yang diharapkan.");
 
-  } catch (error: any) {
+  } catch (error: any)
+ {
     console.error("Error generating or parsing TPs:", error);
     if (error instanceof SyntaxError) {
         throw new Error("Gagal memproses respons dari AI karena format tidak valid. Silakan coba generate lagi.");
     }
-    // Error sudah diformat dari callGeminiProxy, jadi kita bisa melemparnya kembali.
-    throw error;
+    // Melempar error dengan pesan yang lebih informatif
+    throw new Error(`Gagal berkomunikasi dengan AI. Detail: ${error.message}`);
   }
 };
 
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
     try {
-        const response = await callGeminiProxy('generateATP', tpData);
-        let jsonStr = response.text.trim();
-        if (jsonStr.startsWith("```json")) {
-            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
-        } else if (jsonStr.startsWith("```")) {
-            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
-        }
+        const response = await apiRequest('generateATP', { tpData });
+        const jsonStr = cleanJsonString(response.text);
         const reorderedIndices = JSON.parse(jsonStr) as number[];
 
-        // Logika post-processing tetap di sini karena ini adalah logika bisnis sisi klien
         const tpCodeMap = new Map<string, string>();
         let materiPokokNumber = 1;
         tpData.tpGroups.forEach(group => {
@@ -148,6 +120,10 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
         
         const finalATPTable: ATPTableRow[] = reorderedIndices.map((originalIndex, newSequenceIndex) => {
             const originalData = sourceOfTruthData[originalIndex];
+            if (!originalData) {
+                // Tambahkan fallback untuk mencegah crash jika AI memberikan indeks yang salah
+                throw new Error(`AI mengembalikan indeks yang tidak valid: ${originalIndex}.`);
+            }
             return {
                 topikMateri: originalData.materi,
                 tp: originalData.tpText,
@@ -164,22 +140,15 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons pengurutan ATP dari AI karena format tidak valid.");
         }
-        throw error;
+        throw new Error(`Gagal berkomunikasi dengan AI untuk ATP. Detail: ${error.message}`);
     }
 };
 
 
 export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
     try {
-        const response = await callGeminiProxy('generatePROTA', { atpData, jamPertemuan });
-
-        let jsonStr = response.text.trim();
-        if (jsonStr.startsWith("```json")) {
-            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
-        } else if (jsonStr.startsWith("```")) {
-            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
-        }
-
+        const response = await apiRequest('generatePROTA', { atpData, jamPertemuan });
+        const jsonStr = cleanJsonString(response.text);
         const parsedAllocations = JSON.parse(jsonStr) as { index: number; alokasiWaktu: string }[];
         
         if (!Array.isArray(parsedAllocations) || parsedAllocations.length !== atpData.content.length) {
@@ -187,10 +156,10 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
         }
 
         const finalProtaData: PROTARow[] = atpData.content.map((originalRow, index) => {
-            const allocationData = parsedAllocations[index];
+            const allocationData = parsedAllocations.find(p => p.index === index);
             let allocatedTime = '2 JP'; 
 
-            if (allocationData && allocationData.index === index && typeof allocationData.alokasiWaktu === 'string' && allocationData.alokasiWaktu.match(/^\d+\s*JP$/i)) {
+            if (allocationData && typeof allocationData.alokasiWaktu === 'string' && allocationData.alokasiWaktu.match(/^\d+\s*JP$/i)) {
                 allocatedTime = allocationData.alokasiWaktu;
             } else {
                 console.warn(`Alokasi waktu tidak valid untuk index ${index}. Menggunakan default '2 JP'.`, allocationData);
@@ -215,21 +184,14 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons PROTA dari AI karena format tidak valid.");
         }
-        throw error;
+        throw new Error(`Gagal berkomunikasi dengan AI untuk PROTA. Detail: ${error.message}`);
     }
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap', grade: string): Promise<KKTPRow[]> => {
     try {
-        const response = await callGeminiProxy('generateKKTP', { atpData, semester, grade });
-
-        let jsonStr = response.text.trim();
-        if (jsonStr.startsWith("```json")) {
-            jsonStr = jsonStr.substring(7, jsonStr.length - 3).trim();
-        } else if (jsonStr.startsWith("```")) {
-            jsonStr = jsonStr.substring(3, jsonStr.length - 3).trim();
-        }
-
+        const response = await apiRequest('generateKKTP', { atpData, semester, grade });
+        const jsonStr = cleanJsonString(response.text);
         const parsedResult = JSON.parse(jsonStr) as { index: number; kriteria: any; targetKktp: any }[];
         
         const semesterContent = atpData.content.filter(row => row.semester === semester);
@@ -237,14 +199,14 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
             throw new Error(`Respons AI tidak valid. Jumlah kriteria (${parsedResult.length}) tidak cocok dengan jumlah TP (${semesterContent.length}).`);
         }
 
-        const finalKKTPTable: KKTPRow[] = parsedResult.map((result, index) => {
-            const originalData = semesterContent[result.index];
-            if (!originalData || result.index !== index) {
-                 throw new Error(`Kesalahan data dari AI: Indeks tidak berurutan (diharapkan: ${index}, diterima: ${result.index}).`);
+        const finalKKTPTable: KKTPRow[] = parsedResult.map((result, i) => {
+            const originalData = semesterContent[i]; // Gunakan urutan yang sama
+            if (!originalData) {
+                 throw new Error(`Kesalahan data dari AI: Tidak dapat menemukan data asli untuk indeks ${i}.`);
             }
             
             return {
-                no: index + 1,
+                no: i + 1,
                 materiPokok: originalData.topikMateri,
                 tp: originalData.tp,
                 kriteria: result.kriteria,
@@ -259,6 +221,6 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid.");
         }
-        throw error;
+        throw new Error(`Gagal berkomunikasi dengan AI untuk KKTP. Detail: ${error.message}`);
     }
 };
