@@ -62,30 +62,37 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
     
     const url = GOOGLE_APPS_SCRIPT_URL;
     
-    // Menggunakan FormData seringkali lebih andal untuk menghindari masalah CORS dengan Google Apps Script.
-    // Backend script perlu diperbarui untuk membaca dari `e.parameter` bukan `e.postData.contents`.
     const formData = new FormData();
     formData.append('action', action);
-    formData.append('params', JSON.stringify(params)); // Kirim parameter sebagai string JSON
+    formData.append('params', JSON.stringify(params));
 
     const options: RequestInit = {
         method: 'POST',
         mode: 'cors',
         body: formData,
-        // PENTING: JANGAN atur header 'Content-Type' saat menggunakan FormData.
-        // Browser akan secara otomatis mengaturnya ke 'multipart/form-data' dengan boundary yang benar.
     };
 
     try {
         const response = await fetch(url, options);
+        const rawResponseText = await response.text();
+
+        // Cek jika respons adalah halaman HTML error dari Google
+        if (rawResponseText.trim().startsWith('<!DOCTYPE html>')) {
+             throw new Error(`Server Google Apps Script mengembalikan halaman HTML, bukan data JSON. Ini adalah tanda adanya error di sisi server.
+- PASTIKAN Anda sudah melakukan "Deploy" -> "Penerapan baru" setelah menyimpan perubahan pada skrip.
+- Periksa Log Eksekusi di editor Google Apps Script untuk melihat detail error yang sebenarnya.`);
+        }
+
         let responseData;
         try {
-            responseData = await response.json();
+            responseData = JSON.parse(rawResponseText);
         } catch (e) {
+             // Jika parsing gagal setelah cek HTML, ini adalah error format yang tidak terduga
+            console.error('Gagal mem-parsing respons JSON dari server:', rawResponseText);
             if (!response.ok) {
-                 throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak valid.`);
+                 throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak dapat diproses.`);
             }
-            responseData = {}; 
+            throw new Error('Server memberikan respons dalam format yang tidak terduga. Silakan periksa log server.');
         }
 
         if (!response.ok) {
@@ -104,19 +111,17 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
         
         let detailedMessage = error.message;
 
-        // Secara spesifik menangani "Failed to fetch" yang merupakan error jaringan atau CORS
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            detailedMessage = `Gagal melakukan koneksi ke server. Ini biasanya disebabkan oleh masalah di backend (Google Apps Script), bukan di aplikasi ini.
-- Pastikan Anda telah menyalin kode Google Apps Script terbaru.
-- Pastikan Anda telah melakukan "Deploy" ulang script setelah membuat perubahan.
-- Periksa apakah ada kesalahan (error) di dalam log eksekusi Google Apps Script Anda untuk aksi "${action}".`;
+            detailedMessage = `Gagal terhubung ke server Google Apps Script.
+- Periksa koneksi internet Anda.
+- Pastikan URL Google Apps Script sudah benar dan telah di-deploy ulang.
+- Periksa Log Eksekusi di Google Apps Script untuk melihat apakah ada error saat skrip dijalankan.`;
         } 
-        // Menangani error konfigurasi umum dari Google Sheets
         else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
-            detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, salah satu sheet (TP, ATP, PROTA, dll.) tidak ada di dalam file Google Sheet Anda, atau ada kesalahan pengetikan pada nama sheet di dalam script. Harap periksa kembali.`;
+            detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
         }
 
-        throw new Error(`Gagal mengambil data dari server. Detail: ${detailedMessage}`);
+        throw new Error(`Gagal memproses permintaan. Detail: ${detailedMessage}`);
     }
 };
 
