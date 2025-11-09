@@ -4,8 +4,11 @@
 // untuk bertindak sebagai backend yang aman.
 // PASTIKAN ANDA SUDAH MENGIKUTI LANGKAH-LANGKAH PENYIAPAN DI DOKUMENTASI.
 // ====================================================================================
-const GOOGLE_APPS_SCRIPT_URL: string = 'https://script.google.com/macros/s/AKfycbwO8db3SZ7f9HSV0zmuoBAv3s0SBkSGjFg8wZ4qB4-HVFx_PmNT-8rArl-vq86Fnwvu/exec';
-const PLACEHOLDER_URL = '';
+
+// FIX: Mengambil URL dari environment variable untuk keamanan dan fleksibilitas.
+// Ini perlu diatur di dashboard Netlify.
+const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL;
+const PLACEHOLDER_URL = undefined; // Gunakan undefined untuk perbandingan yang lebih aman
 
 import { TPData, ATPData, PROTAData, KKTPData } from '../types';
 
@@ -53,7 +56,7 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
  */
 const apiRequest = async (action: string, params: Record<string, any> = {}) => {
     if (GOOGLE_APPS_SCRIPT_URL === PLACEHOLDER_URL || !GOOGLE_APPS_SCRIPT_URL) {
-        throw new Error('URL Google Apps Script belum diatur. Silakan salin URL dari hasil deploy Google Apps Script Anda dan tempelkan ke dalam variabel GOOGLE_APPS_SCRIPT_URL di file services/dbService.ts.');
+        throw new Error('URL Google Apps Script belum diatur di environment variables (GOOGLE_APPS_SCRIPT_URL). Silakan atur di dashboard Netlify dan deploy ulang.');
     }
     
     const url = GOOGLE_APPS_SCRIPT_URL;

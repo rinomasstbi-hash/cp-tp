@@ -33,8 +33,10 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
   const workflowSteps: {
     title: string;
     description: string;
-    icon: React.ReactNode;
-    backgroundIcon: React.ReactNode;
+    // FIX: The `icon` and `backgroundIcon` types are specified to accept a `className` prop,
+    // which is necessary for `React.cloneElement` to be type-safe.
+    icon: React.ReactElement<{ className?: string }>;
+    backgroundIcon: React.ReactElement<{ className?: string }>;
     status: 'completed' | 'next' | 'locked';
     action: () => void;
     actionLabel: string;
@@ -136,7 +138,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
                 {/* Decorative Background Icon */}
                 {!isLocked && (
                     <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
-                        {React.cloneElement(step.backgroundIcon as React.ReactElement, { className: 'h-28 w-28 text-white' })}
+                        {/* FIX: The `cloneElement` call now type-checks correctly due to the updated type definition for `workflowSteps`. */}
+                        {React.cloneElement(step.backgroundIcon, { className: 'h-28 w-28 text-white' })}
                     </div>
                 )}
                 
@@ -147,7 +150,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
                             <div className={`flex-shrink-0 p-3 rounded-lg inline-block ${
                                 isLocked ? 'bg-slate-200' : 'bg-white/20'
                             }`}>
-                                {React.cloneElement(step.icon as React.ReactElement, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
+                                {/* FIX: The `cloneElement` call now type-checks correctly due to the updated type definition for `workflowSteps`. */}
+                                {React.cloneElement(step.icon, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
                             </div>
                             <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
                         </div>
