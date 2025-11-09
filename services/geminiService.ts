@@ -140,8 +140,8 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
                 throw new Error(`AI mengembalikan indeks yang tidak valid: ${originalIndex}.`);
             }
             return {
-                topikMateri: originalData.materi,
-                tp: originalData.tpText,
+                topikMateri: originalData.materi.replace(/\$/g, ''),
+                tp: originalData.tpText.replace(/\$/g, ''),
                 kodeTp: originalData.tpCode,
                 atpSequence: newSequenceIndex + 1,
                 semester: originalData.semester,
