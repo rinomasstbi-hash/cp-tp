@@ -12,8 +12,9 @@ export const generateTPs = async (
     additionalNotes: string;
   }
 ): Promise<TPGroup[]> => {
-  // Initialize the GoogleGenAI client here, just before it's needed.
-  // This ensures the app doesn't crash on load if process.env.API_KEY is not available.
+  if (!process.env.API_KEY) {
+    throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
+  }
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const { cpElements, grade, additionalNotes } = data;
@@ -205,6 +206,9 @@ ${cpElementsString}
 
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
+    }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     // Step 1: Create the "source of truth" data structure locally. This contains all TP info.
@@ -358,6 +362,9 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 
 
 export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
+    }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const tpsForAI = atpData.content.map((row, index) => ({
@@ -481,6 +488,9 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap', grade: string): Promise<KKTPRow[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error('Kunci API Google AI tidak dikonfigurasi. Harap periksa pengaturan lingkungan Anda.');
+    }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // Filter ATP content for the selected semester

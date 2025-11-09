@@ -347,9 +347,18 @@ const App: React.FC = () => {
     setIsAuthorizing(true);
     
     try {
-        const targetEmail = (authPrompt.type === 'atp' && (authPrompt.data as ATPData).creatorEmail)
-            ? (authPrompt.data as ATPData).creatorEmail
-            : (authPrompt.data as TPData).creatorEmail;
+        let targetEmail: string | undefined;
+
+        if (authPrompt.type === 'atp') {
+            targetEmail = (authPrompt.data as ATPData).creatorEmail;
+        } else {
+            targetEmail = (authPrompt.data as TPData).creatorEmail;
+        }
+        
+        // BUG FIX: Added a guard to prevent 'trim of undefined' error if creatorEmail is missing from the data.
+        if (!targetEmail) {
+            throw new Error('Data email pembuat tidak ditemukan. Tidak dapat memverifikasi.');
+        }
 
         if (authEmailInput.trim().toLowerCase() !== targetEmail.trim().toLowerCase()) {
             throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
