@@ -26,7 +26,7 @@ const Header: React.FC = () => {
             </div>
             <div className="ml-4">
               <span className="block text-base sm:text-xl font-extrabold text-white tracking-wide uppercase">
-                Tujuan Pembelajaran (TP)
+                Asisten Guru (AGRU)
               </span>
               <span className="block text-sm text-slate-300">
                 Tahun Pelajaran 2025/2026

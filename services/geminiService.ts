@@ -192,13 +192,16 @@ ${cpElementsString}
     }
   } catch (error: any) {
     console.error("Error generating or parsing TPs:", error);
+    if (typeof error.message === 'string' && (error.message.includes('API Key must be set') || error.message.includes('API key not valid'))) {
+         throw new Error("Kunci API (API Key) untuk layanan AI tidak valid atau tidak ditemukan. Aplikasi ini memerlukan konfigurasi khusus di sisi server. Silakan hubungi administrator sistem.");
+    }
     if (error instanceof SyntaxError) {
         // This error occurs if JSON.parse fails, likely due to an invalid format from the AI.
         throw new Error("Gagal memproses respons dari AI karena format tidak valid. Silakan coba generate lagi.");
     }
     // This provides a more specific error, including the actual message from the API client,
     // which helps diagnose issues like invalid API keys instead of generic network errors.
-    throw new Error(`Gagal berkomunikasi dengan AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'} Pastikan koneksi internet dan API Key Anda sudah benar.`);
+    throw new Error(`Gagal berkomunikasi dengan AI. Detail: ${error.message || 'Terjadi kesalahan yang tidak diketahui.'}`);
   }
 };
 
@@ -349,6 +352,9 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 
     } catch (error: any) {
         console.error("Error generating ATP:", error);
+        if (typeof error.message === 'string' && (error.message.includes('API Key must be set') || error.message.includes('API key not valid'))) {
+             throw new Error("Kunci API (API Key) untuk layanan AI tidak valid atau tidak ditemukan. Aplikasi ini memerlukan konfigurasi khusus di sisi server. Silakan hubungi administrator sistem.");
+        }
          if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons pengurutan ATP dari AI karena format tidak valid. Silakan coba generate lagi.");
         }
@@ -474,6 +480,9 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
 
     } catch (error: any) {
         console.error("Error generating PROTA:", error);
+        if (typeof error.message === 'string' && (error.message.includes('API Key must be set') || error.message.includes('API key not valid'))) {
+             throw new Error("Kunci API (API Key) untuk layanan AI tidak valid atau tidak ditemukan. Aplikasi ini memerlukan konfigurasi khusus di sisi server. Silakan hubungi administrator sistem.");
+        }
          if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons PROTA dari AI karena format tidak valid. Silakan coba generate lagi.");
         }
@@ -614,6 +623,9 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
 
     } catch (error: any) {
         console.error("Error generating KKTP:", error);
+        if (typeof error.message === 'string' && (error.message.includes('API Key must be set') || error.message.includes('API key not valid'))) {
+             throw new Error("Kunci API (API Key) untuk layanan AI tidak valid atau tidak ditemukan. Aplikasi ini memerlukan konfigurasi khusus di sisi server. Silakan hubungi administrator sistem.");
+        }
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid. Silakan coba generate lagi.");
         }
