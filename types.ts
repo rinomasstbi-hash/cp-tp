@@ -89,5 +89,29 @@ export interface KKTPData {
   createdAt: string;
 }
 
+export interface PROSEMHeader {
+  month: string;
+  weeks: number;
+}
 
-export type View = 'select_subject' | 'subject_dashboard' | 'tp_menu' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list' | 'view_kktp';
+export interface PROSEMRow {
+  no: number | string;
+  topikKonten: string;
+  alokasiWaktu: string;
+  bulan: Record<string, (string | null)[]>; 
+  keterangan: string;
+}
+
+export interface PROSEMData {
+  id: string;
+  protaId: string;
+  subject: string;
+  grade: string;
+  semester: 'Ganjil' | 'Genap';
+  headers: PROSEMHeader[];
+  content: PROSEMRow[];
+  createdAt: string;
+}
+
+
+export type View = 'select_subject' | 'subject_dashboard' | 'tp_menu' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list' | 'view_kktp' | 'view_prosem';

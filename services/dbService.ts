@@ -4,10 +4,10 @@
 // Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
 // Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
 // Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQSRJ99FFzKkOJUxa8MF_6ndknDX-54ILJKikkySulqL-DFFtnmcofe96UKZu-7s5n/exec';
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwS4VHProkFfusOG5nYZI09MX6n0550Q0tk6Sfyw7eyi_5NZbIm8OYab8TfNvU5lU1u/exec';
 
 
-import { TPData, ATPData, PROTAData, KKTPData } from '../types';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
 
 /**
  * Recursively cleans '$' symbols from all string values within an object or array.
@@ -245,4 +245,26 @@ export const deleteKKTPsByATPId = (atpId: string): Promise<{ success: boolean }>
 
 export const deleteKKTPsByTPId = (tpId: string): Promise<{ success: boolean }> => {
     return apiRequest('deleteKKTPsByTPId', { tpId });
+};
+
+// --- PROSEM Functions ---
+export const getPROSEMsByPROTAId = async (protaId: string): Promise<PROSEMData[]> => {
+    const data = await apiRequest('getPROSEMByProtaId', { protaId });
+    if (Array.isArray(data)) {
+        return data.map(prosem => parseData<PROSEMData>(prosem, ['content', 'headers']));
+    }
+    return [];
+};
+
+export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt'>): Promise<PROSEMData> => {
+    const result = await apiRequest('savePROSEM', { data });
+    return parseData<PROSEMData>(result, ['content', 'headers']);
+};
+
+export const deletePROSEMsByPROTAId = (protaId: string): Promise<{ success: boolean }> => {
+    return apiRequest('deletePROSEMByProtaId', { protaId });
+};
+
+export const deletePROSEMsByTPId = (tpId: string): Promise<{ success: boolean }> => {
+    return apiRequest('deletePROSEMByTPId', { tpId });
 };

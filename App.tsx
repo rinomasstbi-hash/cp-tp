@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData } from './types';
+import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
 import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
@@ -8,7 +8,7 @@ import TPMenu from './components/TPMenu';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon } from './components/icons';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon } from './components/icons';
 
 const Header: React.FC = () => {
   return (
@@ -172,6 +172,12 @@ const App: React.FC = () => {
   const [kktpGenerationProgress, setKktpGenerationProgress] = useState({ isLoading: false, message: '' });
   const [activeKktpSemester, setActiveKktpSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
 
+  // State for PROSEM Management
+  const [prosemData, setProsemData] = useState<{ ganjil: PROSEMData | null; genap: PROSEMData | null } | null>(null);
+  const [prosemError, setProsemError] = useState<string | null>(null);
+  const [prosemGenerationProgress, setProsemGenerationProgress] = useState({ isLoading: false, message: '' });
+  const [activeProsemSemester, setActiveProsemSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
+
 
   // State for AI generation progress
   const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
@@ -242,31 +248,65 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadAllDeviceStatus = async (tpId: string) => {
         setLoadingState({ isLoading: true, title: 'Memuat Status', message: 'Memeriksa perangkat ajar yang sudah ada...' });
-        try {
-            const [atpsData, protasData] = await Promise.all([
-                apiService.getATPsByTPId(tpId),
-                apiService.getPROTAsByTPId(tpId)
-            ]);
-            
-            setAtps(atpsData);
-            setProtas(protasData);
+        let atpsData: ATPData[] = [];
+        let protasData: PROTAData[] = [];
 
-            if (atpsData.length > 0) {
-                // Only check for KKTP if an ATP exists
-                const kktpsData = await apiService.getKKTPsByATPId(atpsData[0].id);
-                setKktpData({
-                    ganjil: kktpsData.find(k => k.semester === 'Ganjil') || null,
-                    genap: kktpsData.find(k => k.semester === 'Genap') || null,
-                });
-            } else {
-                setKktpData(null); // No ATP means no KKTP
+        try {
+            // Step 1: Fetch ATP and PROTA separately for resilience
+            try {
+                atpsData = await apiService.getATPsByTPId(tpId);
+                setAtps(atpsData);
+            } catch (e) {
+                console.error("Gagal memuat ATP:", e);
+                setAtpError("Gagal memuat data ATP.");
             }
+
+            try {
+                protasData = await apiService.getPROTAsByTPId(tpId);
+                setProtas(protasData);
+            } catch (e) {
+                console.error("Gagal memuat PROTA:", e);
+                setProtaError("Gagal memuat data PROTA.");
+            }
+
+            // Step 2: Fetch dependents based on what was successfully loaded
+            if (atpsData.length > 0) {
+                try {
+                    const kktpsData = await apiService.getKKTPsByATPId(atpsData[0].id);
+                    setKktpData(kktpsData.length > 0 ? {
+                        ganjil: kktpsData.find(k => k.semester === 'Ganjil') || null,
+                        genap: kktpsData.find(k => k.semester === 'Genap') || null,
+                    } : null);
+                } catch (e) {
+                     console.error("Gagal memuat KKTP:", e);
+                     setKktpError("Gagal memuat data KKTP.");
+                }
+            } else {
+                setKktpData(null);
+            }
+
+            if (protasData.length > 0) {
+                try {
+                    const prosemDataResult = await apiService.getPROSEMsByPROTAId(protasData[0].id);
+                    setProsemData(prosemDataResult.length > 0 ? {
+                        ganjil: prosemDataResult.find(p => p.semester === 'Ganjil') || null,
+                        genap: prosemDataResult.find(p => p.semester === 'Genap') || null,
+                    } : null);
+                } catch (e) {
+                    console.error("Gagal memuat PROSEM:", e);
+                    setProsemError("Gagal memuat data PROSEM.");
+                }
+            } else {
+                setProsemData(null);
+            }
+
         } catch (error: any) {
+            // This is a fallback for any unexpected errors in the flow
             setGlobalError(error.message);
-            // Reset all states on error
             setAtps([]);
             setProtas([]);
             setKktpData(null);
+            setProsemData(null);
         } finally {
             setLoadingState({ isLoading: false, title: '', message: '' });
         }
@@ -305,6 +345,7 @@ const App: React.FC = () => {
     setAtps([]);
     setProtas([]);
     setKktpData(null);
+    setProsemData(null);
     setView('tp_menu');
   };
 
@@ -399,6 +440,7 @@ const App: React.FC = () => {
                 await apiService.deleteATPsByTPId(tpData.id!);
                 await apiService.deletePROTAsByTPId(tpData.id!);
                 await apiService.deleteKKTPsByTPId(tpData.id!);
+                await apiService.deletePROSEMsByTPId(tpData.id!);
                 await apiService.deleteTP(tpData.id!);
                 if (selectedSubject) {
                     await loadTPsForSubject(selectedSubject);
@@ -639,6 +681,55 @@ const App: React.FC = () => {
         setKktpError(error.message);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
+    }
+  };
+
+  const handleViewAndGenerateProsem = async () => {
+    if (!selectedTP) {
+      setProsemError("Data TP tidak ditemukan.");
+      return;
+    }
+
+    setView('view_prosem');
+    setProsemGenerationProgress({ isLoading: true, message: 'Memuat data PROSEM...' });
+    setProsemError(null);
+    setProsemData(null);
+
+    try {
+        if (protas.length === 0) {
+            setProsemGenerationProgress({ isLoading: false, message: '' });
+            setTransientMessage('Anda harus membuat PROTA terlebih dahulu untuk membuat PROSEM.');
+            setView('tp_menu');
+            return;
+        }
+        const prota = protas[0];
+
+        const existingProsems = await apiService.getPROSEMsByPROTAId(prota.id);
+        let finalGanjilData: PROSEMData | null = existingProsems.find(p => p.semester === 'Ganjil') || null;
+        let finalGenapData: PROSEMData | null = existingProsems.find(p => p.semester === 'Genap') || null;
+
+        if (!finalGanjilData && !finalGenapData) {
+            setProsemGenerationProgress({ isLoading: true, message: 'Membuat PROSEM Ganjil dengan AI...' });
+            const ganjilResult = await geminiService.generatePROSEM(prota, 'Ganjil', selectedTP.grade);
+            if (ganjilResult.content.length > 0) {
+                const ganjilPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', ...ganjilResult };
+                finalGanjilData = await apiService.savePROSEM(ganjilPayload);
+            }
+
+            setProsemGenerationProgress({ isLoading: true, message: 'Membuat PROSEM Genap dengan AI...' });
+            const genapResult = await geminiService.generatePROSEM(prota, 'Genap', selectedTP.grade);
+            if (genapResult.content.length > 0) {
+                const genapPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', ...genapResult };
+                finalGenapData = await apiService.savePROSEM(genapPayload);
+            }
+        }
+        setProsemData({ ganjil: finalGanjilData, genap: finalGenapData });
+        setActiveProsemSemester('Ganjil');
+
+    } catch (error: any) {
+        setProsemError(error.message);
+    } finally {
+        setProsemGenerationProgress({ isLoading: false, message: '' });
     }
   };
 
@@ -1050,7 +1141,137 @@ const App: React.FC = () => {
     setTimeout(() => setCopyNotification(''), 2000);
   };
 
-  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota') => {
+  const handleExportProsemToWord = (semester: 'Ganjil' | 'Genap') => {
+      const dataToExport = semester === 'Ganjil' ? prosemData?.ganjil : prosemData?.genap;
+      if (!dataToExport || !selectedTP || protas.length === 0) return;
+      const creatorName = protas[0].creatorName;
+  
+      const styles = `
+        <style>
+          @page { size: landscape; }
+          body { font-family: 'Times New Roman', Times, serif; font-size: 10pt; }
+          p, li, h2, h1 { margin: 0; padding: 0; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid black; padding: 3px; text-align: left; vertical-align: middle; }
+          th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
+          .title { text-align: center; font-weight: bold; font-size: 14pt; }
+          .header-table { margin-bottom: 15px; width: auto; }
+          .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+          .text-center { text-align: center; }
+          .rotate { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+          .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
+          .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+        </style>
+      `;
+  
+      const identityTable = `
+        <table class="header-table">
+          <tr><td style="padding-right: 10px;">Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+          <tr><td>Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
+          <tr><td>Kelas/Semester</td><td>: ${dataToExport.grade} / ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
+          <tr><td>Tahun Pelajaran</td><td>: 2025/2026</td></tr>
+        </table>
+      `;
+  
+      const monthHeaders = dataToExport.headers.map(h => `<th colspan="${h.weeks}" class="text-center">${h.month}</th>`).join('');
+      const weekHeaders = dataToExport.headers.flatMap(h => Array.from({ length: h.weeks }, (_, i) => `<th class="text-center">${i + 1}</th>`)).join('');
+  
+      const prosemRows = dataToExport.content.map(row => {
+          const weekCells = dataToExport.headers.flatMap(h => 
+              row.bulan[h.month]?.map(cell => `<td class="text-center">${cell || ''}</td>`) || Array(h.weeks).fill('<td></td>')
+          ).join('');
+          return `
+              <tr>
+                  <td class="text-center">${row.no}</td>
+                  <td>${row.topikKonten}</td>
+                  <td class="text-center">${row.alokasiWaktu}</td>
+                  ${weekCells}
+                  <td>${row.keterangan}</td>
+              </tr>
+          `;
+      }).join('');
+  
+      const mainContent = `
+        <p class="title">PROGRAM SEMESTER (PROSEM)</p>
+        <br>
+        ${identityTable}
+        <table>
+          <thead>
+            <tr>
+              <th rowspan="2" class="text-center">No</th>
+              <th rowspan="2" class="text-center">Topik/Konten</th>
+              <th rowspan="2" class="text-center rotate">Alokasi Waktu</th>
+              ${monthHeaders}
+              <th rowspan="2" class="text-center">Keterangan</th>
+            </tr>
+            <tr>
+              ${weekHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            ${prosemRows}
+          </tbody>
+        </table>
+      `;
+  
+      const signatureBlock = `
+      <div class="signature-table-container">
+        <br>
+        <table style="width: 100%; border: none; text-align: center;">
+          <tbody>
+            <tr>
+              <td class="signature-td">Mengetahui,</td>
+              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">Kepala Madrasah,</td>
+              <td class="signature-td">Guru Mata Pelajaran,</td>
+            </tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${creatorName}</td>
+            </tr>
+            <tr>
+              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. -</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            ${styles}
+          </head>
+          <body>
+            ${mainContent}
+            ${signatureBlock}
+          </body>
+        </html>
+      `;
+  
+      const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const fileName = `PROSEM_${dataToExport.subject.replace(/ /g, '_')}_${dataToExport.semester}.doc`;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      setCopyNotification(`File Word PROSEM ${semester} berhasil diunduh!`);
+      setTimeout(() => setCopyNotification(''), 2000);
+  };
+
+  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'prosem') => {
     if (!selectedTP) return;
 
     setGlobalError(null);
@@ -1066,6 +1287,11 @@ const App: React.FC = () => {
         return;
     }
     
+    if (destination === 'prosem') {
+        await handleViewAndGenerateProsem();
+        return;
+    }
+
     if (destination === 'prota') {
         if(protas.length > 0) {
             setView('view_prota_list');
@@ -1129,6 +1355,7 @@ const App: React.FC = () => {
                 atps={atps}
                 protas={protas}
                 kktpData={kktpData}
+                prosemData={prosemData}
                 onNavigate={handleNavigateFromMenu}
                 onBack={() => setView('subject_dashboard')}
                 isLoading={loadingState.isLoading}
@@ -1614,6 +1841,116 @@ const App: React.FC = () => {
             </div>
         );
 
+      case 'view_prosem':
+        if (!selectedTP) return null;
+        const PROSEMTable: React.FC<{ data: PROSEMData }> = ({ data }) => {
+            const totalWeeks = data.headers.reduce((sum, h) => sum + h.weeks, 0);
+            return (
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-2xl font-bold text-slate-800">
+                            Rincian PROSEM - Semester {data.semester}
+                        </h2>
+                        <button onClick={() => handleExportProsemToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto mt-4">
+                        <table className="min-w-full bg-white border border-slate-300 text-xs">
+                            <thead className="bg-slate-100 text-center">
+                                <tr>
+                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">No</th>
+                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Topik/Konten</th>
+                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle"><span className="[writing-mode:vertical-rl] transform rotate-180">Alokasi Waktu</span></th>
+                                    {data.headers.map(header => (
+                                        <th key={header.month} colSpan={header.weeks} className="px-2 py-2 border-b border-slate-300">{header.month}</th>
+                                    ))}
+                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Keterangan</th>
+                                </tr>
+                                <tr>
+                                    {data.headers.flatMap(header => 
+                                        Array.from({ length: header.weeks }, (_, i) => <th key={`${header.month}-${i}`} className="px-2 py-1 border-b border-slate-300 w-8">{i + 1}</th>)
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.content.map((row, index) => (
+                                    <tr key={index} className="hover:bg-slate-50">
+                                        <td className="px-2 py-2 border-r text-center">{row.no}</td>
+                                        <td className="px-2 py-2 border-r">{row.topikKonten}</td>
+                                        <td className="px-2 py-2 border-r text-center">{row.alokasiWaktu}</td>
+                                        {data.headers.flatMap(h =>
+                                            Array.from({ length: h.weeks }, (_, weekIndex) => (
+                                                <td key={`${h.month}-w${weekIndex}`} className="px-2 py-2 border-r text-center">
+                                                    {(row.bulan[h.month] && row.bulan[h.month][weekIndex]) || ''}
+                                                </td>
+                                            ))
+                                        )}
+                                        <td className="px-2 py-2">{row.keterangan}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+      
+        return (
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[95vw] mx-auto">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                    <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+                        <BackIcon className="w-5 h-5" />
+                        Kembali ke Menu Perangkat Ajar
+                    </button>
+                </div>
+      
+                <div className="mb-6">
+                    <h1 className="text-3xl font-bold text-slate-800">Program Semester (PROSEM)</h1>
+                    <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+                </div>
+      
+                {prosemError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                        <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Gagal Membuat PROSEM</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{prosemError}</p></div></div></div>
+                        <button onClick={() => setProsemError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+                    </div>
+                )}
+      
+                <div className="mb-6">
+                    <div className="border-b border-slate-200">
+                        <nav className="-mb-px flex space-x-6" aria-label="Tabs">
+                            <button
+                                onClick={() => setActiveProsemSemester('Ganjil')}
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base transition-colors ${activeProsemSemester === 'Ganjil' ? 'border-teal-500 text-teal-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}
+                            >
+                                Semester Ganjil
+                            </button>
+                            <button
+                                onClick={() => setActiveProsemSemester('Genap')}
+                                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base transition-colors ${activeProsemSemester === 'Genap' ? 'border-teal-500 text-teal-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'}`}
+                            >
+                                Semester Genap
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+      
+                <div>
+                    {activeProsemSemester === 'Ganjil' && (
+                        prosemData?.ganjil 
+                            ? <PROSEMTable data={prosemData.ganjil} /> 
+                            : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil.</div>
+                    )}
+                    {activeProsemSemester === 'Genap' && (
+                        prosemData?.genap 
+                            ? <PROSEMTable data={prosemData.genap} /> 
+                            : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data PROSEM untuk Semester Genap.</div>
+                    )}
+                </div>
+            </div>
+        );
+
 
       case 'create_tp':
       case 'edit_tp':
@@ -1772,6 +2109,11 @@ const App: React.FC = () => {
         isLoading={kktpGenerationProgress.isLoading}
         title="Memproses KKTP..."
         message={kktpGenerationProgress.message || 'Memproses permintaan Anda...'}
+      />
+       <LoadingOverlay
+        isLoading={prosemGenerationProgress.isLoading}
+        title="Memproses PROSEM..."
+        message={prosemGenerationProgress.message || 'Memproses permintaan Anda...'}
       />
 
       <main>

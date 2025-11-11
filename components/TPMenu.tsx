@@ -1,22 +1,24 @@
 import React from 'react';
-import { TPData, ATPData, PROTAData, KKTPData } from '../types';
-import { BackIcon, BookOpenIcon, FlowChartIcon, ChecklistIcon, SparklesIcon, CalendarIcon } from './icons';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
+import { BackIcon, BookOpenIcon, FlowChartIcon, ChecklistIcon, SparklesIcon, CalendarIcon, ListIcon } from './icons';
 
 interface TPMenuProps {
   tp: TPData;
   atps: ATPData[];
   protas: PROTAData[];
   kktpData: { ganjil: KKTPData | null; genap: KKTPData | null } | null;
-  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota') => void;
+  prosemData: { ganjil: PROSEMData | null; genap: PROSEMData | null } | null;
+  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'prosem') => void;
   onBack: () => void;
   isLoading: boolean;
 }
 
-const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate, onBack, isLoading }) => {
+const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData, onNavigate, onBack, isLoading }) => {
 
   const atpExists = atps.length > 0;
   const kktpExists = !!(kktpData?.ganjil || kktpData?.genap);
   const protaExists = protas.length > 0;
+  const prosemExists = !!(prosemData?.ganjil || prosemData?.genap);
 
   const CheckmarkIcon = () => (
     <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -76,6 +78,15 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
       status: !atpExists ? 'locked' : (protaExists ? 'completed' : 'next'),
       action: () => onNavigate('prota'),
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
+    },
+    {
+      title: "Program Semester (PROSEM)",
+      description: "Mendistribusikan alokasi waktu PROTA ke dalam jadwal per minggu setiap bulan.",
+      icon: <ListIcon />,
+      backgroundIcon: <ListIcon />,
+      status: !protaExists ? 'locked' : (prosemExists ? 'completed' : 'next'),
+      action: () => onNavigate('prosem'),
+      actionLabel: prosemExists ? 'Lihat/Kelola PROSEM' : 'Buat PROSEM dengan AI',
     }
   ];
 
@@ -97,6 +108,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, onNavigate,
     'from-teal-500 to-emerald-500',  // For ATP
     'from-indigo-500 to-violet-500', // For KKTP
     'from-rose-500 to-pink-500',     // For PROTA
+    'from-orange-500 to-amber-500',  // For PROSEM
   ];
 
   return (

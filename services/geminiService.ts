@@ -1,4 +1,4 @@
-import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow } from "../types";
+import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow, PROTAData, PROSEMRow, PROSEMHeader } from "../types";
 // Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
 import { apiRequest } from './dbService';
 
@@ -225,5 +225,32 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
             throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid.");
         }
         throw new Error(`Gagal berkomunikasi dengan AI untuk KKTP. Detail: ${error.message}`);
+    }
+};
+
+export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
+    try {
+        const response = await apiRequest('generatePROSEM', { protaData, semester, grade });
+        const jsonStr = cleanJsonString(response.text);
+        const parsedResult = JSON.parse(jsonStr) as { headers: PROSEMHeader[], content: PROSEMRow[] };
+
+        if (!parsedResult || !Array.isArray(parsedResult.headers) || !Array.isArray(parsedResult.content)) {
+            throw new Error(`Respons AI tidak valid. Struktur JSON tidak memiliki properti 'headers' dan 'content' yang diharapkan.`);
+        }
+        
+        return parsedResult;
+
+    } catch (error: any) {
+        console.error("Error generating PROSEM:", error);
+        if (error instanceof SyntaxError) {
+            throw new Error("Gagal memproses respons PROSEM dari AI karena format tidak valid.");
+        }
+        if (typeof error.message === 'string' && error.message.includes("Kode: 503")) {
+            throw new Error(`Gagal membuat PROSEM (Error 503): Layanan AI sedang sibuk atau tidak tersedia.\n\nIni biasanya masalah sementara. Mohon tunggu beberapa saat dan coba lagi.`);
+        }
+        if (typeof error.message === 'string' && error.message.includes("Kode: 400")) {
+            throw new Error(`Gagal membuat PROSEM (Error 400).\n\nIni biasanya terjadi karena kesalahan konfigurasi di backend Google Apps Script.\n\n**Solusi:** Buka file \`Code.gs\` Anda, cari fungsi \`handleGeneratePROSEM\`, dan pastikan skema JSON yang dikirim ke Gemini API tidak mengandung tipe "ANY". Ganti tipe tersebut dengan "STRING" atau "NUMBER".`);
+        }
+        throw new Error(`Gagal berkomunikasi dengan AI untuk PROSEM. Detail: ${error.message}`);
     }
 };
