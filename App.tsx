@@ -1202,7 +1202,7 @@ const App: React.FC = () => {
           return `
               <tr>
                   <td class="text-center">${row.no}</td>
-                  <td>${row.topikKonten}</td>
+                  <td>${row.tujuanPembelajaran}</td>
                   <td class="text-center">${row.alokasiWaktu}</td>
                   ${weekCells}
                   <td>${row.keterangan}</td>
@@ -1218,7 +1218,7 @@ const App: React.FC = () => {
           <thead>
             <tr>
               <th rowspan="2" class="text-center">No</th>
-              <th rowspan="2" class="text-center">Topik/Konten</th>
+              <th rowspan="2" class="text-center">Tujuan Pembelajaran</th>
               <th rowspan="2" class="text-center rotate">Alokasi Waktu</th>
               ${monthHeaders}
               <th rowspan="2" class="text-center">Keterangan</th>
@@ -1879,7 +1879,7 @@ const App: React.FC = () => {
                             <thead className="bg-slate-100 text-center">
                                 <tr>
                                     <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">No</th>
-                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Topik/Konten</th>
+                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Tujuan Pembelajaran</th>
                                     <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle"><span className="[writing-mode:vertical-rl] transform rotate-180">Alokasi Waktu</span></th>
                                     {data.headers.map(header => (
                                         <th key={header.month} colSpan={header.weeks} className="px-2 py-2 border-b border-slate-300">{header.month}</th>
@@ -1896,7 +1896,7 @@ const App: React.FC = () => {
                                 {data.content.map((row, index) => (
                                     <tr key={index} className="hover:bg-slate-50">
                                         <td className="px-2 py-2 border-r text-center">{row.no}</td>
-                                        <td className="px-2 py-2 border-r">{row.topikKonten}</td>
+                                        <td className="px-2 py-2 border-r">{row.tujuanPembelajaran}</td>
                                         <td className="px-2 py-2 border-r text-center">{row.alokasiWaktu}</td>
                                         {data.headers.flatMap(h =>
                                             Array.from({ length: h.weeks }, (_, weekIndex) => (

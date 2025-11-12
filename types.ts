@@ -96,7 +96,7 @@ export interface PROSEMHeader {
 
 export interface PROSEMRow {
   no: number | string;
-  topikKonten: string;
+  tujuanPembelajaran: string;
   alokasiWaktu: string;
   bulan: Record<string, (string | null)[]>; 
   keterangan: string;
