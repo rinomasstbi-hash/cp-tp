@@ -707,18 +707,37 @@ const App: React.FC = () => {
         const existingProsems = await apiService.getPROSEMsByPROTAId(prota.id);
         let finalGanjilData: PROSEMData | null = existingProsems.find(p => p.semester === 'Ganjil') || null;
         let finalGenapData: PROSEMData | null = existingProsems.find(p => p.semester === 'Genap') || null;
+        
+        const generateWithRetry = async (semester: 'Ganjil' | 'Genap') => {
+          const MAX_ATTEMPTS = 3;
+          const DELAY = 2500;
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+              const message = `Membuat PROSEM ${semester} dengan AI... ${MAX_ATTEMPTS > 1 ? `(Percobaan ${attempt}/${MAX_ATTEMPTS})` : ''}`;
+              setProsemGenerationProgress({ isLoading: true, message });
+              return await geminiService.generatePROSEM(prota, semester, selectedTP.grade);
+            } catch (error: any) {
+              if (typeof error.message === 'string' && error.message.includes("Kode: 503") && attempt < MAX_ATTEMPTS) {
+                await new Promise(res => setTimeout(res, DELAY));
+                continue; // Retry
+              }
+              throw error;
+            }
+          }
+          throw new Error(`Gagal menghasilkan PROSEM ${semester} setelah beberapa kali percobaan.`);
+        };
 
         if (!finalGanjilData && !finalGenapData) {
-            setProsemGenerationProgress({ isLoading: true, message: 'Membuat PROSEM Ganjil dengan AI...' });
-            const ganjilResult = await geminiService.generatePROSEM(prota, 'Ganjil', selectedTP.grade);
+            const ganjilResult = await generateWithRetry('Ganjil');
             if (ganjilResult.content.length > 0) {
+                setProsemGenerationProgress({ isLoading: true, message: 'Menyimpan PROSEM Ganjil...' });
                 const ganjilPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', ...ganjilResult };
                 finalGanjilData = await apiService.savePROSEM(ganjilPayload);
             }
 
-            setProsemGenerationProgress({ isLoading: true, message: 'Membuat PROSEM Genap dengan AI...' });
-            const genapResult = await geminiService.generatePROSEM(prota, 'Genap', selectedTP.grade);
+            const genapResult = await generateWithRetry('Genap');
             if (genapResult.content.length > 0) {
+                setProsemGenerationProgress({ isLoading: true, message: 'Menyimpan PROSEM Genap...' });
                 const genapPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', ...genapResult };
                 finalGenapData = await apiService.savePROSEM(genapPayload);
             }
