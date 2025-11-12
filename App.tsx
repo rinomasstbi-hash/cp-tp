@@ -589,6 +589,24 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteAndRegenerateProsem = async () => {
+    if (!selectedTP || protas.length === 0) return;
+    const protaId = protas[0].id;
+    
+    setLoadingState({ isLoading: true, title: 'Menghapus PROSEM', message: 'Sedang menghapus data PROSEM lama...' });
+    setProsemError(null);
+    try {
+        await apiService.deletePROSEMsByPROTAId(protaId);
+        setProsemData(null); // Clear state immediately
+        setView('tp_menu');
+        setTransientMessage("PROSEM lama telah dihapus. Silakan klik tombol 'Program Semester (PROSEM)' lagi untuk membuat yang baru.");
+    } catch (error: any) {
+        setProsemError(`Gagal menghapus PROSEM lama: ${error.message}`);
+    } finally {
+        setLoadingState({ isLoading: false, title: '', message: '' });
+    }
+  };
+
   const handleSave = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     if (selectedSubject) {
       setGlobalError(null);
@@ -1860,8 +1878,10 @@ const App: React.FC = () => {
             </div>
         );
 
-      case 'view_prosem':
+      case 'view_prosem': {
         if (!selectedTP) return null;
+        const prosemExists = prosemData?.ganjil || prosemData?.genap;
+
         const PROSEMTable: React.FC<{ data: PROSEMData }> = ({ data }) => {
             const totalWeeks = data.headers.reduce((sum, h) => sum + h.weeks, 0);
             return (
@@ -1918,15 +1938,21 @@ const App: React.FC = () => {
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-[95vw] mx-auto">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                    <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
-                        <BackIcon className="w-5 h-5" />
-                        Kembali ke Menu Perangkat Ajar
-                    </button>
-                </div>
-      
-                <div className="mb-6">
-                    <h1 className="text-3xl font-bold text-slate-800">Program Semester (PROSEM)</h1>
-                    <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+                    <div>
+                        <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold">
+                            <BackIcon className="w-5 h-5" />
+                            Kembali ke Menu Perangkat Ajar
+                        </button>
+                        <h1 className="text-3xl font-bold text-slate-800">Program Semester (PROSEM)</h1>
+                        <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
+                    </div>
+                    {prosemExists && (
+                        <div className="flex items-center gap-3">
+                            <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                                <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                            </button>
+                        </div>
+                    )}
                 </div>
       
                 {prosemError && (
@@ -1969,6 +1995,7 @@ const App: React.FC = () => {
                 </div>
             </div>
         );
+      }
 
 
       case 'create_tp':
