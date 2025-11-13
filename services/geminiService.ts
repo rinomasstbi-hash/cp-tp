@@ -82,8 +82,8 @@ export const generateTPs = async (
     if (error instanceof SyntaxError) {
         throw new Error("Gagal memproses respons dari AI karena format tidak valid. Silakan coba generate lagi.");
     }
-    // Melempar error dengan pesan yang lebih informatif
-    throw new Error(`Gagal berkomunikasi dengan AI. Detail: ${error.message}`);
+    // Melempar kembali error asli untuk penanganan yang lebih baik di UI
+    throw error;
   }
 };
 
@@ -143,7 +143,7 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons pengurutan ATP dari AI karena format tidak valid.");
         }
-        throw new Error(`Gagal berkomunikasi dengan AI untuk ATP. Detail: ${error.message}`);
+        throw error;
     }
 };
 
@@ -187,7 +187,7 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons PROTA dari AI karena format tidak valid.");
         }
-        throw new Error(`Gagal berkomunikasi dengan AI untuk PROTA. Detail: ${error.message}`);
+        throw error;
     }
 };
 
@@ -224,7 +224,7 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid.");
         }
-        throw new Error(`Gagal berkomunikasi dengan AI untuk KKTP. Detail: ${error.message}`);
+        throw error;
     }
 };
 
@@ -245,12 +245,7 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         if (error instanceof SyntaxError) {
             throw new Error("Gagal memproses respons PROSEM dari AI karena format tidak valid.");
         }
-        if (typeof error.message === 'string' && error.message.includes("Kode: 503")) {
-            throw new Error(`Gagal membuat PROSEM (Error 503): Layanan AI sedang sibuk atau tidak tersedia.\n\nIni biasanya masalah sementara. Mohon tunggu beberapa saat dan coba lagi.`);
-        }
-        if (typeof error.message === 'string' && error.message.includes("Kode: 400")) {
-            throw new Error(`Gagal membuat PROSEM (Error 400).\n\nIni biasanya terjadi karena kesalahan konfigurasi di backend Google Apps Script.\n\n**Solusi:** Buka file \`Code.gs\` Anda, cari fungsi \`handleGeneratePROSEM\`, dan pastikan skema JSON yang dikirim ke Gemini API tidak mengandung tipe "ANY". Ganti tipe tersebut dengan "STRING" atau "NUMBER".`);
-        }
-        throw new Error(`Gagal berkomunikasi dengan AI untuk PROSEM. Detail: ${error.message}`);
+        // Melempar kembali error asli agar UI bisa menangani logika retry dengan benar
+        throw error;
     }
 };

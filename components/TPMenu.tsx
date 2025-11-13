@@ -46,8 +46,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     {
       title: "Tujuan Pembelajaran (TP)",
       description: "Fondasi utama yang berisi rincian semua tujuan pembelajaran yang telah dibuat.",
-      icon: <BookOpenIcon />,
-      backgroundIcon: <BookOpenIcon />,
+      icon: <BookOpenIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <BookOpenIcon className="h-28 w-28 text-white"/>,
       status: 'completed',
       action: () => onNavigate('detail'),
       actionLabel: 'Lihat Detail TP',
@@ -55,8 +55,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     {
       title: "Alur Tujuan Pembelajaran (ATP)",
       description: "Menyusun semua TP ke dalam urutan pembelajaran yang paling logis dan efektif.",
-      icon: <FlowChartIcon />,
-      backgroundIcon: <FlowChartIcon />,
+      icon: <FlowChartIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <FlowChartIcon className="h-28 w-28 text-white"/>,
       status: atpExists ? 'completed' : 'next',
       action: () => onNavigate('atp'),
       actionLabel: atpExists ? 'Lihat/Kelola ATP' : 'Buat ATP dengan AI',
@@ -64,8 +64,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     {
       title: "Kriteria Ketercapaian (KKTP)",
       description: "Menentukan kriteria dan rubrik penilaian untuk setiap tujuan pembelajaran.",
-      icon: <ChecklistIcon />,
-      backgroundIcon: <ChecklistIcon />,
+      icon: <ChecklistIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <ChecklistIcon className="h-28 w-28 text-white"/>,
       status: !atpExists ? 'locked' : (kktpExists ? 'completed' : 'next'),
       action: () => onNavigate('kktp'),
       actionLabel: kktpExists ? 'Lihat/Kelola KKTP' : 'Buat KKTP dengan AI',
@@ -73,8 +73,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     {
       title: "Program Tahunan (PROTA)",
       description: "Mengalokasikan total jam pertemuan (JP) untuk setiap TP dalam satu tahun ajaran.",
-      icon: <CalendarIcon />,
-      backgroundIcon: <CalendarIcon />,
+      icon: <CalendarIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <CalendarIcon className="h-28 w-28 text-white"/>,
       status: !atpExists ? 'locked' : (protaExists ? 'completed' : 'next'),
       action: () => onNavigate('prota'),
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
@@ -82,8 +82,8 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     {
       title: "Program Semester (PROSEM)",
       description: "Mendistribusikan alokasi waktu PROTA ke dalam jadwal per minggu setiap bulan.",
-      icon: <ListIcon />,
-      backgroundIcon: <ListIcon />,
+      icon: <ListIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <ListIcon className="h-28 w-28 text-white"/>,
       status: !protaExists ? 'locked' : (prosemExists ? 'completed' : 'next'),
       action: () => onNavigate('prosem'),
       actionLabel: prosemExists ? 'Lihat/Kelola PROSEM' : 'Buat PROSEM dengan AI',
@@ -150,8 +150,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
                 {/* Decorative Background Icon */}
                 {!isLocked && (
                     <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
-                        {/* FIX: The `cloneElement` call now type-checks correctly due to the updated type definition for `workflowSteps`. */}
-                        {React.cloneElement(step.backgroundIcon, { className: 'h-28 w-28 text-white' })}
+                        {step.backgroundIcon}
                     </div>
                 )}
                 
@@ -162,7 +161,6 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
                             <div className={`flex-shrink-0 p-3 rounded-lg inline-block ${
                                 isLocked ? 'bg-slate-200' : 'bg-white/20'
                             }`}>
-                                {/* FIX: The `cloneElement` call now type-checks correctly due to the updated type definition for `workflowSteps`. */}
                                 {React.cloneElement(step.icon, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
                             </div>
                             <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>

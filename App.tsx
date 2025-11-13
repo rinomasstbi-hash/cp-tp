@@ -598,8 +598,8 @@ const App: React.FC = () => {
     try {
         await apiService.deletePROSEMsByPROTAId(protaId);
         setProsemData(null); // Clear state immediately
-        setView('tp_menu');
-        setTransientMessage("PROSEM lama telah dihapus. Silakan klik tombol 'Program Semester (PROSEM)' lagi untuk membuat yang baru.");
+        await handleNavigateToProsem();
+        setTransientMessage("PROSEM lama telah dihapus. Silakan buat yang baru untuk setiap semester.");
     } catch (error: any) {
         setProsemError(`Gagal menghapus PROSEM lama: ${error.message}`);
     } finally {
@@ -702,7 +702,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleViewAndGenerateProsem = async () => {
+  const handleNavigateToProsem = async () => {
     if (!selectedTP) {
       setProsemError("Data TP tidak ditemukan.");
       return;
@@ -711,7 +711,7 @@ const App: React.FC = () => {
     setView('view_prosem');
     setProsemGenerationProgress({ isLoading: true, message: 'Memuat data PROSEM...' });
     setProsemError(null);
-    setProsemData(null);
+    setProsemData(null); // Reset before loading
 
     try {
         if (protas.length === 0) {
@@ -723,46 +723,73 @@ const App: React.FC = () => {
         const prota = protas[0];
 
         const existingProsems = await apiService.getPROSEMsByPROTAId(prota.id);
-        let finalGanjilData: PROSEMData | null = existingProsems.find(p => p.semester === 'Ganjil') || null;
-        let finalGenapData: PROSEMData | null = existingProsems.find(p => p.semester === 'Genap') || null;
+        const ganjilData = existingProsems.find(p => p.semester === 'Ganjil') || null;
+        const genapData = existingProsems.find(p => p.semester === 'Genap') || null;
         
-        const generateWithRetry = async (semester: 'Ganjil' | 'Genap') => {
-          const MAX_ATTEMPTS = 3;
-          const DELAY = 2500;
-          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        setProsemData({ ganjil: ganjilData, genap: genapData });
+        setActiveProsemSemester('Ganjil'); // Default to Ganjil tab
+
+    } catch (error: any) {
+        setProsemError(error.message);
+        setProsemData({ ganjil: null, genap: null }); // Ensure state is clean on error
+    } finally {
+        setProsemGenerationProgress({ isLoading: false, message: '' });
+    }
+  };
+
+  const handleGenerateSingleProsem = async (semester: 'Ganjil' | 'Genap') => {
+    if (!selectedTP || protas.length === 0) {
+        setProsemError("Data PROTA tidak ditemukan. PROSEM tidak dapat dibuat.");
+        return;
+    }
+    const prota = protas[0];
+
+    if (!prota.content.some(p => p.semester === semester)) {
+        setProsemError(`Tidak ada data PROTA untuk semester ${semester}, jadi PROSEM tidak dapat dibuat.`);
+        return;
+    }
+
+    setProsemGenerationProgress({ isLoading: true, message: `Membuat PROSEM ${semester}...` });
+    setProsemError(null);
+
+    const generateWithRetry = async (semesterToGen: 'Ganjil' | 'Genap') => {
+        const MAX_ATTEMPTS = 3;
+        const DELAY = 2500;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
-              const message = `Membuat PROSEM ${semester} dengan AI... ${MAX_ATTEMPTS > 1 ? `(Percobaan ${attempt}/${MAX_ATTEMPTS})` : ''}`;
-              setProsemGenerationProgress({ isLoading: true, message });
-              return await geminiService.generatePROSEM(prota, semester, selectedTP.grade);
+                const message = `Menghubungi AI untuk PROSEM ${semesterToGen}... ${MAX_ATTEMPTS > 1 ? `(Percobaan ${attempt}/${MAX_ATTEMPTS})` : ''}`;
+                setProsemGenerationProgress({ isLoading: true, message });
+                return await geminiService.generatePROSEM(prota, semesterToGen, selectedTP.grade);
             } catch (error: any) {
-              if (typeof error.message === 'string' && error.message.includes("Kode: 503") && attempt < MAX_ATTEMPTS) {
-                await new Promise(res => setTimeout(res, DELAY));
-                continue; // Retry
-              }
-              throw error;
-            }
-          }
-          throw new Error(`Gagal menghasilkan PROSEM ${semester} setelah beberapa kali percobaan.`);
-        };
-
-        if (!finalGanjilData && !finalGenapData) {
-            const ganjilResult = await generateWithRetry('Ganjil');
-            if (ganjilResult.content.length > 0) {
-                setProsemGenerationProgress({ isLoading: true, message: 'Menyimpan PROSEM Ganjil...' });
-                const ganjilPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', ...ganjilResult };
-                finalGanjilData = await apiService.savePROSEM(ganjilPayload);
-            }
-
-            const genapResult = await generateWithRetry('Genap');
-            if (genapResult.content.length > 0) {
-                setProsemGenerationProgress({ isLoading: true, message: 'Menyimpan PROSEM Genap...' });
-                const genapPayload: Omit<PROSEMData, 'id' | 'createdAt'> = { protaId: prota.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', ...genapResult };
-                finalGenapData = await apiService.savePROSEM(genapPayload);
+                if (typeof error.message === 'string' && error.message.includes("503") && attempt < MAX_ATTEMPTS) {
+                    await new Promise(res => setTimeout(res, DELAY));
+                    continue; // Retry
+                }
+                throw error;
             }
         }
-        setProsemData({ ganjil: finalGanjilData, genap: finalGenapData });
-        setActiveProsemSemester('Ganjil');
+        throw new Error(`Gagal menghasilkan PROSEM ${semesterToGen} setelah beberapa kali percobaan.`);
+    };
 
+    try {
+        const result = await generateWithRetry(semester);
+        if (result.content.length > 0) {
+            setProsemGenerationProgress({ isLoading: true, message: `Menyimpan PROSEM ${semester}...` });
+            const payload: Omit<PROSEMData, 'id' | 'createdAt'> = {
+                protaId: prota.id,
+                subject: selectedTP.subject,
+                grade: selectedTP.grade,
+                semester: semester,
+                ...result
+            };
+            const savedData = await apiService.savePROSEM(payload);
+            setProsemData(prev => ({
+                ...prev,
+                [semester.toLowerCase() as 'ganjil' | 'genap']: savedData,
+            }));
+        } else {
+             setProsemError(`AI tidak menghasilkan konten untuk PROSEM ${semester}. Ini mungkin karena tidak ada data PROTA yang relevan.`);
+        }
     } catch (error: any) {
         setProsemError(error.message);
     } finally {
@@ -1325,7 +1352,7 @@ const App: React.FC = () => {
     }
     
     if (destination === 'prosem') {
-        await handleViewAndGenerateProsem();
+        await handleNavigateToProsem();
         return;
     }
 
@@ -1632,11 +1659,11 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Mata Pelajaran</td>
-                                    <td>: {selectedATP.subject}</td>
+                                    <td>: ${selectedATP.subject}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Kelas</td>
-                                    <td>: {selectedTP.grade} / Fase D</td>
+                                    <td>: ${selectedTP.grade} / Fase D</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
@@ -1882,58 +1909,45 @@ const App: React.FC = () => {
         if (!selectedTP) return null;
         const prosemExists = prosemData?.ganjil || prosemData?.genap;
 
-        const PROSEMTable: React.FC<{ data: PROSEMData }> = ({ data }) => {
-            const totalWeeks = data.headers.reduce((sum, h) => sum + h.weeks, 0);
-            return (
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-2xl font-bold text-slate-800">
-                            Rincian PROSEM - Semester {data.semester}
-                        </h2>
-                        <button onClick={() => handleExportProsemToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
-                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
-                        </button>
-                    </div>
-                    <div className="overflow-x-auto mt-4">
-                        <table className="min-w-full bg-white border border-slate-300 text-xs">
-                            <thead className="bg-slate-100 text-center">
-                                <tr>
-                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">No</th>
-                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Tujuan Pembelajaran</th>
-                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle"><span className="[writing-mode:vertical-rl] transform rotate-180">Alokasi Waktu</span></th>
-                                    {data.headers.map(header => (
-                                        <th key={header.month} colSpan={header.weeks} className="px-2 py-2 border-b border-slate-300">{header.month}</th>
-                                    ))}
-                                    <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Keterangan</th>
-                                </tr>
-                                <tr>
-                                    {data.headers.flatMap(header => 
-                                        Array.from({ length: header.weeks }, (_, i) => <th key={`${header.month}-${i}`} className="px-2 py-1 border-b border-slate-300 w-8">{i + 1}</th>)
-                                    )}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.content.map((row, index) => (
-                                    <tr key={index} className="hover:bg-slate-50">
-                                        <td className="px-2 py-2 border-r text-center">{row.no}</td>
-                                        <td className="px-2 py-2 border-r">{row.tujuanPembelajaran}</td>
-                                        <td className="px-2 py-2 border-r text-center">{row.alokasiWaktu}</td>
-                                        {data.headers.flatMap(h =>
-                                            Array.from({ length: h.weeks }, (_, weekIndex) => (
-                                                <td key={`${h.month}-w${weekIndex}`} className="px-2 py-2 border-r text-center">
-                                                    {(row.bulan[h.month] && row.bulan[h.month][weekIndex]) || ''}
-                                                </td>
-                                            ))
-                                        )}
-                                        <td className="px-2 py-2">{row.keterangan}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-        };
+        const PROSEMTableContent: React.FC<{ data: PROSEMData }> = ({ data }) => (
+            <div className="overflow-x-auto mt-4">
+                <table className="min-w-full bg-white border border-slate-300 text-xs">
+                    <thead className="bg-slate-100 text-center">
+                        <tr>
+                            <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">No</th>
+                            <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Tujuan Pembelajaran</th>
+                            <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle"><span className="[writing-mode:vertical-rl] transform rotate-180">Alokasi Waktu</span></th>
+                            {data.headers.map(header => (
+                                <th key={header.month} colSpan={header.weeks} className="px-2 py-2 border-b border-slate-300">{header.month}</th>
+                            ))}
+                            <th rowSpan={2} className="px-2 py-2 border-b border-slate-300 align-middle">Keterangan</th>
+                        </tr>
+                        <tr>
+                            {data.headers.flatMap(header => 
+                                Array.from({ length: header.weeks }, (_, i) => <th key={`${header.month}-${i}`} className="px-2 py-1 border-b border-slate-300 w-8">{i + 1}</th>)
+                            )}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {data.content.map((row, index) => (
+                            <tr key={index} className="hover:bg-slate-50">
+                                <td className="px-2 py-2 border-r text-center">{row.no}</td>
+                                <td className="px-2 py-2 border-r">{row.tujuanPembelajaran}</td>
+                                <td className="px-2 py-2 border-r text-center">{row.alokasiWaktu}</td>
+                                {data.headers.flatMap(h =>
+                                    Array.from({ length: h.weeks }, (_, weekIndex) => (
+                                        <td key={`${h.month}-w${weekIndex}`} className="px-2 py-2 border-r text-center">
+                                            {(row.bulan[h.month] && row.bulan[h.month][weekIndex]) || ''}
+                                        </td>
+                                    ))
+                                )}
+                                <td className="px-2 py-2">{row.keterangan}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
       
         return (
             <div className="p-4 sm:p-6 lg:p-8 max-w-[95vw] mx-auto">
@@ -1983,14 +1997,48 @@ const App: React.FC = () => {
       
                 <div>
                     {activeProsemSemester === 'Ganjil' && (
-                        prosemData?.ganjil 
-                            ? <PROSEMTable data={prosemData.ganjil} /> 
-                            : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil.</div>
+                        <div className="bg-white rounded-lg shadow-lg p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold text-slate-800">Rincian PROSEM - Semester Ganjil</h2>
+                                <div className="flex items-center gap-3">
+                                    {prosemData?.ganjil ? (
+                                        <button onClick={() => handleExportProsemToWord('Ganjil')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => handleGenerateSingleProsem('Ganjil')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                                            <SparklesIcon className="w-5 h-5" /> Buat PROSEM Ganjil
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            {prosemData?.ganjil 
+                                ? <PROSEMTableContent data={prosemData.ganjil} /> 
+                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil. Klik tombol 'Buat PROSEM Ganjil' untuk memulai.</div>
+                            }
+                        </div>
                     )}
                     {activeProsemSemester === 'Genap' && (
-                        prosemData?.genap 
-                            ? <PROSEMTable data={prosemData.genap} /> 
-                            : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data PROSEM untuk Semester Genap.</div>
+                         <div className="bg-white rounded-lg shadow-lg p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold text-slate-800">Rincian PROSEM - Semester Genap</h2>
+                                <div className="flex items-center gap-3">
+                                    {prosemData?.genap ? (
+                                        <button onClick={() => handleExportProsemToWord('Genap')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => handleGenerateSingleProsem('Genap')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                                            <SparklesIcon className="w-5 h-5" /> Buat PROSEM Genap
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            {prosemData?.genap 
+                                ? <PROSEMTableContent data={prosemData.genap} /> 
+                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Genap. Klik tombol 'Buat PROSEM Genap' untuk memulai.</div>
+                            }
+                        </div>
                     )}
                 </div>
             </div>

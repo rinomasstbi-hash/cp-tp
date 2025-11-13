@@ -4,7 +4,7 @@
 // Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
 // Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
 // Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwS4VHProkFfusOG5nYZI09MX6n0550Q0tk6Sfyw7eyi_5NZbIm8OYab8TfNvU5lU1u/exec';
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_W-oZaj_lw8WVcRjkgZnjdS9b43etYr_4wies2R028Zr_qkfbQvZPkcmhUd7aGLVU/exec';
 
 
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
@@ -73,18 +73,13 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
 
 
 /**
- * Mengirim permintaan ke backend Google Apps Script.
+ * Mengirim permintaan ke backend Google Apps Script dengan mekanisme coba lagi (retry).
  * SEMUA permintaan sekarang menggunakan metode POST dengan FormData untuk keandalan CORS yang lebih baik.
  * @param {string} action - Aksi yang akan dilakukan oleh backend.
  * @param {Record<string, any>} params - Parameter untuk aksi tersebut.
  * @returns {Promise<any>} - Data yang dikembalikan dari API.
  */
-// FIX: Export apiRequest to be used in other services.
 export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
-    // FIX: Removed the check for a placeholder URL. Since the GOOGLE_APPS_SCRIPT_URL
-    // is a `const` with a value, the check is redundant and causes a TypeScript
-    // error because the literal type will never match the placeholder string.
-    
     const url = GOOGLE_APPS_SCRIPT_URL;
     
     const formData = new FormData();
@@ -97,58 +92,72 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
         body: formData,
     };
 
-    try {
-        const response = await fetch(url, options);
-        const rawResponseText = await response.text();
+    const MAX_ATTEMPTS = 3;
+    const RETRY_DELAY = 1000; // 1 detik
 
-        // Cek jika respons adalah halaman HTML error dari Google
-        if (rawResponseText.trim().startsWith('<!DOCTYPE html>')) {
-             throw new Error(`Server Google Apps Script mengembalikan halaman HTML, bukan data JSON. Ini adalah tanda adanya error di sisi server.
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const response = await fetch(url, options);
+            const rawResponseText = await response.text();
+
+            if (rawResponseText.trim().startsWith('<!DOCTYPE html>')) {
+                 throw new Error(`Server Google Apps Script mengembalikan halaman HTML, bukan data JSON. Ini adalah tanda adanya error di sisi server.
 - PASTIKAN Anda sudah melakukan "Deploy" -> "Penerapan baru" setelah menyimpan perubahan pada skrip.
 - Periksa Log Eksekusi di editor Google Apps Script untuk melihat detail error yang sebenarnya.`);
-        }
-
-        let responseData;
-        try {
-            responseData = JSON.parse(rawResponseText);
-        } catch (e) {
-             // Jika parsing gagal setelah cek HTML, ini adalah error format yang tidak terduga
-            console.error('Gagal mem-parsing respons JSON dari server:', rawResponseText);
-            if (!response.ok) {
-                 throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak dapat diproses.`);
             }
-            throw new Error('Server memberikan respons dalam format yang tidak terduga. Silakan periksa log server.');
+
+            let responseData;
+            try {
+                responseData = JSON.parse(rawResponseText);
+            } catch (e) {
+                console.error('Gagal mem-parsing respons JSON dari server:', rawResponseText);
+                if (!response.ok) {
+                     throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak dapat diproses.`);
+                }
+                throw new Error('Server memberikan respons dalam format yang tidak terduga. Silakan periksa log server.');
+            }
+
+            if (!response.ok) {
+                const errorMessage = responseData?.message || `HTTP error ${response.status} - ${response.statusText}`;
+                throw new Error(errorMessage);
+            }
+            
+            if (responseData.status === 'error') {
+                throw new Error(responseData.message || 'Aksi tidak valid.');
+            }
+
+            return responseData.data; // Sukses, keluar dari loop
+
+        } catch (error: any) {
+            console.error(`API request error for action "${action}" (Attempt ${attempt}/${MAX_ATTEMPTS}):`, error);
+
+            const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
+            
+            if (isNetworkError && attempt < MAX_ATTEMPTS) {
+                await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); // Jeda sebelum mencoba lagi
+                continue; // Lanjut ke percobaan berikutnya
+            }
+            
+            // Jika ini percobaan terakhir atau bukan error jaringan, format dan lempar error.
+            let detailedMessage = error.message;
+
+            if (isNetworkError) {
+                detailedMessage = `Gagal terhubung ke server setelah beberapa kali percobaan.
+- Periksa koneksi internet Anda. Masalah ini bisa bersifat sementara.
+- Pastikan URL Google Apps Script sudah dikonfigurasi dengan benar dan di-deploy ulang.
+- Periksa Log Eksekusi di Google Apps Script untuk melihat detail error di sisi server.`;
+            } 
+            else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
+                detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
+            }
+
+            throw new Error(`Gagal memproses permintaan. Detail: ${detailedMessage}`);
         }
-
-        if (!response.ok) {
-            const errorMessage = responseData?.message || `HTTP error ${response.status}`;
-            throw new Error(`Terjadi kesalahan di server: ${errorMessage}`);
-        }
-        
-        if (responseData.status === 'error') {
-            throw new Error(`Terjadi kesalahan di server: ${responseData.message || 'Aksi tidak valid.'}`);
-        }
-
-        return responseData.data;
-
-    } catch (error: any) {
-        console.error(`API request error for action "${action}":`, error);
-        
-        let detailedMessage = error.message;
-
-        if (error instanceof TypeError && error.message === 'Failed to fetch') {
-            detailedMessage = `Gagal terhubung ke server Google Apps Script.
-- Periksa koneksi internet Anda.
-- Pastikan URL Google Apps Script sudah benar dan telah di-deploy ulang.
-- Periksa Log Eksekusi di Google Apps Script untuk melihat apakah ada error saat skrip dijalankan.`;
-        } 
-        else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
-            detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
-        }
-
-        throw new Error(`Gagal memproses permintaan. Detail: ${detailedMessage}`);
     }
+     // Baris ini seharusnya tidak akan tercapai, tetapi diperlukan agar fungsi memiliki return path.
+    throw new Error('Gagal memproses permintaan setelah semua percobaan.');
 };
+
 
 export const getTPsBySubject = async (subject: string): Promise<TPData[]> => {
     const data = await apiRequest('getTPsBySubject', { subject });
@@ -249,7 +258,7 @@ export const deleteKKTPsByTPId = (tpId: string): Promise<{ success: boolean }> =
 
 // --- PROSEM Functions ---
 export const getPROSEMsByPROTAId = async (protaId: string): Promise<PROSEMData[]> => {
-    const data = await apiRequest('getPROSEMByProtaId', { protaId });
+    const data = await apiRequest('getPROSEMsByPROTAId', { protaId });
     if (Array.isArray(data)) {
         return data.map(prosem => parseData<PROSEMData>(prosem, ['content', 'headers']));
     }
@@ -262,9 +271,9 @@ export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt'>): Pr
 };
 
 export const deletePROSEMsByPROTAId = (protaId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROSEMByProtaId', { protaId });
+    return apiRequest('deletePROSEMsByPROTAId', { protaId });
 };
 
 export const deletePROSEMsByTPId = (tpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROSEMByTPId', { tpId });
+    return apiRequest('deletePROSEMsByTPId', { tpId });
 };
