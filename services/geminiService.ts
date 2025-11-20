@@ -1,4 +1,3 @@
-
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow, PROTAData, PROSEMRow, PROSEMHeader } from "../types";
 // Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
 import { apiRequest } from './dbService';
@@ -287,8 +286,15 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 
 export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
     try {
-        // --- IMPLEMENT BATCHING FOR PROTA ---
-        // Mencegah error "AI response empty/blocked" karena payload terlalu besar.
+        // --- IMPLEMENT BATCHING FOR PROTA & TOTAL JP LOGIC ---
+        // Formula: Input JP x 64
+        const TARGET_TOTAL_JP = jamPertemuan * 64;
+        const TOTAL_TPS = atpData.content.length;
+        
+        // Target for actual TP content (keeping ~5-10% buffer for the "Cadangan" row)
+        const TARGET_FOR_CONTENT = Math.floor(TARGET_TOTAL_JP * 0.95);
+        const AVG_JP = Math.max(2, Math.floor(TARGET_FOR_CONTENT / TOTAL_TPS));
+
         // Reduced from 8 to 5 for better stability
         const CHUNK_SIZE = 5;
         const chunks = [];
@@ -302,7 +308,6 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             const chunk = chunks[i];
             const chunkStartIndex = i * CHUNK_SIZE;
             
-            // Mengirim data yang lebih ringan ke AI untuk mengurangi token
             const simplifiedContent = chunk.map((r, idx) => ({
                 index: chunkStartIndex + idx,
                 topikMateri: r.topikMateri,
@@ -310,15 +315,18 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
                 kodeTp: r.kodeTp
             }));
 
-            // Construct simplified ATP object for this chunk
             const simplifiedAtpData = {
                 subject: atpData.subject,
-                instruction: `Allocating time for ${chunk.length} TPs. Suggested default is around 2 JP to 4 JP per TP depending on complexity. Return array of objects { index: number, alokasiWaktu: string } matching input indices.`,
+                instruction: `Assign 'alokasiWaktu' (JP) for these TPs. 
+                Context: Total annual JP is ${TARGET_TOTAL_JP} for ${TOTAL_TPS} TPs. 
+                Average per TP should be around ${AVG_JP} JP. 
+                Complex topics get more, simple get less. Range: ${Math.max(1, AVG_JP - 1)} to ${AVG_JP + 2} JP.
+                Return array of objects { index: number, alokasiWaktu: string (e.g., "4 JP") } matching input indices.`,
                 content: simplifiedContent
             };
 
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Increased delay
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Delay for stability
             }
 
             try {
@@ -334,24 +342,19 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
                 }
             } catch (chunkErr) {
                 console.error(`PROTA Chunk ${i} error:`, chunkErr);
-                // Robust Fallback: Auto-calculate default time to prevent total failure
-                const totalRows = atpData.content.length;
-                // Estimate total JPs available per year approx 36 weeks (18/semester)
-                const estimatedTotalJP = jamPertemuan * 36; 
-                const avgJpPerTp = Math.max(2, Math.floor(estimatedTotalJP / totalRows));
-                
+                // Robust Fallback
                 const defaultChunk = simplifiedContent.map(item => ({ 
                     index: item.index, 
-                    alokasiWaktu: `${avgJpPerTp} JP` 
+                    alokasiWaktu: `${AVG_JP} JP` 
                 }));
                 allAllocations = [...allAllocations, ...defaultChunk];
             }
         }
 
-        // Gabungkan hasil
+        // Map results to rows
         const finalProtaData: PROTARow[] = atpData.content.map((originalRow, index) => {
             const allocationData = allAllocations.find(p => p.index === index);
-            let allocatedTime = '2 JP'; 
+            let allocatedTime = `${AVG_JP} JP`; 
 
             if (allocationData && typeof allocationData.alokasiWaktu === 'string' && allocationData.alokasiWaktu.match(/^\d+\s*JP$/i)) {
                 allocatedTime = allocationData.alokasiWaktu;
@@ -369,11 +372,67 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             };
         });
 
+        // --- POST-PROCESSING FOR TOTAL JP & CADANGAN ---
+        let currentUsedJp = 0;
+        finalProtaData.forEach(r => {
+             currentUsedJp += (parseInt(r.alokasiWaktu.replace(/\D/g,'')) || 0);
+        });
+
+        let remainder = TARGET_TOTAL_JP - currentUsedJp;
+
+        // Logic: If we exceeded the target, shave off JP from the largest items
+        if (remainder < 0) {
+            let toRemove = Math.abs(remainder);
+            let loopGuard = 0;
+            while (toRemove > 0 && loopGuard < 100) { // safety break
+                let reduced = false;
+                // Priority 1: Reduce items > 3 JP
+                for (let i = 0; i < finalProtaData.length; i++) {
+                    const val = parseInt(finalProtaData[i].alokasiWaktu.replace(/\D/g,'')) || 0;
+                    if (val > 3 && toRemove > 0) {
+                        finalProtaData[i].alokasiWaktu = `${val - 1} JP`;
+                        toRemove--;
+                        reduced = true;
+                    }
+                }
+                // Priority 2: Reduce items > 1 JP if still needed
+                if (!reduced) {
+                     for (let i = 0; i < finalProtaData.length; i++) {
+                        const val = parseInt(finalProtaData[i].alokasiWaktu.replace(/\D/g,'')) || 0;
+                        if (val > 1 && toRemove > 0) {
+                            finalProtaData[i].alokasiWaktu = `${val - 1} JP`;
+                            toRemove--;
+                            reduced = true;
+                        }
+                    }
+                }
+                if (!reduced) break; // Cannot reduce further
+                loopGuard++;
+            }
+            
+            // Recalculate remainder
+            currentUsedJp = finalProtaData.reduce((acc, r) => acc + (parseInt(r.alokasiWaktu.replace(/\D/g,'')) || 0), 0);
+            remainder = TARGET_TOTAL_JP - currentUsedJp;
+        }
+
+        // Add Cadangan Row (if remainder is 0, we add it as 0 JP or minimum 2? User said "berisi sisa")
+        // Usually reserves should be positive. If 0, maybe set it to 0.
+        const sisaAkhir = Math.max(0, remainder);
+        
+        finalProtaData.push({
+            no: '',
+            topikMateri: 'Cadangan Jam Pelajaran',
+            alurTujuanPembelajaran: '',
+            tujuanPembelajaran: '',
+            alokasiWaktu: `${sisaAkhir} JP`,
+            semester: 'Genap' // Conventionally at end of year
+        });
+
         return finalProtaData;
 
     } catch (error: any) {
         console.error("Error generating PROTA:", error);
-        // Fallback darurat jika semua gagal: Kembalikan array default
+        // Fallback darurat
         if (atpData && atpData.content) {
              return atpData.content.map((row, idx) => ({
                 no: idx + 1,
@@ -405,16 +464,37 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
             const chunk = semesterContent.slice(i, i + CHUNK_SIZE);
             
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 2500));
+                await new Promise(resolve => setTimeout(resolve, 3500)); // Increased delay to prevent hallucination/limits
             }
 
             const simplifiedAtpDataChunk = {
                 subject: atpData.subject,
-                // Updated Instruction: More explicit about array length and non-empty criteria
-                instruction: `Generate KKTP for these ${chunk.length} TPs. Return a JSON ARRAY with EXACTLY ${chunk.length} objects. 
-                CRITICAL: Fill 'kriteria' object with DESCRIPTIVE SENTENCES for all 4 levels (sangatMahir, mahir, cukupMahir, perluBimbingan). 
-                The column "no" MUST use the provided "kodeTp".
-                Do NOT return empty strings or null.`,
+                grade: grade,
+                // Updated Instruction: Strong context enforcement and Rubric definition
+                instruction: `Anda adalah Guru Mata Pelajaran ${atpData.subject} Kelas ${grade}.
+                Tugas: Buat Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) untuk ${chunk.length} TP berikut.
+                
+                ATURAN KRUSIAL (Agar tidak Hallucination):
+                1. Kriteria HARUS 100% relevan dengan materi ${atpData.subject}. JANGAN gunakan istilah dari mapel lain (misal: jika mapel Fikih, jangan bahas biologi).
+                2. Gunakan format JSON Array.
+
+                ATURAN 4 LEVEL KRITERIA (Interval Nilai):
+                1. "sangatMahir": Siswa mampu menerapkan konsep secara mandiri, analitis, dan melampaui target TP.
+                2. "mahir": Siswa mampu mencapai kompetensi dasar TP dengan tepat dan lengkap.
+                3. "cukupMahir": Siswa baru mampu mencapai sebagian kompetensi atau perlu perbaikan di beberapa bagian.
+                4. "perluBimbingan": Siswa belum memahami konsep dasar dan memerlukan remedial intensif.
+
+                Format Output JSON (Array):
+                [{
+                    "no": "Kode TP...",
+                    "kriteria": {
+                        "sangatMahir": "Deskripsi spesifik mapel...",
+                        "mahir": "Deskripsi spesifik mapel...",
+                        "cukupMahir": "Deskripsi spesifik mapel...",
+                        "perluBimbingan": "Deskripsi spesifik mapel..."
+                    },
+                    "targetKktp": "mahir"
+                }]`,
                 content: chunk.map(row => ({
                     topikMateri: row.topikMateri,
                     tp: row.tp,
