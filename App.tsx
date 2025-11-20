@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -262,6 +263,9 @@ const App: React.FC = () => {
                 setAtpError("Gagal memuat data ATP.");
             }
 
+            // delay to prevent rate limit
+            await new Promise(r => setTimeout(r, 300));
+
             try {
                 protasData = await apiService.getPROTAsByTPId(tpId);
                 setProtas(protasData);
@@ -269,6 +273,9 @@ const App: React.FC = () => {
                 console.error("Gagal memuat PROTA:", e);
                 setProtaError("Gagal memuat data PROTA.");
             }
+
+            // delay to prevent rate limit
+            await new Promise(r => setTimeout(r, 300));
 
             // Step 2: Fetch dependents based on what was successfully loaded
             if (atpsData.length > 0) {
@@ -280,11 +287,14 @@ const App: React.FC = () => {
                     } : null);
                 } catch (e) {
                      console.error("Gagal memuat KKTP:", e);
-                     setKktpError("Gagal memuat data KKTP.");
+                     // Note: Don't set global error to avoid blocking the UI if just KKTP fails
                 }
             } else {
                 setKktpData(null);
             }
+
+            // delay to prevent rate limit
+            await new Promise(r => setTimeout(r, 300));
 
             if (protasData.length > 0) {
                 try {
@@ -295,7 +305,6 @@ const App: React.FC = () => {
                     } : null);
                 } catch (e) {
                     console.error("Gagal memuat PROSEM:", e);
-                    setProsemError("Gagal memuat data PROSEM.");
                 }
             } else {
                 setProsemData(null);

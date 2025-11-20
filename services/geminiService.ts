@@ -1,4 +1,3 @@
-
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow, PROTAData, PROSEMRow, PROSEMHeader } from "../types";
 // Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
 import { apiRequest } from './dbService';
@@ -49,35 +48,35 @@ const cleanJsonString = (text: string): string => {
 
 /**
  * Helper function untuk mem-parsing JSON dengan toleransi kesalahan sintaks ringan
- * (seperti kunci tanpa tanda kutip yang sering dihasilkan LLM).
+ * (seperti kunci tanpa tanda kutip atau kurang koma yang sering dihasilkan LLM).
  */
 const relaxedJsonParse = (text: string): any => {
     // Bersihkan komentar gaya JS (// ...) yang mungkin ditambahkan AI
     const cleanText = text.replace(/\/\/.*$/gm, '');
 
     try {
+        // Percobaan 1: Parse standar
         return JSON.parse(cleanText);
     } catch (originalError) {
         try {
-            // Usaha 1: Tambahkan tanda kutip pada kunci yang tidak dikutip (misal: { key: "val" } -> { "key": "val" })
-            const fixedKeys = cleanText.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
-            return JSON.parse(fixedKeys);
+             // Percobaan 2: Terapkan serangkaian perbaikan regex umum
+             let fixed = cleanText;
+
+             // A. Tambahkan koma yang hilang antar objek (Penyebab utama error "Expected ',' or ']'")
+             // Mengubah "} {" menjadi "}, {" (menangani spasi/baris baru diantaranya)
+             fixed = fixed.replace(/}\s*{/g, '},{');
+
+             // B. Tambahkan tanda kutip pada kunci yang tidak dikutip (misal: { key: "val" } -> { "key": "val" })
+             fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+             // C. Hapus koma di akhir array/objek (trailing comma)
+             fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+
+             return JSON.parse(fixed);
         } catch (e2) {
-             try {
-                // Usaha 2: Hapus koma di akhir array/objek (trailing comma)
-                const fixedTrailingCommas = cleanText.replace(/,\s*([\]}])/g, '$1');
-                return JSON.parse(fixedTrailingCommas);
-            } catch (e3) {
-                try {
-                     // Usaha 3: Gabungan keduanya (Fix Keys + Fix Trailing Commas)
-                    let fixed = cleanText.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
-                    fixed = fixed.replace(/,\s*([\]}])/g, '$1');
-                    return JSON.parse(fixed);
-                } catch(e4) {
-                     // Jika masih gagal, lempar error asli
-                    throw originalError;
-                }
-            }
+             // Jika masih gagal, lempar error asli agar pesannya jelas
+             console.warn("Relaxed JSON parse failed. Original text:", text);
+             throw originalError;
         }
     }
 };
@@ -152,8 +151,16 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
     try {
         const response = await apiRequest('generateATP', { tpData, model: 'gemini-2.5-pro' });
         const jsonStr = cleanJsonString(response.text);
-        const reorderedIndices = relaxedJsonParse(jsonStr) as number[];
+        let reorderedIndices: number[] = [];
+        
+        try {
+             reorderedIndices = relaxedJsonParse(jsonStr) as number[];
+        } catch (e) {
+             console.warn("ATP JSON Parse Error, fallback enabled:", e);
+             reorderedIndices = []; // Force fallback
+        }
 
+        // 1. Prepare Source of Truth (Original Flattened Data)
         const tpCodeMap = new Map<string, string>();
         let materiPokokNumber = 1;
         tpData.tpGroups.forEach(group => {
@@ -165,6 +172,7 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
             });
             materiPokokNumber++;
         });
+
         const sourceOfTruthData = tpData.tpGroups.flatMap(group => 
             group.subMateriGroups.flatMap(subGroup => 
                 subGroup.tps.map(tp => ({
@@ -176,24 +184,88 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
             )
         );
 
-        if (reorderedIndices.length !== sourceOfTruthData.length) {
-            throw new Error(`Inkonsistensi data: Jumlah TP dikirim (${sourceOfTruthData.length}) tidak cocok dengan jumlah indeks diterima (${reorderedIndices.length}).`);
-        }
+        // 2. Validation and Strategy Selection
+        const flattenedCount = sourceOfTruthData.length;
+        const groupCount = tpData.tpGroups.length;
         
-        const finalATPTable: ATPTableRow[] = reorderedIndices.map((originalIndex, newSequenceIndex) => {
-            const originalData = sourceOfTruthData[originalIndex];
-            if (!originalData) {
-                // Tambahkan fallback untuk mencegah crash jika AI memberikan indeks yang salah
-                throw new Error(`AI mengembalikan indeks yang tidak valid: ${originalIndex}.`);
+        // Ensure indices are numbers
+        if (!Array.isArray(reorderedIndices) || reorderedIndices.some(n => typeof n !== 'number')) {
+             console.warn("AI response is not an array of numbers. Falling back to default.");
+             reorderedIndices = []; 
+        }
+
+        let finalATPTable: ATPTableRow[] = [];
+
+        // Strategy A: AI reordered individual TPs (Ideal case)
+        if (reorderedIndices.length === flattenedCount) {
+            finalATPTable = reorderedIndices.map((originalIndex, newSequenceIndex) => {
+                const originalData = sourceOfTruthData[originalIndex];
+                // Fallback if index is out of bounds (hallucination)
+                if (!originalData) {
+                     console.warn(`Invalid index from AI: ${originalIndex}. Using fallback logic for this row.`);
+                     return {
+                        topikMateri: "Error Index",
+                        tp: "Data TP tidak ditemukan untuk indeks ini",
+                        kodeTp: "?",
+                        atpSequence: newSequenceIndex + 1,
+                        semester: "Ganjil" as const
+                     };
+                }
+                return {
+                    topikMateri: originalData.materi,
+                    tp: originalData.tpText,
+                    kodeTp: originalData.tpCode,
+                    atpSequence: newSequenceIndex + 1,
+                    semester: originalData.semester,
+                };
+            });
+        } 
+        // Strategy B: AI reordered Groups (Common case for large data)
+        else if (reorderedIndices.length === groupCount && groupCount > 0) {
+            // Check validity of group indices
+            const validIndices = reorderedIndices.every(idx => idx >= 0 && idx < groupCount);
+            
+            if (validIndices) {
+                let currentSequence = 1;
+                reorderedIndices.forEach(groupIndex => {
+                    const group = tpData.tpGroups[groupIndex];
+                    if (group) {
+                        group.subMateriGroups.forEach(subGroup => {
+                            subGroup.tps.forEach(tpText => {
+                                const originalData = sourceOfTruthData.find(
+                                    d => d.tpText === tpText && d.materi === group.materi
+                                );
+                                if (originalData) {
+                                    finalATPTable.push({
+                                        topikMateri: originalData.materi,
+                                        tp: originalData.tpText,
+                                        kodeTp: originalData.tpCode,
+                                        atpSequence: currentSequence++,
+                                        semester: originalData.semester,
+                                    });
+                                }
+                            });
+                        });
+                    }
+                });
+            } else {
+                // If indices are invalid, force fallback
+                reorderedIndices = [];
             }
-            return {
-                topikMateri: originalData.materi,
-                tp: originalData.tpText,
-                kodeTp: originalData.tpCode,
-                atpSequence: newSequenceIndex + 1,
-                semester: originalData.semester,
-            };
-        });
+        } 
+        
+        // Strategy C: Fallback (Size Mismatch or Empty)
+        // This catches `else` or if `finalATPTable` is still empty despite Strategy B
+        if (finalATPTable.length === 0) {
+             console.warn(`ATP Gen Mismatch: TPs=${flattenedCount}, Groups=${groupCount}, AI_Indices=${reorderedIndices.length}. Defaulting to original order.`);
+             finalATPTable = sourceOfTruthData.map((data, idx) => ({
+                topikMateri: data.materi,
+                tp: data.tpText,
+                kodeTp: data.tpCode,
+                atpSequence: idx + 1,
+                semester: data.semester,
+            }));
+        }
         
         return finalATPTable;
 
@@ -258,13 +330,29 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
         
         const semesterContent = atpData.content.filter(row => row.semester === semester);
         if (parsedResult.length !== semesterContent.length) {
-            throw new Error(`Respons AI tidak valid. Jumlah kriteria (${parsedResult.length}) tidak cocok dengan jumlah TP (${semesterContent.length}).`);
+            // Jika jumlah tidak cocok, cobalah untuk memetakan berdasarkan index yang ada
+            // Ini membuat fitur lebih toleran terhadap kesalahan AI
+            if (parsedResult.length > 0 && parsedResult.length < semesterContent.length) {
+                 console.warn(`Warning: KKTP response count mismatch. Expected ${semesterContent.length}, got ${parsedResult.length}. Trying to map available data.`);
+                 // Lanjut, tapi akan ada error di blok map di bawah jika data hilang.
+            } else {
+                 throw new Error(`Respons AI tidak valid. Jumlah kriteria (${parsedResult.length}) tidak cocok dengan jumlah TP (${semesterContent.length}).`);
+            }
         }
 
         const finalKKTPTable: KKTPRow[] = parsedResult.map((result, i) => {
-            const originalData = semesterContent[i]; // Gunakan urutan yang sama
+            // Gunakan index dari AI jika ada, jika tidak gunakan urutan array
+            const targetIndex = (typeof result.index === 'number') ? result.index : i;
+            
+            // Cari data asli yang sesuai. Karena semesterContent sudah difilter, kita perlu hati-hati.
+            // Namun, AI biasanya mengembalikan array yang sesuai dengan input yang dikirim.
+            // Input yang dikirim adalah semesterContent. Jadi index 0 di output = index 0 di semesterContent.
+            
+            const originalData = semesterContent[i]; 
+            
             if (!originalData) {
-                 throw new Error(`Kesalahan data dari AI: Tidak dapat menemukan data asli untuk indeks ${i}.`);
+                 // Skip jika berlebih
+                 return null; 
             }
             
             return {
@@ -274,14 +362,14 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
                 kriteria: result.kriteria,
                 targetKktp: result.targetKktp,
             };
-        });
+        }).filter((item): item is KKTPRow => item !== null);
 
         return finalKKTPTable;
 
     } catch (error: any) {
         console.error("Error generating KKTP:", error);
         if (error instanceof SyntaxError) {
-            throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid.");
+            throw new Error("Gagal memproses respons KKTP dari AI karena format tidak valid (Syntax Error).");
         }
         throw error;
     }

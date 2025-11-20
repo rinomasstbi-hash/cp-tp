@@ -75,7 +75,7 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
 
 /**
  * Mengirim permintaan ke backend Google Apps Script dengan mekanisme coba lagi (retry).
- * SEMUA permintaan sekarang menggunakan metode POST dengan FormData untuk keandalan CORS yang lebih baik.
+ * SEMUA permintaan sekarang menggunakan metode POST dengan URLSearchParams untuk keandalan CORS yang lebih baik.
  * @param {string} action - Aksi yang akan dilakukan oleh backend.
  * @param {Record<string, any>} params - Parameter untuk aksi tersebut.
  * @returns {Promise<any>} - Data yang dikembalikan dari API.
@@ -83,14 +83,15 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
 export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
     const url = GOOGLE_APPS_SCRIPT_URL;
     
-    const formData = new FormData();
-    formData.append('action', action);
-    formData.append('params', JSON.stringify(params));
+    // MENGGUNAKAN URLSearchParams LEBIH STABIL DARIPADA FormData UNTUK APPS SCRIPT
+    const payload = new URLSearchParams();
+    payload.append('action', action);
+    payload.append('params', JSON.stringify(params));
 
     const options: RequestInit = {
         method: 'POST',
         mode: 'cors',
-        body: formData,
+        body: payload,
     };
 
     const MAX_ATTEMPTS = 3;
@@ -135,7 +136,8 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
             
             if (isNetworkError && attempt < MAX_ATTEMPTS) {
-                await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); // Jeda sebelum mencoba lagi
+                // Exponential backoff slightly
+                await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); 
                 continue; // Lanjut ke percobaan berikutnya
             }
             
@@ -143,16 +145,16 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             let detailedMessage = error.message;
 
             if (isNetworkError) {
-                detailedMessage = `Gagal terhubung ke server setelah beberapa kali percobaan.
-- Periksa koneksi internet Anda. Masalah ini bisa bersifat sementara.
-- Pastikan URL Google Apps Script sudah dikonfigurasi dengan benar dan di-deploy ulang.
-- Periksa Log Eksekusi di Google Apps Script untuk melihat detail error di sisi server.`;
+                detailedMessage = `Gagal terhubung ke server (Failed to fetch).
+1. Periksa koneksi internet Anda.
+2. JIKA INI FITUR BARU: Pastikan Anda sudah melakukan 'Deploy' > 'New deployment' di Google Apps Script.
+3. Script backend mungkin crash atau time-out.`;
             } 
             else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
                 detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
             }
 
-            throw new Error(`Gagal memproses permintaan. Detail: ${detailedMessage}`);
+            throw new Error(detailedMessage);
         }
     }
      // Baris ini seharusnya tidak akan tercapai, tetapi diperlukan agar fungsi memiliki return path.
