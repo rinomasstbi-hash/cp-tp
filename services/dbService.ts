@@ -99,7 +99,7 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
     };
 
     const MAX_ATTEMPTS = 5; // Increased reliability
-    const RETRY_DELAY = 2500; // 2.5s delay
+    const RETRY_DELAY = 3000; // Increased to 3s delay for better stability with GAS
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
