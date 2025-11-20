@@ -1,6 +1,7 @@
 
+
 import React, { useState } from 'react';
-import { MATA_PELAJARAN } from '../constants';
+import { MATA_PELAJARAN } from './constants';
 import { 
   BookOpenIcon, 
   MosqueIcon,

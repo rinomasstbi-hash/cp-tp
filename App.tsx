@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -287,7 +288,7 @@ const App: React.FC = () => {
 
             if (protasData.length > 0) {
                 try {
-                    const prosemDataResult = await apiService.getPROSEMsByPROTAId(protasData[0].id);
+                    const prosemDataResult = await apiService.getPROSEMByProtaId(protasData[0].id);
                     setProsemData(prosemDataResult.length > 0 ? {
                         ganjil: prosemDataResult.find(p => p.semester === 'Ganjil') || null,
                         genap: prosemDataResult.find(p => p.semester === 'Genap') || null,
@@ -355,11 +356,26 @@ const App: React.FC = () => {
     setLoadingState({ isLoading: true, title: 'Menghapus ATP', message: 'Sedang menghapus data dari server...' });
     setAtpError(null);
     try {
+        // Step 1: Attempt to delete dependencies (KKTPs) first.
+        // We silently ignore errors here because the user might have already deleted them 
+        // or the backend function might be missing, but we still want to try deleting the ATP.
+        try {
+             await apiService.deleteKKTPsByATPId(atpToDelete.id);
+        } catch (kktpErr) {
+            console.warn("Info: Gagal menghapus KKTP terkait otomatis (bisa diabaikan jika sudah bersih):", kktpErr);
+        }
+
+        // Step 2: Delete the ATP itself
         await apiService.deleteATP(atpToDelete.id);
-        await apiService.deleteKKTPsByATPId(atpToDelete.id);
-        await loadATPsForTP(selectedTP.id); // Reload fresh data
+        
+        // Step 3: Reload list and refresh view
+        await loadATPsForTP(selectedTP.id); 
+        setTransientMessage('Data ATP berhasil dihapus.');
     } catch (error: any) {
-        setAtpError(`Gagal menghapus ATP: ${error.message}`);
+        console.error("Delete ATP Error:", error);
+        setAtpError(`Gagal menghapus ATP. Detail: ${error.message}`);
+        // Attempt to reload even if an error occurred to sync UI
+        loadATPsForTP(selectedTP.id).catch(() => {});
     } finally {
         setLoadingState({ isLoading: false, title: '', message: '' });
     }
@@ -384,6 +400,7 @@ const App: React.FC = () => {
   
   const handleEditATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
+    e.preventDefault();
     if (!selectedTP) return;
      // FIX: If no creator email exists (e.g., old data), bypass authentication.
     if (!atp.creatorEmail) {
@@ -396,6 +413,7 @@ const App: React.FC = () => {
 
   const handleDeleteATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
+    e.preventDefault();
     if (!selectedTP) return;
     // FIX: If no creator email exists, bypass auth modal and use a simple confirm dialog.
     if (!atp.creatorEmail) {
@@ -404,6 +422,37 @@ const App: React.FC = () => {
         }
     } else {
         openAuthModal('delete', 'atp', atp);
+    }
+  };
+  
+  const handleDeleteKKTP = async (semester: 'Ganjil' | 'Genap') => {
+    const dataToDelete = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
+    if (!dataToDelete) {
+        setKktpError("Data tidak ditemukan untuk dihapus.");
+        return;
+    }
+
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus KKTP Semester ${semester}? Data yang dihapus tidak dapat dikembalikan.`)) {
+        return;
+    }
+
+    setLoadingState({ isLoading: true, title: 'Menghapus KKTP', message: 'Sedang menghapus data...' });
+    setKktpError(null);
+    try {
+        await apiService.deleteKKTP(dataToDelete.id);
+        
+        // Update local state immediately to reflect change
+        setKktpData(prev => prev ? {
+            ...prev,
+            [semester.toLowerCase()]: null
+        } : null);
+        
+        setTransientMessage(`KKTP Semester ${semester} berhasil dihapus.`);
+    } catch (error: any) {
+        console.error("Delete KKTP Error:", error);
+        setKktpError(`Gagal menghapus KKTP: ${error.message}`);
+    } finally {
+        setLoadingState({ isLoading: false, title: '', message: '' });
     }
   };
 
@@ -575,15 +624,21 @@ const App: React.FC = () => {
   const handleDeleteAndRegenerateProta = async () => {
     if (!selectedTP) return;
     
-    setLoadingState({ isLoading: true, title: 'Menghapus PROTA', message: 'Sedang menghapus data PROTA lama...' });
+    setLoadingState({ isLoading: true, title: 'Menghapus PROTA & PROSEM', message: 'Sedang menghapus data PROTA dan PROSEM lama...' });
     setProtaError(null);
     try {
+        // We must delete downstream dependencies first. PROSEM depends on PROTA.
+        // Both deletion services are keyed by tpId, but this logic is cleaner.
+        await apiService.deletePROSEMsByTPId(selectedTP.id!);
         await apiService.deletePROTAsByTPId(selectedTP.id!);
+        
         setProtas([]); // Clear state immediately
+        setProsemData(null); // Also clear prosem state
+
         setView('view_atp_list');
-        setTransientMessage("PROTA lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
+        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
     } catch (error: any) {
-        setProtaError(`Gagal menghapus PROTA lama: ${error.message}`);
+        setProtaError(`Gagal menghapus data lama: ${error.message}`);
     } finally {
         setLoadingState({ isLoading: false, title: '', message: '' });
     }
@@ -714,15 +769,27 @@ const App: React.FC = () => {
     setProsemData(null); // Reset before loading
 
     try {
-        if (protas.length === 0) {
+        // Robustness: Check if protas are loaded, if not try to load them
+        let currentProtas = protas;
+        if (currentProtas.length === 0) {
+            try {
+                 const loadedProtas = await apiService.getPROTAsByTPId(selectedTP.id!);
+                 setProtas(loadedProtas);
+                 currentProtas = loadedProtas;
+            } catch (e) {
+                console.error("Auto-reload PROTA failed in handleNavigateToProsem", e);
+            }
+        }
+
+        if (currentProtas.length === 0) {
             setProsemGenerationProgress({ isLoading: false, message: '' });
             setTransientMessage('Anda harus membuat PROTA terlebih dahulu untuk membuat PROSEM.');
             setView('tp_menu');
             return;
         }
-        const prota = protas[0];
+        const prota = currentProtas[0];
 
-        const existingProsems = await apiService.getPROSEMsByPROTAId(prota.id);
+        const existingProsems = await apiService.getPROSEMByProtaId(prota.id);
         const ganjilData = existingProsems.find(p => p.semester === 'Ganjil') || null;
         const genapData = existingProsems.find(p => p.semester === 'Genap') || null;
         
@@ -738,13 +805,33 @@ const App: React.FC = () => {
   };
 
   const handleGenerateSingleProsem = async (semester: 'Ganjil' | 'Genap') => {
-    if (!selectedTP || protas.length === 0) {
+    if (!selectedTP) return;
+    
+    // Robustness: Check if protas are loaded, if not try to load them
+    let currentProtas = protas;
+    if (currentProtas.length === 0) {
+        try {
+             const loadedProtas = await apiService.getPROTAsByTPId(selectedTP.id!);
+             setProtas(loadedProtas);
+             currentProtas = loadedProtas;
+        } catch (e) {
+            setProsemError("Gagal memuat data PROTA yang diperlukan. Silakan refresh halaman.");
+            return;
+        }
+    }
+
+    if (currentProtas.length === 0) {
         setProsemError("Data PROTA tidak ditemukan. PROSEM tidak dapat dibuat.");
         return;
     }
-    const prota = protas[0];
+    const prota = currentProtas[0];
 
-    if (!prota.content.some(p => p.semester === semester)) {
+    // Check if specific semester content exists in PROTA
+    const hasSemesterContent = prota.content.some(p => 
+        p.semester?.trim().toLowerCase() === semester.toLowerCase()
+    );
+
+    if (!hasSemesterContent) {
         setProsemError(`Tidak ada data PROTA untuk semester ${semester}, jadi PROSEM tidak dapat dibuat.`);
         return;
     }
@@ -1814,9 +1901,14 @@ const App: React.FC = () => {
                     <h2 className="text-2xl font-bold text-slate-800">
                         Rincian KKTP - Semester {data.semester}
                     </h2>
-                     <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
-                        <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
-                    </button>
+                    <div className="flex gap-2">
+                        <button onClick={() => handleDeleteKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700">
+                            <TrashIcon className="w-5 h-5" /> Hapus
+                        </button>
+                        <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                        </button>
+                    </div>
                 </div>
                 <div className="overflow-x-auto mt-4">
                     <table className="min-w-full bg-white border border-slate-300 text-sm">

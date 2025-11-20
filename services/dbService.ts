@@ -1,10 +1,11 @@
+
 // ====================================================================================
 // !! PENTING: KONFIGURASI BACKEND !!
 // ====================================================================================
 // Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
 // Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
 // Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw_W-oZaj_lw8WVcRjkgZnjdS9b43etYr_4wies2R028Zr_qkfbQvZPkcmhUd7aGLVU/exec';
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz4Vv3vzfx9d7iBFLrpXEzq9OYq7MbdKqRPpQVb8Kghf8jVKwD2PKZZFX3iz2NmdZ-A/exec';
 
 
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
@@ -93,7 +94,7 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
     };
 
     const MAX_ATTEMPTS = 3;
-    const RETRY_DELAY = 1000; // 1 detik
+    const RETRY_DELAY = 2500; // Increased to 2.5 seconds to reduce 'Failed to fetch' errors
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -248,6 +249,10 @@ export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt'>): Promis
     return parseData<KKTPData>(result, ['content']);
 };
 
+export const deleteKKTP = (id: string): Promise<{ success: boolean }> => {
+    return apiRequest('deleteKKTP', { id });
+};
+
 export const deleteKKTPsByATPId = (atpId: string): Promise<{ success: boolean }> => {
     return apiRequest('deleteKKTPsByATPId', { atpId });
 };
@@ -257,7 +262,8 @@ export const deleteKKTPsByTPId = (tpId: string): Promise<{ success: boolean }> =
 };
 
 // --- PROSEM Functions ---
-export const getPROSEMsByPROTAId = async (protaId: string): Promise<PROSEMData[]> => {
+export const getPROSEMByProtaId = async (protaId: string): Promise<PROSEMData[]> => {
+    // Fix: Reverting action to 'getPROSEMsByPROTAId' to match backend expectation and solve "Aksi tidak dikenal"
     const data = await apiRequest('getPROSEMsByPROTAId', { protaId });
     if (Array.isArray(data)) {
         return data.map(prosem => parseData<PROSEMData>(prosem, ['content', 'headers']));
