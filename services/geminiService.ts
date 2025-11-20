@@ -1,3 +1,4 @@
+
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow, PROTAData, PROSEMRow, PROSEMHeader } from "../types";
 // Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
 import { apiRequest } from './dbService';
@@ -336,65 +337,86 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
              return [];
         }
 
-        // --- BATCHING STRATEGY ---
-        // Membagi request menjadi beberapa chunk kecil (misal 5 TP per request)
-        // Ini mencegah error "token limit exceeded" atau AI memotong respons di tengah jalan.
-        const CHUNK_SIZE = 5;
+        // --- BATCHING STRATEGY & ROBUSTNESS ---
+        // 1. Dikurangi ke 3 untuk mencegah timeout/incomplete response
+        const CHUNK_SIZE = 3;
         const resultsMap = new Map<number, { kriteria: any, targetKktp: any }>();
 
         for (let i = 0; i < semesterContent.length; i += CHUNK_SIZE) {
             const chunk = semesterContent.slice(i, i + CHUNK_SIZE);
             
-            // Delay antar chunk untuk mencegah rate limiting di Google Apps Script dan memberikan waktu jeda
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Jeda sedikit lebih lama untuk stabilitas
+                await new Promise(resolve => setTimeout(resolve, 2500));
             }
 
             const simplifiedAtpDataChunk = {
                 subject: atpData.subject,
+                // Inject instruction to ensure AI respects array length and format
+                instruction: `Generate KKTP for these ${chunk.length} TPs. Return a JSON ARRAY with EXACTLY ${chunk.length} objects. Ensure 'kriteria' object has all 4 fields filled (sangatMahir, mahir, cukupMahir, perluBimbingan).`,
                 content: chunk.map(row => ({
                     topikMateri: row.topikMateri,
-                    tp: row.tp
+                    tp: row.tp,
+                    kodeTp: row.kodeTp // Pass Kode TP to help AI context
                 }))
             };
 
-            try {
-                const response = await apiRequest('generateKKTP', { 
-                    atpData: simplifiedAtpDataChunk, 
-                    semester, 
-                    grade, 
-                    model: 'gemini-2.5-pro' 
-                });
-
-                const jsonStr = cleanJsonString(response.text);
-                let parsedChunk = relaxedJsonParse(jsonStr);
-
-                // Normalisasi jika AI membungkus array dalam objek
-                if (!Array.isArray(parsedChunk) && typeof parsedChunk === 'object' && parsedChunk !== null) {
-                    const values = Object.values(parsedChunk);
-                    if (values.length > 0 && Array.isArray(values[0])) {
-                        parsedChunk = values[0];
-                    }
-                }
-
-                if (Array.isArray(parsedChunk)) {
-                    parsedChunk.forEach((item: any, idx: number) => {
-                        // Kita asumsikan urutan respons AI sesuai dengan urutan array input chunk
-                        const absoluteIndex = i + idx;
-                        if (absoluteIndex < semesterContent.length) {
-                            resultsMap.set(absoluteIndex, {
-                                kriteria: item.kriteria,
-                                targetKktp: item.targetKktp
-                            });
-                        }
+            // Retry Mechanism: Try up to 2 times per chunk if count mismatches
+            let attempts = 0;
+            let chunkSuccess = false;
+            
+            while (!chunkSuccess && attempts < 2) {
+                attempts++;
+                try {
+                    const response = await apiRequest('generateKKTP', { 
+                        atpData: simplifiedAtpDataChunk, 
+                        semester, 
+                        grade, 
+                        model: 'gemini-2.5-pro' 
                     });
-                } else {
-                    console.warn(`Chunk ${i} gagal diparsing sebagai array.`, parsedChunk);
-                }
 
-            } catch (chunkError) {
-                console.error(`Error processing chunk ${i}:`, chunkError);
-                // Kita lanjut ke chunk berikutnya agar setidaknya sebagian data terambil
+                    const jsonStr = cleanJsonString(response.text);
+                    let parsedChunk = relaxedJsonParse(jsonStr);
+
+                    // Normalisasi jika AI membungkus array dalam objek
+                    if (!Array.isArray(parsedChunk) && typeof parsedChunk === 'object' && parsedChunk !== null) {
+                        const values = Object.values(parsedChunk);
+                        if (values.length > 0 && Array.isArray(values[0])) {
+                            parsedChunk = values[0];
+                        }
+                    }
+
+                    if (Array.isArray(parsedChunk)) {
+                        // Check mismatch
+                        if (parsedChunk.length !== chunk.length) {
+                            console.warn(`KKTP Count Mismatch (Attempt ${attempts}): Expected ${chunk.length}, Got ${parsedChunk.length}. Retrying...`);
+                            if (attempts < 2) {
+                                await new Promise(res => setTimeout(res, 2000)); // Wait before retry
+                                continue; 
+                            }
+                        }
+
+                        parsedChunk.forEach((item: any, idx: number) => {
+                            // Asumsikan urutan sesuai
+                            const absoluteIndex = i + idx;
+                            if (idx < chunk.length) { // Prevent overflow mapping
+                                resultsMap.set(absoluteIndex, {
+                                    kriteria: item.kriteria,
+                                    targetKktp: item.targetKktp
+                                });
+                            }
+                        });
+                        chunkSuccess = true; // Mark as success to exit retry loop
+
+                    } else {
+                        console.warn(`Chunk ${i} output is not an array.`, parsedChunk);
+                        if (attempts < 2) continue;
+                    }
+
+                } catch (chunkError) {
+                    console.error(`Error processing chunk ${i} (Attempt ${attempts}):`, chunkError);
+                    if (attempts < 2) await new Promise(res => setTimeout(res, 3000));
+                }
             }
         }
 
@@ -402,18 +424,32 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
         const finalKKTPTable: KKTPRow[] = semesterContent.map((originalData, i) => {
             const result = resultsMap.get(i);
             
-            const defaultKriteria = {
+            // Ensure kriteria is a valid object with properties, otherwise use default
+            const rawKriteria = result?.kriteria;
+            const isKriteriaValid = rawKriteria && 
+                                    (rawKriteria.sangatMahir || rawKriteria.mahir || rawKriteria.cukupMahir);
+
+            const validKriteria = isKriteriaValid ? rawKriteria : {
                 sangatMahir: "-",
                 mahir: "-",
                 cukupMahir: "-",
                 perluBimbingan: "-"
             };
+            
+            // Force fill any missing individual fields if partial object
+            const finalKriteria = {
+                sangatMahir: validKriteria.sangatMahir || "-",
+                mahir: validKriteria.mahir || "-",
+                cukupMahir: validKriteria.cukupMahir || "-",
+                perluBimbingan: validKriteria.perluBimbingan || "-"
+            };
 
             return {
+                // Prioritize Kode TP. If missing, fallback to index.
                 no: originalData.kodeTp || String(i + 1),
                 materiPokok: originalData.topikMateri,
                 tp: originalData.tp,
-                kriteria: result?.kriteria || defaultKriteria,
+                kriteria: finalKriteria,
                 targetKktp: result?.targetKktp || "mahir",
             };
         });

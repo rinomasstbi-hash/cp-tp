@@ -81,10 +81,8 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
  * @returns {Promise<any>} - Data yang dikembalikan dari API.
  */
 export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
-    // Add cache busting parameter to prevent browser/proxy caching of responses
-    const url = `${GOOGLE_APPS_SCRIPT_URL}?t=${new Date().getTime()}`;
+    const url = GOOGLE_APPS_SCRIPT_URL;
     
-    // MENGGUNAKAN URLSearchParams LEBIH STABIL DARIPADA FormData UNTUK APPS SCRIPT
     const payload = new URLSearchParams();
     payload.append('action', action);
     payload.append('params', JSON.stringify(params));
@@ -92,13 +90,16 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
     const options: RequestInit = {
         method: 'POST',
         mode: 'cors',
+        cache: 'no-store', // Disable caching explicitly
         body: payload,
-        credentials: 'omit', // Ensure we don't send cookies which can complicate CORS
+        credentials: 'omit',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
     };
 
-    const MAX_ATTEMPTS = 4; // Increased to 4
-    // Increased base retry delay to 2s to handle GAS cold starts better
-    const RETRY_DELAY = 2000; 
+    const MAX_ATTEMPTS = 5; // Increased reliability
+    const RETRY_DELAY = 2500; // 2.5s delay
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -139,7 +140,7 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
             
             if (isNetworkError && attempt < MAX_ATTEMPTS) {
-                // Exponential backoff: 2s, 4s, 6s...
+                // Exponential backoff
                 await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); 
                 continue; // Lanjut ke percobaan berikutnya
             }
@@ -150,8 +151,8 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             if (isNetworkError) {
                 detailedMessage = `Gagal terhubung ke server (Failed to fetch).
 1. Periksa koneksi internet Anda.
-2. JIKA INI FITUR BARU: Pastikan Anda sudah melakukan 'Deploy' > 'New deployment' di Google Apps Script.
-3. Script backend mungkin crash atau time-out karena data terlalu besar.`;
+2. Jika menggunakan VPN/Proxy, coba matikan.
+3. Script backend mungkin sedang "cold start", silakan coba lagi tombol aksi.`;
             } 
             else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
                 detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
@@ -268,7 +269,6 @@ export const deleteKKTPsByTPId = (tpId: string): Promise<{ success: boolean }> =
 
 // --- PROSEM Functions ---
 export const getPROSEMByProtaId = async (protaId: string): Promise<PROSEMData[]> => {
-    // Fix: Reverting action to 'getPROSEMsByPROTAId' to match backend expectation and solve "Aksi tidak dikenal"
     const data = await apiRequest('getPROSEMsByPROTAId', { protaId });
     if (Array.isArray(data)) {
         return data.map(prosem => parseData<PROSEMData>(prosem, ['content', 'headers']));
