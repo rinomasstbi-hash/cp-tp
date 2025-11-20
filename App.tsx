@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -263,8 +262,8 @@ const App: React.FC = () => {
                 setAtpError("Gagal memuat data ATP.");
             }
 
-            // delay to prevent rate limit
-            await new Promise(r => setTimeout(r, 300));
+            // increased delay to prevent rate limit (was 1000)
+            await new Promise(r => setTimeout(r, 1500));
 
             try {
                 protasData = await apiService.getPROTAsByTPId(tpId);
@@ -274,8 +273,8 @@ const App: React.FC = () => {
                 setProtaError("Gagal memuat data PROTA.");
             }
 
-            // delay to prevent rate limit
-            await new Promise(r => setTimeout(r, 300));
+            // increased delay to prevent rate limit (was 1000)
+            await new Promise(r => setTimeout(r, 1500));
 
             // Step 2: Fetch dependents based on what was successfully loaded
             if (atpsData.length > 0) {
@@ -293,8 +292,8 @@ const App: React.FC = () => {
                 setKktpData(null);
             }
 
-            // delay to prevent rate limit
-            await new Promise(r => setTimeout(r, 300));
+            // increased delay to prevent rate limit (was 1000)
+            await new Promise(r => setTimeout(r, 1500));
 
             if (protasData.length > 0) {
                 try {

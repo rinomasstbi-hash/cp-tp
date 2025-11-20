@@ -81,7 +81,8 @@ const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
  * @returns {Promise<any>} - Data yang dikembalikan dari API.
  */
 export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
-    const url = GOOGLE_APPS_SCRIPT_URL;
+    // Add cache busting parameter to prevent browser/proxy caching of responses
+    const url = `${GOOGLE_APPS_SCRIPT_URL}?t=${new Date().getTime()}`;
     
     // MENGGUNAKAN URLSearchParams LEBIH STABIL DARIPADA FormData UNTUK APPS SCRIPT
     const payload = new URLSearchParams();
@@ -92,10 +93,12 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
         method: 'POST',
         mode: 'cors',
         body: payload,
+        credentials: 'omit', // Ensure we don't send cookies which can complicate CORS
     };
 
-    const MAX_ATTEMPTS = 3;
-    const RETRY_DELAY = 2500; // Increased to 2.5 seconds to reduce 'Failed to fetch' errors
+    const MAX_ATTEMPTS = 4; // Increased to 4
+    // Increased base retry delay to 2s to handle GAS cold starts better
+    const RETRY_DELAY = 2000; 
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -136,7 +139,7 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
             
             if (isNetworkError && attempt < MAX_ATTEMPTS) {
-                // Exponential backoff slightly
+                // Exponential backoff: 2s, 4s, 6s...
                 await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); 
                 continue; // Lanjut ke percobaan berikutnya
             }
@@ -148,7 +151,7 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
                 detailedMessage = `Gagal terhubung ke server (Failed to fetch).
 1. Periksa koneksi internet Anda.
 2. JIKA INI FITUR BARU: Pastikan Anda sudah melakukan 'Deploy' > 'New deployment' di Google Apps Script.
-3. Script backend mungkin crash atau time-out.`;
+3. Script backend mungkin crash atau time-out karena data terlalu besar.`;
             } 
             else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
                 detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;

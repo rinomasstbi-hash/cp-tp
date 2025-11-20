@@ -72,7 +72,7 @@ export interface KKTPKriteria {
 }
 
 export interface KKTPRow {
-  no: number;
+  no: number | string;
   materiPokok: string;
   tp: string;
   kriteria: KKTPKriteria;

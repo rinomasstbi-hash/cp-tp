@@ -65,8 +65,13 @@ const relaxedJsonParse = (text: string): any => {
              // A. Tambahkan koma yang hilang antar objek (Penyebab utama error "Expected ',' or ']'")
              // Mengubah "} {" menjadi "}, {" (menangani spasi/baris baru diantaranya)
              fixed = fixed.replace(/}\s*{/g, '},{');
+             // Menangani kasus newline tanpa koma yang lebih agresif: } <newline> {
+             fixed = fixed.replace(/}\s*[\r\n]+\s*{/g, '},{');
+             // Menangani kasus array: ] [ -> ], [
+             fixed = fixed.replace(/]\s*\[/g, '],[');
 
              // B. Tambahkan tanda kutip pada kunci yang tidak dikutip (misal: { key: "val" } -> { "key": "val" })
+             // Hati-hati agar tidak merusak URL atau string yang sudah dikutip
              fixed = fixed.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
 
              // C. Hapus koma di akhir array/objek (trailing comma)
@@ -324,45 +329,94 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
 
 export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap', grade: string): Promise<KKTPRow[]> => {
     try {
-        const response = await apiRequest('generateKKTP', { atpData, semester, grade, model: 'gemini-2.5-pro' });
-        const jsonStr = cleanJsonString(response.text);
-        const parsedResult = relaxedJsonParse(jsonStr) as { index: number; kriteria: any; targetKktp: any }[];
-        
         const semesterContent = atpData.content.filter(row => row.semester === semester);
-        if (parsedResult.length !== semesterContent.length) {
-            // Jika jumlah tidak cocok, cobalah untuk memetakan berdasarkan index yang ada
-            // Ini membuat fitur lebih toleran terhadap kesalahan AI
-            if (parsedResult.length > 0 && parsedResult.length < semesterContent.length) {
-                 console.warn(`Warning: KKTP response count mismatch. Expected ${semesterContent.length}, got ${parsedResult.length}. Trying to map available data.`);
-                 // Lanjut, tapi akan ada error di blok map di bawah jika data hilang.
-            } else {
-                 throw new Error(`Respons AI tidak valid. Jumlah kriteria (${parsedResult.length}) tidak cocok dengan jumlah TP (${semesterContent.length}).`);
+        
+        if (semesterContent.length === 0) {
+             console.warn(`No ATP content found for semester ${semester}. Skipping AI generation.`);
+             return [];
+        }
+
+        // --- BATCHING STRATEGY ---
+        // Membagi request menjadi beberapa chunk kecil (misal 5 TP per request)
+        // Ini mencegah error "token limit exceeded" atau AI memotong respons di tengah jalan.
+        const CHUNK_SIZE = 5;
+        const resultsMap = new Map<number, { kriteria: any, targetKktp: any }>();
+
+        for (let i = 0; i < semesterContent.length; i += CHUNK_SIZE) {
+            const chunk = semesterContent.slice(i, i + CHUNK_SIZE);
+            
+            // Delay antar chunk untuk mencegah rate limiting di Google Apps Script dan memberikan waktu jeda
+            if (i > 0) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+
+            const simplifiedAtpDataChunk = {
+                subject: atpData.subject,
+                content: chunk.map(row => ({
+                    topikMateri: row.topikMateri,
+                    tp: row.tp
+                }))
+            };
+
+            try {
+                const response = await apiRequest('generateKKTP', { 
+                    atpData: simplifiedAtpDataChunk, 
+                    semester, 
+                    grade, 
+                    model: 'gemini-2.5-pro' 
+                });
+
+                const jsonStr = cleanJsonString(response.text);
+                let parsedChunk = relaxedJsonParse(jsonStr);
+
+                // Normalisasi jika AI membungkus array dalam objek
+                if (!Array.isArray(parsedChunk) && typeof parsedChunk === 'object' && parsedChunk !== null) {
+                    const values = Object.values(parsedChunk);
+                    if (values.length > 0 && Array.isArray(values[0])) {
+                        parsedChunk = values[0];
+                    }
+                }
+
+                if (Array.isArray(parsedChunk)) {
+                    parsedChunk.forEach((item: any, idx: number) => {
+                        // Kita asumsikan urutan respons AI sesuai dengan urutan array input chunk
+                        const absoluteIndex = i + idx;
+                        if (absoluteIndex < semesterContent.length) {
+                            resultsMap.set(absoluteIndex, {
+                                kriteria: item.kriteria,
+                                targetKktp: item.targetKktp
+                            });
+                        }
+                    });
+                } else {
+                    console.warn(`Chunk ${i} gagal diparsing sebagai array.`, parsedChunk);
+                }
+
+            } catch (chunkError) {
+                console.error(`Error processing chunk ${i}:`, chunkError);
+                // Kita lanjut ke chunk berikutnya agar setidaknya sebagian data terambil
             }
         }
 
-        const finalKKTPTable: KKTPRow[] = parsedResult.map((result, i) => {
-            // Gunakan index dari AI jika ada, jika tidak gunakan urutan array
-            const targetIndex = (typeof result.index === 'number') ? result.index : i;
+        // Gabungkan hasil
+        const finalKKTPTable: KKTPRow[] = semesterContent.map((originalData, i) => {
+            const result = resultsMap.get(i);
             
-            // Cari data asli yang sesuai. Karena semesterContent sudah difilter, kita perlu hati-hati.
-            // Namun, AI biasanya mengembalikan array yang sesuai dengan input yang dikirim.
-            // Input yang dikirim adalah semesterContent. Jadi index 0 di output = index 0 di semesterContent.
-            
-            const originalData = semesterContent[i]; 
-            
-            if (!originalData) {
-                 // Skip jika berlebih
-                 return null; 
-            }
-            
+            const defaultKriteria = {
+                sangatMahir: "-",
+                mahir: "-",
+                cukupMahir: "-",
+                perluBimbingan: "-"
+            };
+
             return {
-                no: i + 1,
+                no: originalData.kodeTp || String(i + 1),
                 materiPokok: originalData.topikMateri,
                 tp: originalData.tp,
-                kriteria: result.kriteria,
-                targetKktp: result.targetKktp,
+                kriteria: result?.kriteria || defaultKriteria,
+                targetKktp: result?.targetKktp || "mahir",
             };
-        }).filter((item): item is KKTPRow => item !== null);
+        });
 
         return finalKKTPTable;
 
