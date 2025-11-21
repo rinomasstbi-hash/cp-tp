@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -9,7 +11,7 @@ import TPMenu from './components/TPMenu';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
-import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon } from './components/icons';
+import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon, SaveIcon } from './components/icons';
 
 const Header: React.FC = () => {
   return (
@@ -183,8 +185,29 @@ const App: React.FC = () => {
   // State for AI generation progress
   const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
   const [protaGenerationProgress, setProtaGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
+  
+  // State for API Key Modal
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [userApiKeyInput, setUserApiKeyInput] = useState('');
 
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
+
+  useEffect(() => {
+    // Cek apakah API Key sudah ada saat aplikasi dimuat
+    if (!geminiService.hasApiKey()) {
+        setShowApiKeyModal(true);
+    }
+  }, []);
+
+  const handleSaveApiKey = () => {
+      if (userApiKeyInput.trim().length > 10) {
+          geminiService.saveApiKeyToStorage(userApiKeyInput.trim());
+          setShowApiKeyModal(false);
+          window.location.reload(); // Refresh untuk memastikan service menggunakan key baru
+      } else {
+          alert("API Key terlihat tidak valid. Mohon periksa kembali.");
+      }
+  };
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
     setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
@@ -751,50 +774,29 @@ const App: React.FC = () => {
         let finalGanjilData: KKTPData | null = existingKktps.find(k => k.semester === 'Ganjil') || null;
         let finalGenapData: KKTPData | null = existingKktps.find(k => k.semester === 'Genap') || null;
 
-        // Step 3: (REMOVED AUTO GENERATION) - Hanya tampilkan data yang ada.
-        // Jika data tidak ada, user akan melihat tombol "Buat KKTP" di UI.
-        // Ini mencegah error "API Key Missing" saat sekadar membuka menu.
+        // Step 3: Jika tidak ada, buat.
+        if (!finalGanjilData && !finalGenapData) {
+            setKktpGenerationProgress({ isLoading: true, message: 'Membuat KKTP dengan AI...' });
+
+            // Generate Ganjil
+            const ganjilContent = await geminiService.generateKKTP(atp, 'Ganjil', selectedTP.grade);
+            if (ganjilContent.length > 0) {
+              const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', content: ganjilContent };
+              finalGanjilData = await apiService.saveKKTP(ganjilPayload);
+            }
+
+            // Generate Genap
+            const genapContent = await geminiService.generateKKTP(atp, 'Genap', selectedTP.grade);
+            if (genapContent.length > 0) {
+              const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', content: genapContent };
+              finalGenapData = await apiService.saveKKTP(genapPayload);
+            }
+        }
         
         setKktpData({ ganjil: finalGanjilData, genap: finalGenapData });
         setActiveKktpSemester('Ganjil'); // Selalu mulai dari Ganjil
     } catch (error: any) {
         setKktpError(error.message);
-    } finally {
-        setKktpGenerationProgress({ isLoading: false, message: '' });
-    }
-  };
-
-  const handleGenerateSingleKktp = async (semester: 'Ganjil' | 'Genap') => {
-    if (!selectedATP || !selectedTP) return;
-
-    setKktpGenerationProgress({ isLoading: true, message: `Membuat KKTP Semester ${semester}...` });
-    setKktpError(null);
-
-    try {
-        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP.grade);
-        
-        if (newContent.length > 0) {
-             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
-                atpId: selectedATP.id, 
-                subject: selectedATP.subject, 
-                grade: selectedTP.grade, 
-                semester: semester, 
-                content: newContent 
-            };
-            const savedData = await apiService.saveKKTP(payload);
-            
-            setKktpData(prev => ({
-                ...prev,
-                [semester.toLowerCase()]: savedData
-            } as any));
-            
-            setTransientMessage(`KKTP Semester ${semester} berhasil dibuat.`);
-        } else {
-            setKktpError(`AI gagal menghasilkan konten untuk Semester ${semester}.`);
-        }
-    } catch (error: any) {
-        console.error("Generate KKTP Error:", error);
-        setKktpError(`Gagal membuat KKTP: ${error.message}`);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
@@ -2027,44 +2029,14 @@ const App: React.FC = () => {
 
                 <div>
                   {activeKktpSemester === 'Ganjil' && (
-                    <div className="mt-4">
-                        {kktpData?.ganjil ? (
-                            <KKTPTable data={kktpData.ganjil} />
-                        ) : (
-                            <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-                                <h3 className="text-lg font-semibold text-slate-700 mb-2">Belum Ada KKTP Semester Ganjil</h3>
-                                <p className="text-slate-500 mb-6">Silakan klik tombol di bawah ini untuk membuat Kriteria Ketercapaian Tujuan Pembelajaran secara otomatis menggunakan AI.</p>
-                                <button 
-                                    onClick={() => handleGenerateSingleKktp('Ganjil')} 
-                                    disabled={kktpGenerationProgress.isLoading} 
-                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-teal-600 text-white font-semibold rounded-md shadow-md hover:bg-teal-700 disabled:bg-slate-400 transition-colors"
-                                >
-                                    <SparklesIcon className="w-5 h-5" />
-                                    Buat KKTP Semester Ganjil
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                    kktpData?.ganjil 
+                      ? <KKTPTable data={kktpData.ganjil} /> 
+                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.</div>
                   )}
                   {activeKktpSemester === 'Genap' && (
-                    <div className="mt-4">
-                        {kktpData?.genap ? (
-                            <KKTPTable data={kktpData.genap} />
-                        ) : (
-                            <div className="bg-white rounded-lg shadow-lg p-8 text-center">
-                                <h3 className="text-lg font-semibold text-slate-700 mb-2">Belum Ada KKTP Semester Genap</h3>
-                                <p className="text-slate-500 mb-6">Silakan klik tombol di bawah ini untuk membuat Kriteria Ketercapaian Tujuan Pembelajaran secara otomatis menggunakan AI.</p>
-                                <button 
-                                    onClick={() => handleGenerateSingleKktp('Genap')} 
-                                    disabled={kktpGenerationProgress.isLoading} 
-                                    className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-teal-600 text-white font-semibold rounded-md shadow-md hover:bg-teal-700 disabled:bg-slate-400 transition-colors"
-                                >
-                                    <SparklesIcon className="w-5 h-5" />
-                                    Buat KKTP Semester Genap
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                    kktpData?.genap 
+                      ? <KKTPTable data={kktpData.genap} /> 
+                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Genap.</div>
                   )}
                 </div>
             </div>
@@ -2240,6 +2212,55 @@ const App: React.FC = () => {
               {copyNotification}
           </div>
       )}
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex justify-center items-center z-[100] p-4">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+                  <div className="bg-slate-50 p-6 border-b border-slate-100 text-center">
+                      <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <SparklesIcon className="w-8 h-8 text-yellow-600" />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800">API Key Diperlukan</h3>
+                      <p className="text-slate-500 text-sm mt-2">
+                          Demi keamanan, API Key tidak disimpan di dalam kode aplikasi.
+                      </p>
+                  </div>
+                  <div className="p-6">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Masukkan Google Gemini API Key Anda:
+                      </label>
+                      <input
+                          type="password"
+                          value={userApiKeyInput}
+                          onChange={(e) => setUserApiKeyInput(e.target.value)}
+                          placeholder="AIzaSy..."
+                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all outline-none text-slate-800"
+                          autoFocus
+                      />
+                      <p className="text-xs text-slate-400 mt-3 flex items-start gap-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          Key ini hanya akan disimpan di browser Anda (LocalStorage) dan tidak akan dikirim ke server kami.
+                      </p>
+                      <button 
+                          onClick={handleSaveApiKey}
+                          className="w-full mt-6 bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors flex justify-center items-center gap-2"
+                      >
+                          <SaveIcon className="w-5 h-5" />
+                          Simpan & Lanjutkan
+                      </button>
+                      <div className="mt-4 text-center">
+                          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-teal-600 hover:underline">
+                              Belum punya key? Dapatkan di sini
+                          </a>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
        {authPrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">

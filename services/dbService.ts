@@ -5,7 +5,7 @@
 // Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
 // Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
 // Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz4Vv3vzfx9d7iBFLrpXEzq9OYq7MbdKqRPpQVb8Kghf8jVKwD2PKZZFX3iz2NmdZ-A/exec';
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwYDd0tban05SNq_FVYPRSvKMaalCDEj9eXWJ6hFmvrACE51dJVzSjqxogAe-imTIFW/exec';
 
 
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';

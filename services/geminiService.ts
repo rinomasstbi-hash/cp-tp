@@ -1,7 +1,8 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
-import { GEMINI_API_KEY_FALLBACK } from '../components/constants';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow } from '../types';
+
+// Key untuk menyimpan API Key di browser user
+export const LOCAL_STORAGE_API_KEY = 'AGRU_GEMINI_API_KEY';
 
 // Helper to extract JSON from AI response which might be wrapped in markdown
 const extractJsonArray = (text: string): any[] => {
@@ -24,90 +25,114 @@ const extractJsonArray = (text: string): any[] => {
     }
 };
 
-// Helper aman untuk mengambil API Key
+// Cek apakah API Key tersedia (baik dari Env maupun LocalStorage)
+export const hasApiKey = (): boolean => {
+    const envKey = process.env.API_KEY;
+    const storedKey = localStorage.getItem(LOCAL_STORAGE_API_KEY);
+    return !!(envKey || storedKey);
+};
+
+// Simpan API Key ke LocalStorage (dipanggil dari UI)
+export const saveApiKeyToStorage = (key: string) => {
+    localStorage.setItem(LOCAL_STORAGE_API_KEY, key);
+};
+
+// Helper aman untuk mengambil API Key dengan prioritas yang benar
 const getApiKey = (): string => {
-    let apiKey = '';
-
-    // 1. Cek Vite Environment Variable (Prioritas Utama)
-    // Di Netlify/Vite, variabel ini di-inject saat build time.
-    try {
-        const meta = import.meta as any;
-        if (typeof meta !== 'undefined' && meta.env && meta.env.VITE_GEMINI_API_KEY) {
-            apiKey = meta.env.VITE_GEMINI_API_KEY;
-        }
-    } catch (e) {
-        // Abaikan error akses import.meta
+    // 1. Cek Environment Variable (Prioritas untuk Deployment yang benar)
+    if (process.env.API_KEY) {
+        return process.env.API_KEY;
     }
 
-    // 2. Cek process.env (Fallback untuk lingkungan Node/Legacy)
-    if (!apiKey && typeof process !== 'undefined' && process.env) {
-        if (process.env.REACT_APP_GEMINI_API_KEY) apiKey = process.env.REACT_APP_GEMINI_API_KEY;
-        else if (process.env.VITE_GEMINI_API_KEY) apiKey = process.env.VITE_GEMINI_API_KEY;
+    // 2. Cek LocalStorage (Prioritas untuk User yang input manual via UI)
+    const storedKey = localStorage.getItem(LOCAL_STORAGE_API_KEY);
+    if (storedKey) {
+        return storedKey;
     }
 
-    // 3. Fallback ke Constants (Jaring Pengaman Terakhir)
-    // Jika env var tidak terbaca karena masalah konfigurasi hosting, gunakan ini.
-    if (!apiKey && GEMINI_API_KEY_FALLBACK && GEMINI_API_KEY_FALLBACK.length > 10) {
-        apiKey = GEMINI_API_KEY_FALLBACK;
-    }
-    
-    return apiKey;
+    return '';
 };
 
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan.\n\nSistem telah mencoba membaca Environment Variable dan Fallback Key namun gagal. Pastikan konfigurasi Anda benar.");
+        throw new Error("API_KEY_MISSING"); // Error khusus untuk ditangkap UI
     }
     return new GoogleGenAI({ apiKey });
+};
+
+// Helper untuk menangani error spesifik API Gemini
+const handleGeminiError = (error: any) => {
+    const msg = error?.message || '';
+    
+    // Jika error karena key hilang (dari pengecekan kita sendiri)
+    if (msg === "API_KEY_MISSING") {
+        throw new Error("API Key Gemini belum diatur. Silakan masukkan API Key Anda pada tombol pengaturan di pojok kanan atas atau refresh halaman.");
+    }
+
+    // Cek error spesifik "leaked key" atau Permission Denied
+    if (msg.includes('leaked') || msg.includes('key was reported as leaked') || msg.includes('PERMISSION_DENIED') || msg.includes('403')) {
+        // Jika key bocor dan itu berasal dari LocalStorage, hapus agar user bisa input baru
+        if (localStorage.getItem(LOCAL_STORAGE_API_KEY)) {
+            localStorage.removeItem(LOCAL_STORAGE_API_KEY);
+        }
+        throw new Error("AKSES DITOLAK: API Key Gemini tidak valid atau telah diblokir oleh Google. Silakan refresh halaman dan masukkan API Key yang baru.");
+    }
+    
+    if (msg.includes('429') || msg.includes('quota') || msg.includes('Resource has been exhausted')) {
+        throw new Error("KUOTA HABIS: Anda telah mencapai batas penggunaan API Gemini. Silakan tunggu beberapa saat atau gunakan API Key dari akun Google lain.");
+    }
+
+    // Lempar error asli jika bukan kasus khusus
+    throw error;
 };
 
 // ============================================================================
 // LANGKAH 1: GENERATE TUJUAN PEMBELAJARAN (TP)
 // ============================================================================
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
-    const ai = createAIClient();
-    
-    const prompt = `
-    Bertindaklah sebagai Pakar Kurikulum Merdeka Indonesia.
-    Tugas Anda: Merumuskan Tujuan Pembelajaran (TP) yang spesifik dan terukur berdasarkan Capaian Pembelajaran (CP) yang diberikan.
+    try {
+        const ai = createAIClient();
+        
+        const prompt = `
+        Bertindaklah sebagai Pakar Kurikulum Merdeka Indonesia.
+        Tugas Anda: Merumuskan Tujuan Pembelajaran (TP) yang spesifik dan terukur berdasarkan Capaian Pembelajaran (CP) yang diberikan.
 
-    INFORMASI MATA PELAJARAN:
-    - Mapel: ${input.subject}
-    - Kelas/Fase: ${input.grade} (Fase D untuk SMP/MTs)
+        INFORMASI MATA PELAJARAN:
+        - Mapel: ${input.subject}
+        - Kelas/Fase: ${input.grade} (Fase D untuk SMP/MTs)
 
-    DATA CP (ELEMEN & DESKRIPSI):
-    ${input.cpElements.map((e, i) => `${i + 1}. Elemen: ${e.element}\n   Deskripsi CP: ${e.cp}`).join('\n')}
+        DATA CP (ELEMEN & DESKRIPSI):
+        ${input.cpElements.map((e, i) => `${i + 1}. Elemen: ${e.element}\n   Deskripsi CP: ${e.cp}`).join('\n')}
 
-    CATATAN GURU (PENTING UNTUK PEMBAGIAN SEMESTER):
-    ${input.additionalNotes}
+        CATATAN GURU (PENTING UNTUK PEMBAGIAN SEMESTER):
+        ${input.additionalNotes}
 
-    INSTRUKSI PENGERJAAN:
-    1. Analisis Kompetensi (Kata Kerja Operasional) dan Konten (Materi) dari setiap deskripsi CP.
-    2. Pecah CP menjadi beberapa Tujuan Pembelajaran (TP) yang lebih kecil.
-    3. Kelompokkan TP tersebut ke dalam "Materi Pokok" yang relevan.
-    4. Bagilah materi tersebut ke dalam Semester Ganjil atau Genap (Wajib ada keduanya jika catatan guru mengindikasikan demikian).
-    5. Output HARUS berupa Array JSON murni tanpa teks pengantar.
+        INSTRUKSI PENGERJAAN:
+        1. Analisis Kompetensi (Kata Kerja Operasional) dan Konten (Materi) dari setiap deskripsi CP.
+        2. Pecah CP menjadi beberapa Tujuan Pembelajaran (TP) yang lebih kecil.
+        3. Kelompokkan TP tersebut ke dalam "Materi Pokok" yang relevan.
+        4. Bagilah materi tersebut ke dalam Semester Ganjil atau Genap (Wajib ada keduanya jika catatan guru mengindikasikan demikian).
+        5. Output HARUS berupa Array JSON murni tanpa teks pengantar.
 
-    FORMAT JSON YANG DIHARAPKAN:
-    [
-      {
-        "semester": "Ganjil" | "Genap",
-        "materi": "Judul Materi Pokok (misal: Bilangan Bulat)",
-        "subMateriGroups": [
+        FORMAT JSON YANG DIHARAPKAN:
+        [
           {
-            "subMateri": "Sub Bab (misal: Operasi Hitung)",
-            "tps": [
-              "Peserta didik mampu...",
-              "Peserta didik mampu..."
+            "semester": "Ganjil" | "Genap",
+            "materi": "Judul Materi Pokok (misal: Bilangan Bulat)",
+            "subMateriGroups": [
+              {
+                "subMateri": "Sub Bab (misal: Operasi Hitung)",
+                "tps": [
+                  "Peserta didik mampu...",
+                  "Peserta didik mampu..."
+                ]
+              }
             ]
           }
         ]
-      }
-    ]
-    `;
+        `;
 
-    try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
@@ -144,7 +169,6 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 
         const result = extractJsonArray(response.text);
         
-        // Validasi sederhana agar tidak kosong
         if (!result || result.length === 0) {
             throw new Error("AI tidak menghasilkan data TP yang valid. Silakan coba lagi.");
         }
@@ -153,6 +177,7 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 
     } catch (error: any) {
         console.error("Error in generateTPs:", error);
+        handleGeminiError(error); 
         throw new Error(`Gagal membuat TP: ${error.message || 'Kesalahan tidak diketahui'}`);
     }
 };
@@ -161,181 +186,194 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 // LANGKAH 2: GENERATE ALUR TUJUAN PEMBELAJARAN (ATP)
 // ============================================================================
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
-    const ai = createAIClient();
-    
-    // Flatten TPs untuk memberikan konteks penuh ke AI
-    let allTps: any[] = [];
-    let sequence = 1;
-    tpData.tpGroups.forEach(group => {
-        group.subMateriGroups.forEach(sub => {
-            sub.tps.forEach(tp => {
-                allTps.push({
-                    original_seq: sequence++,
-                    semester: group.semester,
-                    materi: group.materi,
-                    tp_text: tp
+    try {
+        const ai = createAIClient();
+        
+        let allTps: any[] = [];
+        let sequence = 1;
+        tpData.tpGroups.forEach(group => {
+            group.subMateriGroups.forEach(sub => {
+                sub.tps.forEach(tp => {
+                    allTps.push({
+                        original_seq: sequence++,
+                        semester: group.semester,
+                        materi: group.materi,
+                        tp_text: tp
+                    });
                 });
             });
         });
-    });
 
-    const prompt = `
-    Peran: Pakar Kurikulum.
-    Tugas: Menyusun Alur Tujuan Pembelajaran (ATP) yang logis dan sistematis.
-    
-    Mapel: ${tpData.subject}
-    Kelas: ${tpData.grade}
+        const prompt = `
+        Peran: Pakar Kurikulum.
+        Tugas: Menyusun Alur Tujuan Pembelajaran (ATP) yang logis dan sistematis.
+        
+        Mapel: ${tpData.subject}
+        Kelas: ${tpData.grade}
 
-    DAFTAR TP MENTAH:
-    ${JSON.stringify(allTps)}
+        DAFTAR TP MENTAH:
+        ${JSON.stringify(allTps)}
 
-    INSTRUKSI:
-    1. Urutkan TP dari yang paling mudah/mendasar ke yang kompleks (Hierarki Pembelajaran).
-    2. Berikan Kode TP (misal: 7.1, 7.2 untuk kelas 7).
-    3. Pastikan alur mengalir logis antar semester (Ganjil -> Genap).
-    4. Return JSON Array.
-    `;
+        INSTRUKSI:
+        1. Urutkan TP dari yang paling mudah/mendasar ke yang kompleks (Hierarki Pembelajaran).
+        2. Berikan Kode TP (misal: 7.1, 7.2 untuk kelas 7).
+        3. Pastikan alur mengalir logis antar semester (Ganjil -> Genap).
+        4. Return JSON Array.
+        `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { 
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        topikMateri: { type: Type.STRING },
-                        tp: { type: Type.STRING },
-                        kodeTp: { type: Type.STRING },
-                        atpSequence: { type: Type.NUMBER },
-                        semester: { type: Type.STRING, enum: ['Ganjil', 'Genap'] }
-                    },
-                    required: ['topikMateri', 'tp', 'kodeTp', 'atpSequence', 'semester']
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { 
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            topikMateri: { type: Type.STRING },
+                            tp: { type: Type.STRING },
+                            kodeTp: { type: Type.STRING },
+                            atpSequence: { type: Type.NUMBER },
+                            semester: { type: Type.STRING, enum: ['Ganjil', 'Genap'] }
+                        },
+                        required: ['topikMateri', 'tp', 'kodeTp', 'atpSequence', 'semester']
+                    }
                 }
             }
-        }
-    });
+        });
 
-    return extractJsonArray(response.text);
+        return extractJsonArray(response.text);
+    } catch (error: any) {
+        handleGeminiError(error);
+        throw error;
+    }
 };
 
 // ============================================================================
 // LANGKAH 3: GENERATE PROGRAM TAHUNAN (PROTA)
 // ============================================================================
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
-    const ai = createAIClient();
-    
-    // Filter data yang diperlukan saja untuk menghemat token
-    const simplifiedATP = atpData.content.map(r => ({ 
-        tp: r.tp, 
-        materi: r.topikMateri, 
-        sem: r.semester, 
-        kode: r.kodeTp 
-    }));
+    try {
+        const ai = createAIClient();
+        
+        const simplifiedATP = atpData.content.map(r => ({ 
+            tp: r.tp, 
+            materi: r.topikMateri, 
+            sem: r.semester, 
+            kode: r.kodeTp 
+        }));
 
-    const prompt = `
-    Peran: Guru Profesional.
-    Tugas: Membuat Program Tahunan (PROTA).
+        const prompt = `
+        Peran: Guru Profesional.
+        Tugas: Membuat Program Tahunan (PROTA).
 
-    Mapel: ${atpData.subject}
-    Jam Pelajaran (JP) per Minggu: ${totalJpPerWeek} JP
-    
-    DATA ATP:
-    ${JSON.stringify(simplifiedATP)}
+        Mapel: ${atpData.subject}
+        Jam Pelajaran (JP) per Minggu: ${totalJpPerWeek} JP
+        
+        DATA ATP:
+        ${JSON.stringify(simplifiedATP)}
 
-    INSTRUKSI:
-    1. Perkirakan "Alokasi Waktu" untuk setiap TP berdasarkan kompleksitas materi.
-    2. Pastikan total JP masuk akal untuk 1 tahun ajaran (Sekitar 18 minggu efektif per semester).
-    3. Format output Alokasi Waktu harus berupa string angka + " JP" (contoh: "4 JP").
-    4. Return JSON Array.
-    `;
+        INSTRUKSI:
+        1. Perkirakan "Alokasi Waktu" untuk setiap TP berdasarkan kompleksitas materi.
+        2. Pastikan total JP masuk akal untuk 1 tahun ajaran (Sekitar 18 minggu efektif per semester).
+        3. Format output Alokasi Waktu harus berupa string angka + " JP" (contoh: "4 JP").
+        4. Return JSON Array.
+        `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { 
-            responseMimeType: 'application/json',
-             responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        no: { type: Type.NUMBER },
-                        topikMateri: { type: Type.STRING },
-                        alurTujuanPembelajaran: { type: Type.STRING, description: "Kode ATP (misal: 7.1, 7.2)" },
-                        tujuanPembelajaran: { type: Type.STRING },
-                        alokasiWaktu: { type: Type.STRING },
-                        semester: { type: Type.STRING, enum: ['Ganjil', 'Genap'] }
-                    },
-                    required: ['no', 'topikMateri', 'alurTujuanPembelajaran', 'tujuanPembelajaran', 'alokasiWaktu', 'semester']
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { 
+                responseMimeType: 'application/json',
+                 responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            no: { type: Type.NUMBER },
+                            topikMateri: { type: Type.STRING },
+                            alurTujuanPembelajaran: { type: Type.STRING, description: "Kode ATP (misal: 7.1, 7.2)" },
+                            tujuanPembelajaran: { type: Type.STRING },
+                            alokasiWaktu: { type: Type.STRING },
+                            semester: { type: Type.STRING, enum: ['Ganjil', 'Genap'] }
+                        },
+                        required: ['no', 'topikMateri', 'alurTujuanPembelajaran', 'tujuanPembelajaran', 'alokasiWaktu', 'semester']
+                    }
                 }
             }
-        }
-    });
-    
-    return extractJsonArray(response.text);
+        });
+        
+        return extractJsonArray(response.text);
+    } catch (error: any) {
+        handleGeminiError(error);
+        throw error;
+    }
 };
 
 // ============================================================================
 // LANGKAH 4: GENERATE KRITERIA KETERCAPAIAN (KKTP)
 // ============================================================================
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
-    const ai = createAIClient();
-    
-    const filteredContent = atpData.content.filter(c => c.semester.toLowerCase() === semester.toLowerCase());
-    
-    if (filteredContent.length === 0) return [];
+    try {
+        const ai = createAIClient();
+        
+        const filteredContent = atpData.content.filter(c => c.semester.toLowerCase() === semester.toLowerCase());
+        
+        if (filteredContent.length === 0) return [];
 
-    const prompt = `
-    Peran: Guru Profesional.
-    Tugas: Membuat Rubrik KKTP (Kriteria Ketercapaian Tujuan Pembelajaran).
-    
-    Semester: ${semester}
-    Kelas: ${grade}
-    
-    DAFTAR TP:
-    ${JSON.stringify(filteredContent.map(r => ({ tp: r.tp, materi: r.topikMateri })))}
+        const prompt = `
+        Peran: Guru Profesional.
+        Tugas: Membuat Rubrik KKTP (Kriteria Ketercapaian Tujuan Pembelajaran).
+        
+        Semester: ${semester}
+        Kelas: ${grade}
+        
+        DAFTAR TP:
+        ${JSON.stringify(filteredContent.map(r => ({ tp: r.tp, materi: r.topikMateri })))}
 
-    INSTRUKSI:
-    1. Buat deskripsi kriteria penilaian (Rubrik) untuk 4 level: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan.
-    2. Tentukan target minimal (biasanya 'cukupMahir' atau 'mahir').
-    3. Pastikan return adalah valid JSON array.
-    `;
+        INSTRUKSI:
+        1. Buat deskripsi kriteria penilaian (Rubrik) untuk 4 level: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan.
+        2. Tentukan target minimal (biasanya 'cukupMahir' atau 'mahir').
+        3. Pastikan return adalah valid JSON array.
+        `;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { 
-            responseMimeType: 'application/json',
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        no: { type: Type.NUMBER },
-                        materiPokok: { type: Type.STRING },
-                        tp: { type: Type.STRING },
-                        kriteria: {
-                            type: Type.OBJECT,
-                            properties: {
-                                sangatMahir: { type: Type.STRING },
-                                mahir: { type: Type.STRING },
-                                cukupMahir: { type: Type.STRING },
-                                perluBimbingan: { type: Type.STRING }
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { 
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            no: { type: Type.NUMBER },
+                            materiPokok: { type: Type.STRING },
+                            tp: { type: Type.STRING },
+                            kriteria: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    sangatMahir: { type: Type.STRING },
+                                    mahir: { type: Type.STRING },
+                                    cukupMahir: { type: Type.STRING },
+                                    perluBimbingan: { type: Type.STRING }
+                                },
+                                required: ['sangatMahir', 'mahir', 'cukupMahir', 'perluBimbingan']
                             },
-                            required: ['sangatMahir', 'mahir', 'cukupMahir', 'perluBimbingan']
+                            targetKktp: { type: Type.STRING, enum: ['sangatMahir', 'mahir', 'cukupMahir', 'perluBimbingan'] }
                         },
-                        targetKktp: { type: Type.STRING, enum: ['sangatMahir', 'mahir', 'cukupMahir', 'perluBimbingan'] }
-                    },
-                    required: ['no', 'materiPokok', 'tp', 'kriteria', 'targetKktp']
+                        required: ['no', 'materiPokok', 'tp', 'kriteria', 'targetKktp']
+                    }
                 }
             }
-        }
-    });
+        });
 
-    return extractJsonArray(response.text);
+        return extractJsonArray(response.text);
+    } catch (error: any) {
+        handleGeminiError(error);
+        throw error;
+    }
 };
 
 // ============================================================================

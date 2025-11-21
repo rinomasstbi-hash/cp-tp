@@ -1,4 +1,5 @@
 
+
 export const MATA_PELAJARAN = [
   "Al-Qur'an Hadis",
   "Akidah Akhlak",
@@ -22,12 +23,11 @@ export const MATA_PELAJARAN = [
 export const APP_TITLE = "TP Generator MTsN 4 Jombang";
 
 // =================================================================
-// KONFIGURASI API KEY
+// KONFIGURASI KEAMANAN
 // =================================================================
-// CATATAN: Idealnya menggunakan Environment Variable (VITE_GEMINI_API_KEY).
-// Namun, jika Environment Variable gagal terbaca (sering terjadi di beberapa hosting),
-// aplikasi akan otomatis menggunakan kunci FALLBACK di bawah ini.
-//
-// Kunci ini dimasukkan sesuai permintaan pengguna untuk memastikan aplikasi berjalan.
-export const GEMINI_API_KEY_FALLBACK = 'AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU'; 
+// API Key tidak lagi disimpan di sini (hardcoded) untuk mencegah kebocoran.
+// Aplikasi sekarang menggunakan:
+// 1. Environment Variables (VITE_GEMINI_API_KEY) - Disarankan untuk Deploy
+// 2. LocalStorage (Input via UI) - Disarankan untuk testing/pengguna umum
+export const GEMINI_API_KEY_FALLBACK: string = ''; 
 // =================================================================
