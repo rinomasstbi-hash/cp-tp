@@ -1,5 +1,7 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
+import { GEMINI_API_KEY } from '../components/constants';
 
 // Helper to extract JSON from AI response which might be wrapped in markdown
 const extractJsonArray = (text: string): any[] => {
@@ -21,21 +23,18 @@ const extractJsonArray = (text: string): any[] => {
 
 // Helper aman untuk mengambil API Key dari berbagai sumber
 const getApiKey = (): string => {
+    // 1. Cek Konfigurasi File (Paling Stabil untuk Browser/Netlify)
+    if (GEMINI_API_KEY && GEMINI_API_KEY.length > 10 && !GEMINI_API_KEY.includes('PASTE_HERE')) {
+        return GEMINI_API_KEY;
+    }
+    
     let key = '';
     try {
-        // 0. Cek variabel global manual (Prioritas Utama dari index.html)
-        if (typeof window !== 'undefined' && (window as any).GEMINI_API_KEY) {
-            key = (window as any).GEMINI_API_KEY;
-        }
-        // 1. Cek process.env standard (Netlify Build / Node)
-        else if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+        // 2. Cek process.env standard (Node/Build time injection)
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
             key = process.env.API_KEY;
         }
-        // 2. Cek window.process (Polyfill lama)
-        else if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
-            key = (window as any).process.env.API_KEY;
-        }
-        // 3. Cek import.meta.env (Vite/Modern Bundlers)
+        // 3. Cek import.meta.env (Vite modern)
         else if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.API_KEY) {
             key = (import.meta as any).env.API_KEY;
         }
@@ -48,7 +47,7 @@ const getApiKey = (): string => {
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan.\n\nSOLUSI:\nBuka file 'components/index.html' dan isi variabel: window.GEMINI_API_KEY = 'AIza...'; (Pastikan menggunakan tanda kutip)");
+        throw new Error("API Key Gemini tidak ditemukan.\n\nSOLUSI:\nBuka file 'components/constants.ts' dan tempel API Key pada variabel GEMINI_API_KEY.");
     }
     return new GoogleGenAI({ apiKey });
 };

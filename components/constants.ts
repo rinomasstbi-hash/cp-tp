@@ -1,3 +1,4 @@
+
 export const MATA_PELAJARAN = [
   "Al-Qur'an Hadis",
   "Akidah Akhlak",
@@ -19,3 +20,10 @@ export const MATA_PELAJARAN = [
 ];
 
 export const APP_TITLE = "TP Generator MTsN 4 Jombang";
+
+// =================================================================
+// KONFIGURASI API KEY (WAJIB DIISI DI SINI)
+// =================================================================
+// Agar aplikasi berjalan lancar di browser/Netlify, tempel API Key Anda di bawah ini.
+export const GEMINI_API_KEY = 'AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU'; 
+// =================================================================
