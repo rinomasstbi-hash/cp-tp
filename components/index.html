@@ -7,21 +7,25 @@
     <title>TP Generator - MTsN 4 Jombang</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Robust Polyfill untuk process.env agar aman di semua environment browser
+      // Robust Polyfill untuk process.env
       window.process = window.process || {};
       window.process.env = window.process.env || {};
       
-      // Global Error Handler untuk menangkap crash saat loading (Blank Screen)
+      // PENTING: Jika Anda mengalami error "API Key", Anda bisa mencoba mengisi key di bawah ini untuk testing sementara.
+      // Namun untuk production, gunakan Environment Variables di Netlify.
+      // window.process.env.API_KEY = "GANTI_DENGAN_API_KEY_GEMINI_ANDA";
+
+      // Global Error Handler
       window.addEventListener('error', function(e) {
         const root = document.getElementById('root');
-        // Jika masih loading (ada spinner) tapi terjadi error, tampilkan errornya
+        // Tampilkan error hanya jika aplikasi stuck di loading spinner
         if (root && root.innerHTML.includes('animate-spin')) {
             root.innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-screen p-4 text-center">
                     <div class="bg-red-50 border border-red-200 rounded-lg p-6 max-w-lg shadow-lg">
                         <h2 class="text-xl font-bold text-red-700 mb-2">Gagal Memuat Aplikasi</h2>
                         <p class="text-red-600 mb-4">${e.message}</p>
-                        <p class="text-sm text-slate-500">Silakan refresh halaman atau periksa konfigurasi API Key di Netlify.</p>
+                        <p class="text-sm text-slate-500">Silakan refresh halaman atau periksa konfigurasi API Key.</p>
                         <button onclick="window.location.reload()" class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">Coba Lagi</button>
                     </div>
                 </div>
@@ -42,7 +46,7 @@
 </head>
   <body class="bg-slate-50">
     <div id="root">
-      <!-- Loading spinner default agar tidak blank putih saat memuat React -->
+      <!-- Loading spinner default -->
       <div class="flex items-center justify-center min-h-screen">
         <div class="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
       </div>

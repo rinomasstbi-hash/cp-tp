@@ -19,33 +19,38 @@ const extractJsonArray = (text: string): any[] => {
     }
 };
 
-// Helper aman untuk mengambil API Key dari process.env atau global scope
+// Helper aman untuk mengambil API Key dari berbagai sumber
 const getApiKey = (): string => {
+    let key = '';
     try {
-        // Cek process.env standard
+        // 1. Cek process.env standard (Netlify Build / Node)
         if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-            return process.env.API_KEY;
+            key = process.env.API_KEY;
         }
-        // Cek window.process (polyfill)
-        if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
-            return (window as any).process.env.API_KEY;
+        // 2. Cek window.process (Polyfill manual di index.html)
+        else if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
+            key = (window as any).process.env.API_KEY;
+        }
+        // 3. Cek import.meta.env (Vite/Modern Bundlers)
+        else if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.API_KEY) {
+            key = (import.meta as any).env.API_KEY;
         }
     } catch (e) {
-        console.error("Error accessing API Key:", e);
+        console.error("Error accessing API Key sources:", e);
     }
-    return '';
+    return key;
 };
 
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key tidak ditemukan. Pastikan Environment Variable 'API_KEY' sudah dikonfigurasi di Netlify.");
+        throw new Error("API Key Gemini tidak ditemukan di Client-Side.\n\nPENTING: Konfigurasi 'Script Properties' di Google Apps Script HANYA berlaku untuk backend, tidak untuk fitur AI ini yang berjalan di browser.\n\nSolusi:\n1. Tambahkan Environment Variable 'API_KEY' di dashboard Netlify (Site Settings > Environment variables).\n2. Atau edit file index.html dan masukkan key secara manual di bagian window.process.env.API_KEY.");
     }
     return new GoogleGenAI({ apiKey });
 };
 
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
-    // Inisialisasi di dalam fungsi
+    // Inisialisasi di dalam fungsi (lazy)
     const ai = createAIClient();
     
     const prompt = `
@@ -254,6 +259,8 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
 
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
     // Fungsi ini murni algoritmik dan tidak menggunakan AI, jadi tidak perlu inisialisasi GoogleGenAI
+    // Namun untuk konsistensi error handling, kita cek key jika nanti diperlukan
+    
     const isGanjil = semester.toLowerCase() === 'ganjil';
     const months = isGanjil 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
@@ -268,70 +275,45 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     );
     
     if (semesterContent.length === 0) {
-        // Return empty structure rather than error to allow UI to handle it gracefully
         return { headers, content: [] };
     }
-
-    // Use algorithmic distribution instead of AI to ensure strict adherence to Math constraints.
-    // Rules:
-    // 1. Distribute JP sequentially.
-    // 2. Max JP per week = protaData.jamPertemuan.
-    // 3. If TP1 needs 3 JP and Week1 has 2 JP space: Week1 gets 2, Week2 gets 1. Next TP starts at Week2 (remaining space).
 
     const maxJpPerWeek = Number(protaData.jamPertemuan) || 2;
     const totalWeeks = months.length * weeksPerMonth;
     
-    // Track accumulated usage for every week slot [0...29]
     const weeklyUsage = new Array(totalWeeks).fill(0);
-    
-    let globalWeekCursor = 0; // Points to the current week index (0-29) being filled
+    let globalWeekCursor = 0; 
 
     const finalContent: PROSEMRow[] = semesterContent.map((row) => {
-        // Fix: Robustly extract ONLY the first numeric value.
-        // If string is "4 JP", gets 4.
-        // If string is "4 JP (160 Menit)", gets 4.
-        // If string is "2 Pertemuan (6 JP)", gets 2 (risk), so we look for digits.
-        // We assume PROTA generation standardizes on "X JP".
         const jpMatch = row.alokasiWaktu.match(/(\d+)/);
         const totalJpForTp = jpMatch ? parseInt(jpMatch[0]) : 0;
         
         let remainingToDistribute = totalJpForTp;
         
-        // Initialize empty structure for this row
         const distribution: Record<string, (string | null)[]> = {};
         months.forEach(m => { distribution[m] = Array(weeksPerMonth).fill(null); });
 
-        // Distribute JP
         while (remainingToDistribute > 0 && globalWeekCursor < totalWeeks) {
             const currentUsage = weeklyUsage[globalWeekCursor];
             const availableSpace = maxJpPerWeek - currentUsage;
 
             if (availableSpace > 0) {
-                // Determine how much we can put in this week
                 const amountToAssign = Math.min(remainingToDistribute, availableSpace);
-                
-                // Map global week index to Month + Week Index
                 const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
                 const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
                 
                 if (monthIndex < months.length) {
                     const monthName = months[monthIndex];
-                    // Assign to data structure
                     distribution[monthName][weekIndexInMonth] = String(amountToAssign);
                 }
                 
-                // Update trackers
                 weeklyUsage[globalWeekCursor] += amountToAssign;
                 remainingToDistribute -= amountToAssign;
             }
 
-            // If this week is now full, move cursor to next week
             if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek) {
                 globalWeekCursor++;
             }
-            
-            // If we filled the current TP but the week isn't full yet, 
-            // we DON'T increment the cursor. The next TP will fill the rest of this week.
         }
 
         return {
