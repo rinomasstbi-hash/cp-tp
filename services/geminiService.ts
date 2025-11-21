@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
 
@@ -24,11 +23,15 @@ const extractJsonArray = (text: string): any[] => {
 const getApiKey = (): string => {
     let key = '';
     try {
+        // 0. Cek variabel global manual (Prioritas Utama dari index.html)
+        if (typeof window !== 'undefined' && (window as any).GEMINI_API_KEY) {
+            key = (window as any).GEMINI_API_KEY;
+        }
         // 1. Cek process.env standard (Netlify Build / Node)
-        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+        else if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
             key = process.env.API_KEY;
         }
-        // 2. Cek window.process (Polyfill manual di index.html)
+        // 2. Cek window.process (Polyfill lama)
         else if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
             key = (window as any).process.env.API_KEY;
         }
@@ -45,7 +48,7 @@ const getApiKey = (): string => {
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan.\n\nUntuk aplikasi di Browser/Netlify: Environment Variable server tidak otomatis masuk ke browser.\n\nSOLUSI CEPAT:\nBuka file 'components/index.html' dan tempel API Key Anda pada baris: window.process.env.API_KEY = '...';");
+        throw new Error("API Key Gemini tidak ditemukan.\n\nSOLUSI:\nBuka file 'components/index.html' dan isi variabel: window.GEMINI_API_KEY = 'AIza...'; (Pastikan menggunakan tanda kutip)");
     }
     return new GoogleGenAI({ apiKey });
 };

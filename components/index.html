@@ -7,14 +7,21 @@
     <title>TP Generator - MTsN 4 Jombang</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Robust Polyfill untuk process.env
+      // =================================================================
+      // KONFIGURASI API KEY (WAJIB DIISI)
+      // =================================================================
+      // Tempel API Key Anda DI DALAM tanda kutip di bawah ini.
+      // Contoh Benar: window.GEMINI_API_KEY = "AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU";
+      // Contoh Salah: window.GEMINI_API_KEY = AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU; (Kurang kutip)
+      
+      window.GEMINI_API_KEY = "AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU"; 
+
+      // =================================================================
+
+      // Polyfill untuk kompatibilitas (Jangan diubah)
       window.process = window.process || {};
       window.process.env = window.process.env || {};
       
-      // PENTING: Jika Anda mengalami error "API Key", silakan tempel API Key Anda di dalam tanda kutip di bawah ini.
-      // Ini adalah solusi paling ampuh untuk aplikasi browser statis (Netlify/Vercel) jika Env Var tidak terbaca.
-      window.process.env.API_KEY = ""; 
-
       // Global Error Handler
       window.addEventListener('error', function(e) {
         const root = document.getElementById('root');
