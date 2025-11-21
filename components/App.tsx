@@ -656,8 +656,7 @@ const App: React.FC = () => {
         setProtas([]); // Clear state immediately
         setProsemData(null); // Also clear prosem state
 
-        // Ensures we go back to the main menu to see the 'Create' button
-        setView('tp_menu'); 
+        setView('tp_menu');
         setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan buat PROTA baru.");
     } catch (error: any) {
         setProtaError(`Gagal menghapus data lama: ${error.message}`);

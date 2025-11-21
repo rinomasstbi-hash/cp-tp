@@ -142,8 +142,7 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
     Task:
     1. Estimate "Alokasi Waktu" (Time Allocation in JP) for each TP.
     2. Ensure total fits academic year (~18 weeks/semester).
-    3. Output ONLY the number of JP followed by "JP" (e.g., "4 JP"). Do not add minutes.
-    4. Return JSON Array.
+    3. Return JSON Array.
     `;
 
     const response = await ai.models.generateContent({
@@ -235,8 +234,7 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     );
     
     if (semesterContent.length === 0) {
-        // Return empty structure rather than error to allow UI to handle it gracefully
-        return { headers, content: [] };
+        throw new Error(`Data PROTA untuk semester ${semester} tidak ditemukan.`);
     }
 
     // Use algorithmic distribution instead of AI to ensure strict adherence to Math constraints.
@@ -254,14 +252,8 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     let globalWeekCursor = 0; // Points to the current week index (0-29) being filled
 
     const finalContent: PROSEMRow[] = semesterContent.map((row) => {
-        // Fix: Robustly extract ONLY the first numeric value.
-        // If string is "4 JP", gets 4.
-        // If string is "4 JP (160 Menit)", gets 4.
-        // If string is "2 Pertemuan (6 JP)", gets 2 (risk), so we look for digits.
-        // We assume PROTA generation standardizes on "X JP".
-        const jpMatch = row.alokasiWaktu.match(/(\d+)/);
-        const totalJpForTp = jpMatch ? parseInt(jpMatch[0]) : 0;
-        
+        // Clean numeric value from string (e.g., "4 JP" -> 4)
+        const totalJpForTp = parseInt(row.alokasiWaktu.replace(/\D/g, '') || '0');
         let remainingToDistribute = totalJpForTp;
         
         // Initialize empty structure for this row
@@ -280,12 +272,10 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
                 // Map global week index to Month + Week Index
                 const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
                 const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
-                
-                if (monthIndex < months.length) {
-                    const monthName = months[monthIndex];
-                    // Assign to data structure
-                    distribution[monthName][weekIndexInMonth] = String(amountToAssign);
-                }
+                const monthName = months[monthIndex];
+
+                // Assign to data structure
+                distribution[monthName][weekIndexInMonth] = String(amountToAssign);
                 
                 // Update trackers
                 weeklyUsage[globalWeekCursor] += amountToAssign;
@@ -297,8 +287,10 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
                 globalWeekCursor++;
             }
             
-            // If we filled the current TP but the week isn't full yet, 
-            // we DON'T increment the cursor. The next TP will fill the rest of this week.
+            // Edge case: If week is not full but we finished this TP?
+            // We STAY on this cursor so the next TP can fill the remaining gap.
+            // e.g. Max=4. TP1=2. Week1 has 2. Remaining 2 space.
+            // Next iteration (TP2) starts at Week1 to use that 2 space.
         }
 
         return {
@@ -306,7 +298,7 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
             tujuanPembelajaran: row.tujuanPembelajaran,
             alokasiWaktu: row.alokasiWaktu,
             bulan: distribution,
-            keterangan: '' 
+            keterangan: '' // Algorithm doesn't generate notes, keep empty or "Tuntas"
         };
     });
 
