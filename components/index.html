@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="https://id.ppdb.mtsn4jombang.org/assets/img/logo/logo722.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TP Generator - MTsN 4 Jombang</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Polyfill untuk process.env agar tidak crash di browser (Netlify) jika env tidak tersedia
+      if (typeof process === "undefined") {
+        window.process = { env: {} };
+      } else if (!process.env) {
+        process.env = {};
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50">
+    <div id="root">
+      <!-- Loading spinner default agar tidak blank putih saat memuat React -->
+      <div class="flex items-center justify-center min-h-screen">
+        <div class="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    </div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

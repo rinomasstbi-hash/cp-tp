@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 // Helper to extract JSON from AI response which might be wrapped in markdown
 const extractJsonArray = (text: string): any[] => {
     try {
@@ -22,6 +20,9 @@ const extractJsonArray = (text: string): any[] => {
 };
 
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
+    // Inisialisasi di dalam fungsi untuk mencegah crash saat load jika env belum siap
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const prompt = `
     Role: Curriculum Expert (Kurikulum Merdeka Indonesia).
     Task: Generate Learning Objectives (Tujuan Pembelajaran - TP) from Learning Outcomes (Capaian Pembelajaran - CP).
@@ -76,6 +77,8 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 };
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     // Flatten TPs for context
     let allTps: any[] = [];
     let sequence = 1;
@@ -131,6 +134,8 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 };
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const prompt = `
     Create Annual Program (PROTA).
     Subject: ${atpData.subject}
@@ -172,6 +177,8 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const filteredContent = atpData.content.filter(c => c.semester.toLowerCase() === semester.toLowerCase());
     
     const prompt = `
@@ -221,6 +228,7 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
 };
 
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
+    // Fungsi ini murni algoritmik dan tidak menggunakan AI, jadi tidak perlu inisialisasi GoogleGenAI
     const isGanjil = semester.toLowerCase() === 'ganjil';
     const months = isGanjil 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
