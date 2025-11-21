@@ -11,9 +11,9 @@
       window.process = window.process || {};
       window.process.env = window.process.env || {};
       
-      // PENTING: Jika Anda mengalami error "API Key", Anda bisa mencoba mengisi key di bawah ini untuk testing sementara.
-      // Solusi Cepat: Tempel API Key Anda menggantikan string kosong di bawah ini.
-      // window.process.env.API_KEY = "ISI_API_KEY_GEMINI_DISINI";
+      // PENTING: Jika Anda mengalami error "API Key", silakan tempel API Key Anda di dalam tanda kutip di bawah ini.
+      // Ini adalah solusi paling ampuh untuk aplikasi browser statis.
+      window.process.env.API_KEY = ""; 
 
       // Global Error Handler
       window.addEventListener('error', function(e) {

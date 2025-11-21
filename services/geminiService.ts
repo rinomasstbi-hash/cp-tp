@@ -45,7 +45,7 @@ const getApiKey = (): string => {
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan di Client-Side.\n\nCATATAN UNTUK NETLIFY:\nMenambahkan Environment Variable di dashboard Netlify saja TIDAK CUKUP untuk aplikasi browser statis tanpa proses build (Vite/Webpack) yang menyuntikkannya.\n\nSOLUSI CEPAT:\nEdit file 'components/index.html' dan tempel API Key Anda secara manual di bagian 'window.process.env.API_KEY'.");
+        throw new Error("API Key Gemini tidak ditemukan di Client-Side.\n\nSOLUSI:\nEdit file 'components/index.html' dan tempel API Key Anda secara manual di bagian 'window.process.env.API_KEY = \"...\";'.\n\n(Catatan: Environment Variable di Netlify Dashboard tidak otomatis masuk ke browser tanpa konfigurasi build khusus).");
     }
     return new GoogleGenAI({ apiKey });
 };
