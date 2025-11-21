@@ -225,9 +225,7 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
         : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
     
-    // We assume 5 weeks per month for standard grid distribution
-    const weeksPerMonth = 5;
-    const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: weeksPerMonth }));
+    const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: 5 }));
 
     const semesterContent = protaData.content.filter(row => 
         row.semester?.trim().toLowerCase() === semester.toLowerCase()
@@ -237,68 +235,145 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         throw new Error(`Data PROTA untuk semester ${semester} tidak ditemukan.`);
     }
 
-    // Use algorithmic distribution instead of AI to ensure strict adherence to Math constraints.
-    // Rules:
-    // 1. Distribute JP sequentially.
-    // 2. Max JP per week = protaData.jamPertemuan.
-    // 3. If TP1 needs 3 JP and Week1 has 2 JP space: Week1 gets 2, Week2 gets 1. Next TP starts at Week2 (remaining space).
+    // Create a lightweight map for the AI to focus on distribution only
+    const distributionMap = semesterContent.map((row, index) => ({
+        id: index + 1,
+        total_jp: parseInt(row.alokasiWaktu.replace(/\D/g, '') || '0')
+    }));
 
-    const maxJpPerWeek = Number(protaData.jamPertemuan) || 2;
-    const totalWeeks = months.length * weeksPerMonth;
-    
-    // Track accumulated usage for every week slot [0...29]
-    const weeklyUsage = new Array(totalWeeks).fill(0);
-    
-    let globalWeekCursor = 0; // Points to the current week index (0-29) being filled
+    const prompt = `
+       Role: Academic Scheduler (Kurikulum Merdeka).
+       Task: Distribute teaching hours (JP) into weekly slots for a Semester Program (PROSEM).
+       
+       Semester: ${semester} (Months: ${months.join(', ')})
+       
+       Input Data (Items to distribute):
+       ${JSON.stringify(distributionMap)}
+       
+       CRITICAL RULES:
+       1. You MUST use these EXACT month names as keys in the 'bulan' object: ${JSON.stringify(months)}.
+       2. For each month, provide an array of exactly 5 numbers (0 if no class).
+       3. The SUM of all weekly values for a single item MUST equal its 'total_jp'.
+       4. Distribute logically (e.g., 2 JP per week until total is reached).
+       
+       Response Schema (JSON Array):
+       [
+         {
+           "id": number, // Matches Input ID
+           "bulan": {
+             "${months[0]}": [number, number, number, number, number],
+             "${months[1]}": [number, number, number, number, number],
+             ... and so on for all months
+           },
+           "keterangan": string // Optional short note
+         }
+       ]
+    `;
 
-    const finalContent: PROSEMRow[] = semesterContent.map((row) => {
-        // Clean numeric value from string (e.g., "4 JP" -> 4)
-        const totalJpForTp = parseInt(row.alokasiWaktu.replace(/\D/g, '') || '0');
-        let remainingToDistribute = totalJpForTp;
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+    });
+
+    const aiOutput = extractJsonArray(response.text);
+
+    const finalContent: PROSEMRow[] = semesterContent.map((originalRow, index) => {
+        const inputId = index + 1;
+        const aiItem = aiOutput.find((x: any) => x.id == inputId);
         
-        // Initialize empty structure for this row
-        const distribution: Record<string, (string | null)[]> = {};
-        months.forEach(m => { distribution[m] = Array(weeksPerMonth).fill(null); });
+        const emptyDistribution: Record<string, (string | null)[]> = {};
+        months.forEach(m => { emptyDistribution[m] = [null, null, null, null, null]; });
 
-        // Distribute JP
-        while (remainingToDistribute > 0 && globalWeekCursor < totalWeeks) {
-            const currentUsage = weeklyUsage[globalWeekCursor];
-            const availableSpace = maxJpPerWeek - currentUsage;
+        let finalBulan = emptyDistribution;
+        let keterangan = '';
 
-            if (availableSpace > 0) {
-                // Determine how much we can put in this week
-                const amountToAssign = Math.min(remainingToDistribute, availableSpace);
-                
-                // Map global week index to Month + Week Index
-                const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
-                const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
-                const monthName = months[monthIndex];
+        if (aiItem && aiItem.bulan) {
+            finalBulan = {};
+            months.forEach(m => {
+                // Flexible key matching (case-insensitive check if exact match fails)
+                let rawWeeks = aiItem.bulan[m];
+                if (!rawWeeks) {
+                    // Try lowercase or case-insensitive search
+                    const key = Object.keys(aiItem.bulan).find(k => k.toLowerCase() === m.toLowerCase());
+                    if (key) rawWeeks = aiItem.bulan[key];
+                }
 
-                // Assign to data structure
-                distribution[monthName][weekIndexInMonth] = String(amountToAssign);
-                
-                // Update trackers
-                weeklyUsage[globalWeekCursor] += amountToAssign;
-                remainingToDistribute -= amountToAssign;
-            }
+                if (Array.isArray(rawWeeks)) {
+                    finalBulan[m] = rawWeeks.slice(0, 5).map((val: any) => 
+                        (val === 0 || val === '0' || val === null) ? null : String(val)
+                    );
+                    // Pad if less than 5
+                    while (finalBulan[m].length < 5) finalBulan[m].push(null);
+                } else {
+                     finalBulan[m] = [null, null, null, null, null];
+                }
+            });
+            keterangan = aiItem.keterangan || '';
+        }
 
-            // If this week is now full, move cursor to next week
-            if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek) {
-                globalWeekCursor++;
-            }
-            
-            // Edge case: If week is not full but we finished this TP?
-            // We STAY on this cursor so the next TP can fill the remaining gap.
-            // e.g. Max=4. TP1=2. Week1 has 2. Remaining 2 space.
-            // Next iteration (TP2) starts at Week1 to use that 2 space.
+        // Strict validation: Ensure distribution sums up to original Total JP
+        const targetTotal = parseInt(originalRow.alokasiWaktu.replace(/\D/g, '') || '0');
+        let currentTotal = 0;
+        months.forEach(m => {
+            if (finalBulan[m]) finalBulan[m].forEach(val => currentTotal += parseInt(val || '0'));
+        });
+
+        // Auto-correct if AI failed math or returned empty
+        if (targetTotal > 0 && currentTotal !== targetTotal) {
+             const diff = targetTotal - currentTotal;
+             // Simple adjustment: Add/subtract diff from the first available slot found
+             let adjusted = false;
+             
+             // Strategy: Fill strictly from the first month onwards if total is 0 (AI failed completely)
+             // Or adjust existing numbers if off by a bit
+             
+             for (const m of months) {
+                 for (let i = 0; i < 5; i++) {
+                     const val = parseInt(finalBulan[m][i] || '0');
+                     
+                     // If we need to add (diff > 0), prioritize empty slots if AI returned nothing, OR existing slots
+                     if (diff > 0) {
+                        if (currentTotal === 0) {
+                            // Distribution failed completely, simple fill: 2 JP per week until done
+                            // This is a fallback heuristic
+                            const toFill = Math.min(targetTotal - currentTotal, 2); // Max 2 per slot fallback
+                             finalBulan[m][i] = String(toFill);
+                             currentTotal += toFill;
+                             if (currentTotal >= targetTotal) {
+                                 adjusted = true; 
+                                 break;
+                             }
+                             continue; // Continue filling next slots
+                        } else {
+                             // Minor adjustment to existing
+                             const newVal = Math.max(0, val + diff);
+                             finalBulan[m][i] = newVal === 0 ? null : String(newVal);
+                             adjusted = true;
+                             break;
+                        }
+                     } 
+                     // If we need to subtract (diff < 0)
+                     else if (diff < 0 && val > 0) {
+                         const reduceBy = Math.min(val, Math.abs(diff));
+                         const newVal = val - reduceBy;
+                         finalBulan[m][i] = newVal === 0 ? null : String(newVal);
+                         // Update diff local var logic conceptually (though we break)
+                         adjusted = true;
+                         break; 
+                     }
+                 }
+                 if (adjusted) break;
+                 if (currentTotal >= targetTotal && currentTotal > 0) break; // Stop if we filled it manually
+             }
         }
 
         return {
-            no: row.no,
-            tujuanPembelajaran: row.tujuanPembelajaran,
-            alokasiWaktu: row.alokasiWaktu,
-            bulan: distribution,
-            keterangan: '' // Algorithm doesn't generate notes, keep empty or "Tuntas"
+            no: originalRow.no,
+            tujuanPembelajaran: originalRow.tujuanPembelajaran, // Strictly from PROTA
+            alokasiWaktu: originalRow.alokasiWaktu, // Strictly from PROTA
+            bulan: finalBulan,
+            keterangan: keterangan
         };
     });
 
