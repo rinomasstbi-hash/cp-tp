@@ -439,9 +439,10 @@ const App: React.FC = () => {
         return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`)) {
-        return;
-    }
+    // Confirmation dialog removed for smoother UX
+    // if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`)) {
+    //     return;
+    // }
 
     setKktpGenerationProgress({ isLoading: true, message: `Membuat ulang KKTP Semester ${semester}...` });
     setKktpError(null);
