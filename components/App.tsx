@@ -433,47 +433,34 @@ const App: React.FC = () => {
     }
   };
   
-  const handleDeleteAndRegenerateKKTP = async (semester: 'Ganjil' | 'Genap') => {
+  const handleDeleteKKTP = async (semester: 'Ganjil' | 'Genap') => {
     const dataToDelete = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
-    if (!dataToDelete || !selectedATP) {
+    if (!dataToDelete) {
+        setKktpError("Data tidak ditemukan untuk dihapus.");
         return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`)) {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus KKTP Semester ${semester}? Data yang dihapus tidak dapat dikembalikan.`)) {
         return;
     }
 
-    setKktpGenerationProgress({ isLoading: true, message: `Membuat ulang KKTP Semester ${semester}...` });
+    setLoadingState({ isLoading: true, title: 'Menghapus KKTP', message: 'Sedang menghapus data...' });
     setKktpError(null);
-
     try {
         await apiService.deleteKKTP(dataToDelete.id);
         
-        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP?.grade || '7');
-        
-        let savedData: KKTPData | null = null;
-        if (newContent.length > 0) {
-            const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
-                atpId: selectedATP.id, 
-                subject: selectedATP.subject, 
-                grade: selectedTP?.grade || '7', 
-                semester: semester, 
-                content: newContent 
-            };
-            savedData = await apiService.saveKKTP(payload);
-        }
-        
-        setKktpData(prev => ({
+        // Update local state immediately to reflect change
+        setKktpData(prev => prev ? {
             ...prev,
-            [semester.toLowerCase()]: savedData
-        } as any));
+            [semester.toLowerCase()]: null
+        } : null);
         
-        setTransientMessage(`KKTP Semester ${semester} berhasil dibuat ulang.`);
+        setTransientMessage(`KKTP Semester ${semester} berhasil dihapus.`);
     } catch (error: any) {
-        console.error("Regenerate KKTP Error:", error);
-        setKktpError(`Gagal membuat ulang KKTP: ${error.message}`);
+        console.error("Delete KKTP Error:", error);
+        setKktpError(`Gagal menghapus KKTP: ${error.message}`);
     } finally {
-        setKktpGenerationProgress({ isLoading: false, message: '' });
+        setLoadingState({ isLoading: false, title: '', message: '' });
     }
   };
 
@@ -656,8 +643,8 @@ const App: React.FC = () => {
         setProtas([]); // Clear state immediately
         setProsemData(null); // Also clear prosem state
 
-        setView('tp_menu');
-        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan buat PROTA baru.");
+        setView('view_atp_list');
+        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
     } catch (error: any) {
         setProtaError(`Gagal menghapus data lama: ${error.message}`);
     } finally {
@@ -717,65 +704,98 @@ const App: React.FC = () => {
     }
   };
 
-  const handleViewAndGenerateKktp = async () => {
+  // Modified handler: Now only sets up view and loads existing data
+  const handleViewKktp = async () => {
     if (!selectedTP) {
       setKktpError("Data TP tidak ditemukan.");
       return;
     }
     
-    // Simplifikasi: Langsung tampilkan view KKTP, pemuatan terjadi di sana.
-    // Ini membuat alur lebih bersih dari perspektif pengguna.
     setView('view_kktp');
-
-    // Mulai proses pemuatan/pembuatan di latar belakang
     setKktpGenerationProgress({ isLoading: true, message: 'Memuat data KKTP...' });
     setKktpError(null);
-    setKktpData(null); // Reset data sebelumnya
+    setKktpData(null);
 
     try {
-        // Step 1: Dapatkan ATP yang diperlukan secara diam-diam.
+        // Step 1: Load ATP
         const atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
         if (atpsForKktp.length === 0) {
-            setKktpGenerationProgress({ isLoading: false, message: '' }); // Hentikan pemuatan
+            setKktpGenerationProgress({ isLoading: false, message: '' });
             setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat KKTP.');
-            setView('view_atp_list'); // Arahkan pengguna ke tempat yang benar
+            setView('view_atp_list');
             return;
         }
-        const atp = atpsForKktp[0]; // Asumsikan yang pertama adalah yang relevan
-        setSelectedATP(atp); // Simpan ATP yang dipilih untuk digunakan nanti
+        const atp = atpsForKktp[0]; 
+        setSelectedATP(atp);
 
-        // Step 2: Periksa apakah KKTP sudah ada.
+        // Step 2: Check existing KKTPs
         const existingKktps = await apiService.getKKTPsByATPId(atp.id);
-
-        let finalGanjilData: KKTPData | null = existingKktps.find(k => k.semester === 'Ganjil') || null;
-        let finalGenapData: KKTPData | null = existingKktps.find(k => k.semester === 'Genap') || null;
-
-        // Step 3: Jika tidak ada, buat.
-        if (!finalGanjilData && !finalGenapData) {
-            setKktpGenerationProgress({ isLoading: true, message: 'Membuat KKTP dengan AI...' });
-
-            // Generate Ganjil
-            const ganjilContent = await geminiService.generateKKTP(atp, 'Ganjil', selectedTP.grade);
-            if (ganjilContent.length > 0) {
-              const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', content: ganjilContent };
-              finalGanjilData = await apiService.saveKKTP(ganjilPayload);
-            }
-
-            // Generate Genap
-            const genapContent = await geminiService.generateKKTP(atp, 'Genap', selectedTP.grade);
-            if (genapContent.length > 0) {
-              const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', content: genapContent };
-              finalGenapData = await apiService.saveKKTP(genapPayload);
-            }
-        }
+        const finalGanjilData = existingKktps.find(k => k.semester === 'Ganjil') || null;
+        const finalGenapData = existingKktps.find(k => k.semester === 'Genap') || null;
         
         setKktpData({ ganjil: finalGanjilData, genap: finalGenapData });
-        setActiveKktpSemester('Ganjil'); // Selalu mulai dari Ganjil
+        setActiveKktpSemester('Ganjil'); 
     } catch (error: any) {
         setKktpError(error.message);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
+  };
+
+  // New handler for single semester KKTP generation
+  const handleGenerateSingleKktp = async (semester: 'Ganjil' | 'Genap') => {
+    if (!selectedTP || !selectedATP) return;
+
+    setKktpGenerationProgress({ isLoading: true, message: `Membuat KKTP Semester ${semester} dengan AI...` });
+    setKktpError(null);
+
+    try {
+        const content = await geminiService.generateKKTP(selectedATP, semester, selectedTP.grade);
+        if (content.length > 0) {
+             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+                 atpId: selectedATP.id, 
+                 subject: selectedTP.subject, 
+                 grade: selectedTP.grade, 
+                 semester: semester, 
+                 content: content 
+            };
+             const savedData = await apiService.saveKKTP(payload);
+             setKktpData(prev => prev ? ({
+                 ...prev,
+                 [semester.toLowerCase()]: savedData
+             }) : { ganjil: semester === 'Ganjil' ? savedData : null, genap: semester === 'Genap' ? savedData : null });
+        } else {
+            setKktpError(`AI gagal menghasilkan konten untuk Semester ${semester}.`);
+        }
+    } catch (error: any) {
+        setKktpError(error.message);
+    } finally {
+        setKktpGenerationProgress({ isLoading: false, message: '' });
+    }
+  };
+  
+  const handleRegenerateKktp = async (semester: 'Ganjil' | 'Genap') => {
+      const existingData = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
+
+      if (existingData) {
+          if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data yang ada akan dihapus dan digantikan dengan hasil baru dari AI.`)) {
+              return;
+          }
+          
+          // Use the generation progress state for deletion as well to keep UI consistent
+          setKktpGenerationProgress({ isLoading: true, message: 'Menghapus data lama...' });
+          try {
+              await apiService.deleteKKTP(existingData.id);
+              setKktpData(prev => prev ? { ...prev, [semester.toLowerCase()]: null } : null);
+          } catch (error: any) {
+               setKktpError(`Gagal menghapus data lama: ${error.message}`);
+               setKktpGenerationProgress({ isLoading: false, message: '' });
+               return;
+          }
+      }
+      
+      // Proceed to generate
+      await handleGenerateSingleKktp(semester);
   };
 
   const handleNavigateToProsem = async () => {
@@ -1455,7 +1475,7 @@ const App: React.FC = () => {
     }
     
     if (destination === 'kktp') {
-        await handleViewAndGenerateKktp();
+        await handleViewKktp();
         return;
     }
     
@@ -1923,7 +1943,7 @@ const App: React.FC = () => {
                         Rincian KKTP - Semester {data.semester}
                     </h2>
                     <div className="flex gap-2">
-                        <button onClick={() => handleDeleteAndRegenerateKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                        <button onClick={() => handleRegenerateKktp(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
                             <SparklesIcon className="w-5 h-5" /> Buat Ulang
                         </button>
                         <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
@@ -2007,12 +2027,26 @@ const App: React.FC = () => {
                   {activeKktpSemester === 'Ganjil' && (
                     kktpData?.ganjil 
                       ? <KKTPTable data={kktpData.ganjil} /> 
-                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.</div>
+                      : (
+                        <div className="bg-white rounded-lg shadow-lg p-10 text-center">
+                            <p className="text-slate-500 mb-4">Belum ada data KKTP untuk Semester Ganjil.</p>
+                            <button onClick={() => handleGenerateSingleKktp('Ganjil')} disabled={kktpGenerationProgress.isLoading} className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400 transition-colors">
+                                <SparklesIcon className="w-5 h-5"/> Buat KKTP Semester Ganjil
+                            </button>
+                        </div>
+                      )
                   )}
                   {activeKktpSemester === 'Genap' && (
                     kktpData?.genap 
                       ? <KKTPTable data={kktpData.genap} /> 
-                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Genap.</div>
+                      : (
+                         <div className="bg-white rounded-lg shadow-lg p-10 text-center">
+                            <p className="text-slate-500 mb-4">Belum ada data KKTP untuk Semester Genap.</p>
+                            <button onClick={() => handleGenerateSingleKktp('Genap')} disabled={kktpGenerationProgress.isLoading} className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400 transition-colors">
+                                <SparklesIcon className="w-5 h-5"/> Buat KKTP Semester Genap
+                            </button>
+                        </div>
+                      )
                   )}
                 </div>
             </div>
