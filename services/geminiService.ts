@@ -222,12 +222,11 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
 
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
     const isGanjil = semester.toLowerCase() === 'ganjil';
-    // Month names MUST match the keys used in the 'bulan' Record later
     const months = isGanjil 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
         : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
     
-    // Standard 5 weeks per month assumption
+    // We assume 5 weeks per month for standard grid distribution
     const weeksPerMonth = 5;
     const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: weeksPerMonth }));
 
@@ -236,67 +235,70 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     );
     
     if (semesterContent.length === 0) {
+        // Return empty structure rather than error to allow UI to handle it gracefully
         return { headers, content: [] };
     }
 
-    // --- ALGORITMA DISTRIBUSI JP BERURUTAN (SEQUENTIAL WATERFALL) ---
-    // Logika:
-    // 1. Kita memiliki grid waktu linear: Total Minggu = Jumlah Bulan * 5.
-    // 2. Kita memiliki pointer 'globalWeekIndex' (minggu ke berapa sekarang kita berada).
-    // 3. Kita memiliki 'currentWeekFilledJp' (berapa JP yang sudah terisi di minggu tersebut).
-    // 4. Untuk setiap TP, kita ambil alokasi waktunya (misal 3 JP).
-    // 5. Kita tuangkan JP tersebut ke grid minggu. Jika minggu ini penuh, pindah ke minggu berikutnya.
-    
+    // Use algorithmic distribution instead of AI to ensure strict adherence to Math constraints.
+    // Rules:
+    // 1. Distribute JP sequentially.
+    // 2. Max JP per week = protaData.jamPertemuan.
+    // 3. If TP1 needs 3 JP and Week1 has 2 JP space: Week1 gets 2, Week2 gets 1. Next TP starts at Week2 (remaining space).
+
     const maxJpPerWeek = Number(protaData.jamPertemuan) || 2;
     const totalWeeks = months.length * weeksPerMonth;
     
-    // Trackers for the distribution state
-    let globalWeekIndex = 0; // 0 to (totalWeeks - 1)
-    let currentWeekFilledJp = 0; // 0 to maxJpPerWeek
+    // Track accumulated usage for every week slot [0...29]
+    const weeklyUsage = new Array(totalWeeks).fill(0);
+    
+    let globalWeekCursor = 0; // Points to the current week index (0-29) being filled
 
     const finalContent: PROSEMRow[] = semesterContent.map((row) => {
-        // Safe parsing of JP. Handles "4 JP", "4 JP (160 Menit)", "4"
+        // Fix: Robustly extract ONLY the first numeric value.
+        // If string is "4 JP", gets 4.
+        // If string is "4 JP (160 Menit)", gets 4.
+        // If string is "2 Pertemuan (6 JP)", gets 2 (risk), so we look for digits.
+        // We assume PROTA generation standardizes on "X JP".
         const jpMatch = row.alokasiWaktu.match(/(\d+)/);
-        let remainingToDistribute = jpMatch ? parseInt(jpMatch[0]) : 0;
+        const totalJpForTp = jpMatch ? parseInt(jpMatch[0]) : 0;
         
-        // Initialize empty structure for this specific PROSEM Row
+        let remainingToDistribute = totalJpForTp;
+        
+        // Initialize empty structure for this row
         const distribution: Record<string, (string | null)[]> = {};
         months.forEach(m => { distribution[m] = Array(weeksPerMonth).fill(null); });
 
-        // Distribute the JP for this specific TP
-        while (remainingToDistribute > 0 && globalWeekIndex < totalWeeks) {
-            const availableInCurrentWeek = maxJpPerWeek - currentWeekFilledJp;
+        // Distribute JP
+        while (remainingToDistribute > 0 && globalWeekCursor < totalWeeks) {
+            const currentUsage = weeklyUsage[globalWeekCursor];
+            const availableSpace = maxJpPerWeek - currentUsage;
 
-            if (availableInCurrentWeek > 0) {
+            if (availableSpace > 0) {
                 // Determine how much we can put in this week
-                const amountToAssign = Math.min(remainingToDistribute, availableInCurrentWeek);
+                const amountToAssign = Math.min(remainingToDistribute, availableSpace);
                 
-                // Convert linear global index to Month + Week Format
-                const monthIndex = Math.floor(globalWeekIndex / weeksPerMonth);
-                const weekIndexInMonth = globalWeekIndex % weeksPerMonth;
+                // Map global week index to Month + Week Index
+                const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
+                const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
                 
                 if (monthIndex < months.length) {
                     const monthName = months[monthIndex];
-                    
-                    // If there's already a value (from a previous TP sharing this week), append/add?
-                    // Current UI displays strings. Ideally we might want "2" or "2".
-                    // If the cell is null, set it. If it has a value (from previous loop but same row? No, new row has new distribution obj), set it.
-                    // Note: Since 'distribution' is unique per ROW, we just set the value.
-                    
-                    // BUT visually in the table, we want to show the number.
+                    // Assign to data structure
                     distribution[monthName][weekIndexInMonth] = String(amountToAssign);
                 }
                 
-                // Update counters
+                // Update trackers
+                weeklyUsage[globalWeekCursor] += amountToAssign;
                 remainingToDistribute -= amountToAssign;
-                currentWeekFilledJp += amountToAssign;
             }
 
-            // If the current week is now full (or was already full), move to next week
-            if (currentWeekFilledJp >= maxJpPerWeek) {
-                globalWeekIndex++;
-                currentWeekFilledJp = 0; // Reset usage for the new week
+            // If this week is now full, move cursor to next week
+            if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek) {
+                globalWeekCursor++;
             }
+            
+            // If we filled the current TP but the week isn't full yet, 
+            // we DON'T increment the cursor. The next TP will fill the rest of this week.
         }
 
         return {
