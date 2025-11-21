@@ -182,7 +182,7 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
     setTpGroups([]);
 
     try {
-      const generatedData = await generateTPs({ ...formData, cpElements });
+      const generatedData = await generateTPs({ ...formData, subject, cpElements });
       setTpGroups(generatedData.map((group) => ({
         ...group,
         id: newId('group'),

@@ -435,7 +435,7 @@ const App: React.FC = () => {
   
   const handleDeleteAndRegenerateKKTP = async (semester: 'Ganjil' | 'Genap') => {
     const dataToDelete = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
-    if (!dataToDelete || !selectedATP || !selectedATP) {
+    if (!dataToDelete || !selectedATP) {
         return;
     }
 
@@ -724,33 +724,34 @@ const App: React.FC = () => {
       return;
     }
     
-    // Langsung tampilkan view KKTP
+    // Simplifikasi: Langsung tampilkan view KKTP, pemuatan data terjadi di sini.
     setView('view_kktp');
 
+    // Mulai proses pemuatan data di latar belakang
     setKktpGenerationProgress({ isLoading: true, message: 'Memuat data KKTP...' });
     setKktpError(null);
-    setKktpData(null); 
+    setKktpData(null); // Reset data sebelumnya
 
     try {
-        // Step 1: Dapatkan ATP yang diperlukan secara diam-diam.
+        // Step 1: Dapatkan ATP yang diperlukan.
         const atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
         if (atpsForKktp.length === 0) {
-            setKktpGenerationProgress({ isLoading: false, message: '' }); 
+            setKktpGenerationProgress({ isLoading: false, message: '' });
             setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat KKTP.');
-            setView('view_atp_list'); 
+            setView('view_atp_list');
             return;
         }
-        const atp = atpsForKktp[0]; 
-        setSelectedATP(atp); 
+        const atp = atpsForKktp[0];
+        setSelectedATP(atp);
 
-        // Step 2: Periksa apakah KKTP sudah ada.
+        // Step 2: Ambil KKTP yang sudah ada.
         const existingKktps = await apiService.getKKTPsByATPId(atp.id);
 
         let finalGanjilData: KKTPData | null = existingKktps.find(k => k.semester === 'Ganjil') || null;
         let finalGenapData: KKTPData | null = existingKktps.find(k => k.semester === 'Genap') || null;
         
         setKktpData({ ganjil: finalGanjilData, genap: finalGenapData });
-        setActiveKktpSemester('Ganjil'); // Selalu mulai dari Ganjil
+        setActiveKktpSemester('Ganjil');
     } catch (error: any) {
         setKktpError(error.message);
     } finally {
@@ -1930,6 +1931,19 @@ const App: React.FC = () => {
         if (!selectedTP) return null;
         const KKTPTable: React.FC<{ data: KKTPData }> = ({ data }) => (
             <div className="bg-white rounded-lg shadow-lg p-6">
+                 <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-bold text-slate-800">
+                        Rincian KKTP - Semester {data.semester}
+                    </h2>
+                    <div className="flex gap-2">
+                        <button onClick={() => handleDeleteAndRegenerateKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                            <SparklesIcon className="w-5 h-5" /> Buat Ulang
+                        </button>
+                        <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                        </button>
+                    </div>
+                </div>
                 <div className="overflow-x-auto mt-4">
                     <table className="min-w-full bg-white border border-slate-300 text-sm">
                         <thead className="bg-slate-100 text-left">

@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
 
@@ -44,7 +45,7 @@ const getApiKey = (): string => {
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan di Client-Side.\n\nPENTING: Konfigurasi 'Script Properties' di Google Apps Script HANYA berlaku untuk backend, tidak untuk fitur AI ini yang berjalan di browser.\n\nSolusi:\n1. Tambahkan Environment Variable 'API_KEY' di dashboard Netlify (Site Settings > Environment variables).\n2. Atau edit file index.html dan masukkan key secara manual di bagian window.process.env.API_KEY.");
+        throw new Error("API Key Gemini tidak ditemukan di Client-Side.\n\nCATATAN UNTUK NETLIFY:\nMenambahkan Environment Variable di dashboard Netlify saja TIDAK CUKUP untuk aplikasi browser statis tanpa proses build (Vite/Webpack) yang menyuntikkannya.\n\nSOLUSI CEPAT:\nEdit file 'components/index.html' dan tempel API Key Anda secara manual di bagian 'window.process.env.API_KEY'.");
     }
     return new GoogleGenAI({ apiKey });
 };
