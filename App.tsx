@@ -433,42 +433,6 @@ const App: React.FC = () => {
     }
   };
   
-  const handleGenerateSingleKktp = async (semester: 'Ganjil' | 'Genap') => {
-    if (!selectedATP || !selectedTP) return;
-
-    setKktpGenerationProgress({ isLoading: true, message: `Membuat KKTP Semester ${semester}...` });
-    setKktpError(null);
-
-    try {
-        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP.grade);
-        
-        if (newContent.length > 0) {
-             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
-                atpId: selectedATP.id, 
-                subject: selectedATP.subject, 
-                grade: selectedTP.grade, 
-                semester: semester, 
-                content: newContent 
-            };
-            const savedData = await apiService.saveKKTP(payload);
-            
-            setKktpData(prev => ({
-                ...prev,
-                [semester.toLowerCase()]: savedData
-            } as any));
-            
-            setTransientMessage(`KKTP Semester ${semester} berhasil dibuat.`);
-        } else {
-            setKktpError(`AI gagal menghasilkan konten untuk Semester ${semester}.`);
-        }
-    } catch (error: any) {
-        console.error("Generate KKTP Error:", error);
-        setKktpError(`Gagal membuat KKTP: ${error.message}`);
-    } finally {
-        setKktpGenerationProgress({ isLoading: false, message: '' });
-    }
-  };
-  
   const handleDeleteAndRegenerateKKTP = async (semester: 'Ganjil' | 'Genap') => {
     const dataToDelete = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
     if (!dataToDelete || !selectedATP) {
@@ -793,6 +757,42 @@ const App: React.FC = () => {
         setActiveKktpSemester('Ganjil'); 
     } catch (error: any) {
         setKktpError(error.message);
+    } finally {
+        setKktpGenerationProgress({ isLoading: false, message: '' });
+    }
+  };
+
+  const handleGenerateSingleKktp = async (semester: 'Ganjil' | 'Genap') => {
+    if (!selectedATP || !selectedTP) return;
+
+    setKktpGenerationProgress({ isLoading: true, message: `Membuat KKTP Semester ${semester}...` });
+    setKktpError(null);
+
+    try {
+        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP.grade);
+        
+        if (newContent.length > 0) {
+             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+                atpId: selectedATP.id, 
+                subject: selectedATP.subject, 
+                grade: selectedTP.grade, 
+                semester: semester, 
+                content: newContent 
+            };
+            const savedData = await apiService.saveKKTP(payload);
+            
+            setKktpData(prev => ({
+                ...prev,
+                [semester.toLowerCase()]: savedData
+            } as any));
+            
+            setTransientMessage(`KKTP Semester ${semester} berhasil dibuat.`);
+        } else {
+            setKktpError(`AI gagal menghasilkan konten untuk Semester ${semester}.`);
+        }
+    } catch (error: any) {
+        console.error("Generate KKTP Error:", error);
+        setKktpError(`Gagal membuat KKTP: ${error.message}`);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
