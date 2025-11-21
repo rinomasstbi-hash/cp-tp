@@ -433,34 +433,47 @@ const App: React.FC = () => {
     }
   };
   
-  const handleDeleteKKTP = async (semester: 'Ganjil' | 'Genap') => {
+  const handleDeleteAndRegenerateKKTP = async (semester: 'Ganjil' | 'Genap') => {
     const dataToDelete = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
-    if (!dataToDelete) {
-        setKktpError("Data tidak ditemukan untuk dihapus.");
+    if (!dataToDelete || !selectedATP) {
         return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus KKTP Semester ${semester}? Data yang dihapus tidak dapat dikembalikan.`)) {
+    if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`)) {
         return;
     }
 
-    setLoadingState({ isLoading: true, title: 'Menghapus KKTP', message: 'Sedang menghapus data...' });
+    setKktpGenerationProgress({ isLoading: true, message: `Membuat ulang KKTP Semester ${semester}...` });
     setKktpError(null);
+
     try {
         await apiService.deleteKKTP(dataToDelete.id);
         
-        // Update local state immediately to reflect change
-        setKktpData(prev => prev ? {
-            ...prev,
-            [semester.toLowerCase()]: null
-        } : null);
+        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP?.grade || '7');
         
-        setTransientMessage(`KKTP Semester ${semester} berhasil dihapus.`);
+        let savedData: KKTPData | null = null;
+        if (newContent.length > 0) {
+            const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+                atpId: selectedATP.id, 
+                subject: selectedATP.subject, 
+                grade: selectedTP?.grade || '7', 
+                semester: semester, 
+                content: newContent 
+            };
+            savedData = await apiService.saveKKTP(payload);
+        }
+        
+        setKktpData(prev => ({
+            ...prev,
+            [semester.toLowerCase()]: savedData
+        } as any));
+        
+        setTransientMessage(`KKTP Semester ${semester} berhasil dibuat ulang.`);
     } catch (error: any) {
-        console.error("Delete KKTP Error:", error);
-        setKktpError(`Gagal menghapus KKTP: ${error.message}`);
+        console.error("Regenerate KKTP Error:", error);
+        setKktpError(`Gagal membuat ulang KKTP: ${error.message}`);
     } finally {
-        setLoadingState({ isLoading: false, title: '', message: '' });
+        setKktpGenerationProgress({ isLoading: false, message: '' });
     }
   };
 
@@ -643,8 +656,8 @@ const App: React.FC = () => {
         setProtas([]); // Clear state immediately
         setProsemData(null); // Also clear prosem state
 
-        setView('view_atp_list');
-        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
+        setView('tp_menu');
+        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan lanjutkan dengan membuat PROTA baru.");
     } catch (error: any) {
         setProtaError(`Gagal menghapus data lama: ${error.message}`);
     } finally {
@@ -1910,8 +1923,8 @@ const App: React.FC = () => {
                         Rincian KKTP - Semester {data.semester}
                     </h2>
                     <div className="flex gap-2">
-                        <button onClick={() => handleDeleteKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700">
-                            <TrashIcon className="w-5 h-5" /> Hapus
+                        <button onClick={() => handleDeleteAndRegenerateKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                            <SparklesIcon className="w-5 h-5" /> Buat Ulang
                         </button>
                         <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
