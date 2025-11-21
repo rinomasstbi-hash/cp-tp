@@ -24,33 +24,40 @@ const extractJsonArray = (text: string): any[] => {
     }
 };
 
-// Helper aman untuk mengambil API Key dari Environment Variables (Netlify/Vite)
+// Helper aman untuk mengambil API Key
 const getApiKey = (): string => {
-    // 1. Cek Vite Environment Variable (Cara Paling Standar & Aman)
-    // Di Netlify, set Environment Variable dengan nama: VITE_GEMINI_API_KEY
-    const meta = import.meta as any;
-    if (typeof meta !== 'undefined' && meta.env && meta.env.VITE_GEMINI_API_KEY) {
-        return meta.env.VITE_GEMINI_API_KEY;
+    let apiKey = '';
+
+    // 1. Cek Vite Environment Variable (Prioritas Utama)
+    // Di Netlify/Vite, variabel ini di-inject saat build time.
+    try {
+        const meta = import.meta as any;
+        if (typeof meta !== 'undefined' && meta.env && meta.env.VITE_GEMINI_API_KEY) {
+            apiKey = meta.env.VITE_GEMINI_API_KEY;
+        }
+    } catch (e) {
+        // Abaikan error akses import.meta
     }
 
-    // 2. Cek process.env (Legacy/Create-React-App support)
-    if (typeof process !== 'undefined' && process.env) {
-        if (process.env.REACT_APP_GEMINI_API_KEY) return process.env.REACT_APP_GEMINI_API_KEY;
-        if (process.env.VITE_GEMINI_API_KEY) return process.env.VITE_GEMINI_API_KEY;
+    // 2. Cek process.env (Fallback untuk lingkungan Node/Legacy)
+    if (!apiKey && typeof process !== 'undefined' && process.env) {
+        if (process.env.REACT_APP_GEMINI_API_KEY) apiKey = process.env.REACT_APP_GEMINI_API_KEY;
+        else if (process.env.VITE_GEMINI_API_KEY) apiKey = process.env.VITE_GEMINI_API_KEY;
     }
 
-    // 3. Fallback ke Constants (Hanya jika env tidak ada dan string valid)
-    if (GEMINI_API_KEY_FALLBACK.length > 10) {
-        return GEMINI_API_KEY_FALLBACK;
+    // 3. Fallback ke Constants (Jaring Pengaman Terakhir)
+    // Jika env var tidak terbaca karena masalah konfigurasi hosting, gunakan ini.
+    if (!apiKey && GEMINI_API_KEY_FALLBACK && GEMINI_API_KEY_FALLBACK.length > 10) {
+        apiKey = GEMINI_API_KEY_FALLBACK;
     }
     
-    return '';
+    return apiKey;
 };
 
 const createAIClient = () => {
     const apiKey = getApiKey();
     if (!apiKey) {
-        throw new Error("API Key Gemini tidak ditemukan.\n\nSOLUSI AMAN (NETLIFY):\n1. Buka Netlify Dashboard > Site Settings > Environment Variables.\n2. Tambahkan key baru dengan nama: 'VITE_GEMINI_API_KEY' dan isi value dengan API Key Anda.\n3. Redeploy situs.");
+        throw new Error("API Key Gemini tidak ditemukan.\n\nSistem telah mencoba membaca Environment Variable dan Fallback Key namun gagal. Pastikan konfigurasi Anda benar.");
     }
     return new GoogleGenAI({ apiKey });
 };
@@ -294,7 +301,7 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
     INSTRUKSI:
     1. Buat deskripsi kriteria penilaian (Rubrik) untuk 4 level: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan.
     2. Tentukan target minimal (biasanya 'cukupMahir' atau 'mahir').
-    3. Return JSON Array.
+    3. Pastikan return adalah valid JSON array.
     `;
 
     const response = await ai.models.generateContent({

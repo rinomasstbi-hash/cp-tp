@@ -24,11 +24,10 @@ export const APP_TITLE = "TP Generator MTsN 4 Jombang";
 // =================================================================
 // KONFIGURASI API KEY
 // =================================================================
-// JANGAN MENEMPEL API KEY DI SINI UNTUK KEAMANAN.
+// CATATAN: Idealnya menggunakan Environment Variable (VITE_GEMINI_API_KEY).
+// Namun, jika Environment Variable gagal terbaca (sering terjadi di beberapa hosting),
+// aplikasi akan otomatis menggunakan kunci FALLBACK di bawah ini.
 //
-// 1. Untuk Local Development: Buat file .env di root folder, isi: VITE_GEMINI_API_KEY=AIza...
-// 2. Untuk Netlify: Masuk ke Site Settings > Environment Variables > Add Variable: VITE_GEMINI_API_KEY
-//
-// Variabel di bawah ini hanya sebagai fallback darurat.
-export const GEMINI_API_KEY_FALLBACK = ''; 
+// Kunci ini dimasukkan sesuai permintaan pengguna untuk memastikan aplikasi berjalan.
+export const GEMINI_API_KEY_FALLBACK = 'AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU'; 
 // =================================================================
