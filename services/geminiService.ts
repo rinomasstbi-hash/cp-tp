@@ -363,7 +363,7 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             };
 
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 4000)); // Increased delay to 4s to prevent rate limits
+                await new Promise(resolve => setTimeout(resolve, 5000)); // Increased delay to 5s to prevent rate limits/blocks
             }
 
             try {
@@ -504,20 +504,28 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
             const chunk = semesterContent.slice(i, i + CHUNK_SIZE);
             
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Increased delay to 3s to satisfy 50 requests/day limit
+                await new Promise(resolve => setTimeout(resolve, 4000)); // Increased delay to 4s to satisfy limits
             }
+
+            // Add IDs to help AI map 1-to-1
+            const chunkInput = chunk.map((row, idx) => ({
+                id: idx + 1, // 1-based ID for AI context
+                topikMateri: row.topikMateri,
+                tp: row.tp,
+                kodeTp: row.kodeTp 
+            }));
 
             const simplifiedAtpDataChunk = {
                 subject: atpData.subject,
                 grade: grade,
-                // Updated Instruction: Stronger count enforcement
+                // Updated Instruction: Use ID mapping instead of strict count logic
                 instruction: `Anda adalah Guru Mata Pelajaran ${atpData.subject} Kelas ${grade}.
                 Tugas: Buat Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) untuk ${chunk.length} TP berikut.
                 
-                ATURAN JSON (STRICT):
-                1. Output WAJIB Array JSON berisi TEPAT ${chunk.length} objek.
-                2. Urutan objek output HARUS SAMA dengan urutan TP input.
-                3. JANGAN menggabungkan atau memecah TP.
+                ATURAN PENTING:
+                1. Output HARUS Array JSON.
+                2. Setiap item output HARUS memiliki "id" yang sama dengan input.
+                3. Jangan menggabungkan TP. Buat 1 objek untuk setiap 1 input.
                 
                 ATURAN KRITERIA (4 Level):
                 1. "sangatMahir": Melampaui target TP, mandiri.
@@ -526,128 +534,93 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
                 4. "perluBimbingan": Belum paham konsep dasar.
 
                 Format Output:
-                [{
-                    "no": "Kode TP",
-                    "kriteria": {
-                        "sangatMahir": "...",
-                        "mahir": "...",
-                        "cukupMahir": "...",
-                        "perluBimbingan": "..."
-                    },
-                    "targetKktp": "mahir"
-                }]`,
-                content: chunk.map(row => ({
-                    topikMateri: row.topikMateri,
-                    tp: row.tp,
-                    kodeTp: row.kodeTp 
-                }))
+                [
+                    {
+                        "id": 1,
+                        "kriteria": {
+                            "sangatMahir": "...",
+                            "mahir": "...",
+                            "cukupMahir": "...",
+                            "perluBimbingan": "..."
+                        },
+                        "targetKktp": "mahir"
+                    }
+                ]`,
+                content: chunkInput.map(c => ({ id: c.id, tp: c.tp, materi: c.topikMateri }))
             };
 
-            let attempts = 0;
-            let chunkSuccess = false;
-            const MAX_CHUNK_RETRIES = 3; 
+            let aiOutput: any[] = [];
             
-            // Retry logic with Smart Backoff for 429 errors
-            while (!chunkSuccess && attempts < MAX_CHUNK_RETRIES) {
-                attempts++;
-                try {
-                    // Menggunakan gemini-2.5-flash
-                    const response = await apiRequest('generateKKTP', { 
-                        atpData: simplifiedAtpDataChunk, 
-                        semester, 
-                        grade, 
-                        model: 'gemini-2.5-flash' 
-                    });
+            try {
+                // Menggunakan gemini-2.5-flash
+                const response = await apiRequest('generateKKTP', { 
+                    atpData: simplifiedAtpDataChunk, 
+                    semester, 
+                    grade, 
+                    model: 'gemini-2.5-flash' 
+                });
 
-                    let parsedChunk = extractJsonArray(response.text);
-
-                    if (Array.isArray(parsedChunk)) {
-                        // Handle Excess Items (Truncate)
-                        if (parsedChunk.length > chunk.length) {
-                             console.warn(`KKTP Gen: Received ${parsedChunk.length} items, expected ${chunk.length}. Truncating extra items.`);
-                             parsedChunk = parsedChunk.slice(0, chunk.length);
-                        }
-
-                        // Handle Missing Items (Retry if possible)
-                        if (parsedChunk.length !== chunk.length) {
-                            if (attempts < MAX_CHUNK_RETRIES) {
-                                throw new Error(`Count mismatch: Expected ${chunk.length}, Got ${parsedChunk.length}`);
-                            } else {
-                                console.warn("Max retries reached for count mismatch. Aligning available items.");
-                                // Proceed with partial data
-                            }
-                        }
-
-                        parsedChunk.forEach((item: any, idx: number) => {
-                            // Map only valid indices within chunk range
-                            if (idx < chunk.length) {
-                                const absoluteIndex = i + idx;
-                                resultsMap.set(absoluteIndex, {
-                                    kriteria: item.kriteria,
-                                    targetKktp: item.targetKktp
-                                });
-                            }
-                        });
-                        chunkSuccess = true; 
-
-                    } else {
-                         throw new Error("Output is not an array");
-                    }
-
-                } catch (chunkError: any) {
-                    console.error(`Error processing chunk ${i} (Attempt ${attempts}):`, chunkError);
-                    
-                    // CRITICAL FALLBACK: If we exhausted retries, generate PLACEHOLDERS locally.
-                    // This prevents the whole table from crashing or missing rows.
-                    if (attempts >= MAX_CHUNK_RETRIES) {
-                        console.warn(`Chunk ${i} failed permanently. Generating manual placeholders.`);
-                        chunk.forEach((row, idx) => {
-                            const absoluteIndex = i + idx;
-                            resultsMap.set(absoluteIndex, {
-                                kriteria: {
-                                    sangatMahir: "Peserta didik mampu mencapai tujuan pembelajaran secara mandiri dan melampaui standar.",
-                                    mahir: "Peserta didik mampu mencapai tujuan pembelajaran sesuai standar.",
-                                    cukupMahir: "Peserta didik cukup mampu mencapai tujuan pembelajaran namun butuh perbaikan.",
-                                    perluBimbingan: "Peserta didik belum mencapai tujuan pembelajaran dan butuh bimbingan."
-                                },
-                                targetKktp: "mahir"
-                            });
-                        });
-                        chunkSuccess = true; // Mark as handled so loop exits
-                    } else {
-                        // Handle Rate Limiting (429) & Server Overload (503) explicitly
-                        const errorMsg = chunkError.message || chunkError.toString();
-                        if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('503') || errorMsg.includes('overloaded') || errorMsg.includes('UNAVAILABLE')) {
-                            console.warn("Rate limit or Server Overload detection! Waiting 25s before retry...");
-                            await new Promise(res => setTimeout(res, 25000)); // Wait 25 seconds
-                        } else {
-                            await new Promise(res => setTimeout(res, 3000 * attempts));
-                        }
-                    }
+                const parsed = extractJsonArray(response.text);
+                if (Array.isArray(parsed)) {
+                    aiOutput = parsed;
                 }
+            } catch (chunkError: any) {
+                console.error(`KKTP Chunk ${i/CHUNK_SIZE} AI generation failed. Using placeholders.`, chunkError);
+                // We continue without AI data for this chunk, forcing fallbacks below.
+                // This prevents "Blocked" or network errors from stopping the whole flow.
             }
+
+            // Map results back to the map
+            chunkInput.forEach((inputItem, idx) => {
+                const absoluteIndex = i + idx;
+                
+                // Attempt 1: Match by Explicit ID
+                let match = aiOutput.find((o: any) => o.id == inputItem.id);
+                
+                // Attempt 2: Match by Position if AI dropped IDs but kept order
+                if (!match && aiOutput[idx]) {
+                    match = aiOutput[idx];
+                }
+
+                if (match && match.kriteria) {
+                     resultsMap.set(absoluteIndex, {
+                        kriteria: match.kriteria,
+                        targetKktp: match.targetKktp
+                    });
+                } else {
+                    // Robust Fallback: Default rubric
+                    // This ensures we never throw "Count mismatch" error
+                    resultsMap.set(absoluteIndex, {
+                        kriteria: {
+                            sangatMahir: "Peserta didik mampu mencapai tujuan pembelajaran secara mandiri dan melampaui standar.",
+                            mahir: "Peserta didik mampu mencapai tujuan pembelajaran sesuai standar.",
+                            cukupMahir: "Peserta didik cukup mampu mencapai tujuan pembelajaran namun butuh perbaikan.",
+                            perluBimbingan: "Peserta didik belum mencapai tujuan pembelajaran dan butuh bimbingan."
+                        },
+                        targetKktp: "mahir"
+                    });
+                }
+            });
         }
 
-        // Gabungkan hasil dengan Fallback Kuat untuk Kriteria Kosong
+        // Construct Final Table
         const finalKKTPTable: KKTPRow[] = semesterContent.map((originalData, i) => {
             const result = resultsMap.get(i);
-            
             const rawKriteria = result?.kriteria;
-            // Check if valid object
-            const hasProps = rawKriteria && typeof rawKriteria === 'object';
-
-            const finalKriteria = {
-                sangatMahir: (hasProps && rawKriteria.sangatMahir && rawKriteria.sangatMahir !== "-") ? rawKriteria.sangatMahir : "Peserta didik mampu menerapkan konsep dengan sangat baik dan mandiri.",
-                mahir: (hasProps && rawKriteria.mahir && rawKriteria.mahir !== "-") ? rawKriteria.mahir : "Peserta didik mampu menerapkan konsep dengan baik.",
-                cukupMahir: (hasProps && rawKriteria.cukupMahir && rawKriteria.cukupMahir !== "-") ? rawKriteria.cukupMahir : "Peserta didik mampu menerapkan konsep dengan bimbingan.",
-                perluBimbingan: (hasProps && rawKriteria.perluBimbingan && rawKriteria.perluBimbingan !== "-") ? rawKriteria.perluBimbingan : "Peserta didik belum mampu menerapkan konsep dan butuh bimbingan intensif."
+            
+            // Additional safety check on kriteria structure
+            const safeKriteria = {
+                sangatMahir: rawKriteria?.sangatMahir || "Peserta didik mampu menerapkan konsep dengan sangat baik dan mandiri.",
+                mahir: rawKriteria?.mahir || "Peserta didik mampu menerapkan konsep dengan baik.",
+                cukupMahir: rawKriteria?.cukupMahir || "Peserta didik mampu menerapkan konsep dengan bimbingan.",
+                perluBimbingan: rawKriteria?.perluBimbingan || "Peserta didik belum mampu menerapkan konsep dan butuh bimbingan intensif."
             };
 
             return {
                 no: originalData.kodeTp || String(i + 1),
                 materiPokok: originalData.topikMateri,
                 tp: originalData.tp,
-                kriteria: finalKriteria,
+                kriteria: safeKriteria,
                 targetKktp: result?.targetKktp || "mahir",
             };
         });
@@ -665,7 +638,7 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
 
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
     try {
-        // Pre-flight validation to ensure we have data to send
+        // Pre-flight validation
         if (!protaData || !protaData.content || protaData.content.length === 0) {
             throw new Error("Data PROTA kosong atau tidak valid.");
         }
@@ -678,73 +651,133 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
             throw new Error(`Data PROTA untuk semester ${semester} tidak ditemukan. Pastikan PROTA sudah terisi dengan benar.`);
         }
 
-        // Context Injection:
-        const materialList = semesterContent.map(r => r.topikMateri).join(', ');
+        // --- FIXED STRATEGY: Define Months & Headers manually, use AI only for distribution ---
+        const isGanjil = semester.toLowerCase() === 'ganjil';
         
-        const simplifiedProta = {
+        // Define months and weeks based on Semester (Indonesian Academic Year standard)
+        // Ganjil: Juli - Desember | Genap: Januari - Juni
+        const months = isGanjil 
+            ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+            : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
+
+        const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: 5 })); // Default 5 weeks per month
+
+        // Simplify input for AI: only send ID, summary of TP, and JP amount.
+        // We do NOT ask AI to return the TP text to avoid hallucinations.
+        const simplifiedProtaInput = semesterContent.map((row, index) => ({
+            id: index + 1, // Temporary ID for mapping
+            tp_summary: row.tujuanPembelajaran.substring(0, 80) + (row.tujuanPembelajaran.length > 80 ? '...' : ''),
+            total_jp: parseInt(row.alokasiWaktu.replace(/\D/g, '') || '0')
+        }));
+
+        const simplifiedProtaPayload = {
             subject: protaData.subject,
-            // Tambahkan instruksi eksplisit di dalam payload data untuk memandu AI
-            instruction: `STRICTLY GENERATE VALID JSON. USE DOUBLE QUOTES ONLY. Buat PROSEM untuk mapel: ${protaData.subject}. Gunakan HANYA materi berikut: ${materialList}. JANGAN gunakan materi dari mapel lain.`,
-            content: semesterContent.map(row => ({
-                    topikMateri: row.topikMateri,
-                    tujuanPembelajaran: row.tujuanPembelajaran,
-                    alokasiWaktu: row.alokasiWaktu,
-                }))
+            instruction: `You are an administrative assistant for a teacher.
+            Task: Create a Semester Program (PROSEM) distribution schedule.
+            
+            INPUT: List of Learning Objectives (TP) with 'total_jp'.
+            OUTPUT: A JSON Array mapping each ID to a monthly distribution matrix.
+            
+            RULES:
+            1. Months are: ${months.join(', ')}. Each month has 5 weeks.
+            2. Distribute 'total_jp' hours into the weeks (columns).
+            3. The SUM of hours in the matrix MUST equal 'total_jp'.
+            4. Return purely the schedule numbers (e.g., 2, 4, or 0).
+            
+            Expected JSON Format:
+            [
+              {
+                "id": 1,
+                "bulan": {
+                  "${months[0]}": [2, 2, 0, 0, 0], 
+                  "${months[1]}": [0, 0, 0, 0, 0],
+                  ...
+                },
+                "keterangan": "..."
+              },
+              ...
+            ]`,
+            content: simplifiedProtaInput
         };
 
         const MAX_PROSEM_RETRIES = 3;
-        let result;
+        let aiOutput: any[] = [];
+
         for(let attempt = 1; attempt <= MAX_PROSEM_RETRIES; attempt++) {
             try {
                 // Menggunakan gemini-2.5-flash
-                const response = await apiRequest('generatePROSEM', { protaData: simplifiedProta, semester, grade, model: 'gemini-2.5-flash' });
-                result = response;
-                break; // Success
+                const response = await apiRequest('generatePROSEM', { 
+                    protaData: simplifiedProtaPayload, 
+                    semester, 
+                    grade, 
+                    model: 'gemini-2.5-flash' 
+                });
+                
+                const parsed = extractJsonArray(response.text);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    aiOutput = parsed;
+                    break; 
+                }
+                
+                if (attempt === MAX_PROSEM_RETRIES) throw new Error("Empty or invalid AI response.");
+                await new Promise(r => setTimeout(r, 2000));
             } catch (e: any) {
                 console.warn(`PROSEM attempt ${attempt} failed:`, e);
                 if (attempt === MAX_PROSEM_RETRIES) throw e;
-                
-                const isServerOverload = e.message && (e.message.includes('503') || e.message.includes('overloaded'));
-                if(isServerOverload) {
-                     await new Promise(r => setTimeout(r, 4000 * attempt));
-                } else {
-                     await new Promise(r => setTimeout(r, 2000));
-                }
+                await new Promise(r => setTimeout(r, 3000));
             }
         }
 
-        const jsonStr = cleanJsonString(result.text);
-        
-        let parsedResult;
-        try {
-             parsedResult = relaxedJsonParse(jsonStr);
-        } catch (e) {
-             console.error("JSON Parse Error:", e, "Raw String:", jsonStr);
-             throw new SyntaxError("Struktur JSON tidak valid.");
-        }
+        // --- MERGING STRATEGY: Use Original PROTA Data + AI Schedule ---
+        const finalContent: PROSEMRow[] = semesterContent.map((originalRow, index) => {
+            const inputId = index + 1;
+            const aiItem = aiOutput.find(x => x.id == inputId);
+            
+            // Default empty distribution if AI failed for this row
+            const emptyDistribution: Record<string, (string | null)[]> = {};
+            months.forEach(m => { emptyDistribution[m] = [null, null, null, null, null]; });
 
-        // Resilience: Handle case where AI wraps the object in an array [ { headers: ..., content: ... } ]
-        if (Array.isArray(parsedResult) && parsedResult.length > 0 && parsedResult[0].headers && parsedResult[0].content) {
-            parsedResult = parsedResult[0];
-        }
+            let finalBulan = emptyDistribution;
+            let keterangan = '';
 
-        if (!parsedResult || !Array.isArray(parsedResult.headers) || !Array.isArray(parsedResult.content)) {
-            throw new Error(`Respons AI tidak valid. Struktur JSON tidak memiliki properti 'headers' dan 'content' yang diharapkan.`);
-        }
-        
-        return parsedResult as { headers: PROSEMHeader[], content: PROSEMRow[] };
+            if (aiItem && aiItem.bulan) {
+                finalBulan = {};
+                months.forEach(m => {
+                    const rawWeeks = aiItem.bulan[m];
+                    if (Array.isArray(rawWeeks)) {
+                        // Convert numbers to strings/nulls for the table
+                        finalBulan[m] = rawWeeks.slice(0, 5).map((val: any) => 
+                            (val === 0 || val === '0' || val === null) ? null : String(val)
+                        );
+                        // Fill remaining weeks if less than 5
+                        while (finalBulan[m].length < 5) finalBulan[m].push(null);
+                    } else {
+                         finalBulan[m] = [null, null, null, null, null];
+                    }
+                });
+                keterangan = aiItem.keterangan || '';
+            }
+
+            return {
+                no: originalRow.no,
+                // CRITICAL: We strictly use the original PROTA text and Time
+                tujuanPembelajaran: originalRow.tujuanPembelajaran, 
+                alokasiWaktu: originalRow.alokasiWaktu,
+                bulan: finalBulan,
+                keterangan: keterangan
+            };
+        });
+
+        return { headers, content: finalContent };
 
     } catch (error: any) {
         console.error("Error generating PROSEM:", error);
-
         if (typeof error.message === 'string' && error.message.includes("models/gemini-pro is not found")) {
-            throw new Error(`Gagal menghubungi AI. Server backend kemungkinan dikonfigurasi untuk menggunakan model AI ('gemini-pro') yang sudah usang khusus untuk fitur PROSEM. Harap hubungi administrator untuk memperbarui skrip backend.`);
+            throw new Error(`Gagal menghubungi AI. Config error backend.`);
         }
-
         if (error instanceof SyntaxError) {
-            throw new Error("Gagal memproses respons PROSEM dari AI karena format tidak valid. Ini sering terjadi jika nama mapel mengandung tanda kutip (misal: Al-Qur'an). Silakan coba lagi.");
+            throw new Error("Gagal memproses respons PROSEM dari AI. Format JSON tidak valid.");
         }
-        // Melempar kembali error asli agar UI bisa menangani logika retry dengan benar
         throw error;
     }
 };
