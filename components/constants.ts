@@ -22,8 +22,13 @@ export const MATA_PELAJARAN = [
 export const APP_TITLE = "TP Generator MTsN 4 Jombang";
 
 // =================================================================
-// KONFIGURASI API KEY (WAJIB DIISI DI SINI)
+// KONFIGURASI API KEY
 // =================================================================
-// Agar aplikasi berjalan lancar di browser/Netlify, tempel API Key Anda di bawah ini.
-export const GEMINI_API_KEY = 'AIzaSyDf1MjSZrLaHFzEWAeEZNto3TwU8edAvtU'; 
+// JANGAN MENEMPEL API KEY DI SINI UNTUK KEAMANAN.
+//
+// 1. Untuk Local Development: Buat file .env di root folder, isi: VITE_GEMINI_API_KEY=AIza...
+// 2. Untuk Netlify: Masuk ke Site Settings > Environment Variables > Add Variable: VITE_GEMINI_API_KEY
+//
+// Variabel di bawah ini hanya sebagai fallback darurat.
+export const GEMINI_API_KEY_FALLBACK = ''; 
 // =================================================================
