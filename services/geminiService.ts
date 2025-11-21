@@ -1,3 +1,4 @@
+
 import { TPGroup, TPData, ATPTableRow, PROTARow, ATPData, KKTPRow, PROTAData, PROSEMRow, PROSEMHeader } from "../types";
 // Mengimpor fungsi apiRequest yang sudah ada untuk konsistensi
 import { apiRequest } from './dbService';
@@ -86,6 +87,38 @@ const relaxedJsonParse = (text: string): any => {
     }
 };
 
+/**
+ * Helper robust untuk mengekstrak Array JSON dari teks apa pun.
+ * Mencoba berbagai strategi untuk menemukan array [ ... ] yang valid.
+ */
+const extractJsonArray = (text: string): any[] | null => {
+    // Strategi 1: Clean standard + relaxed parse
+    try {
+        const cleaned = cleanJsonString(text);
+        const parsed = relaxedJsonParse(cleaned);
+        if (Array.isArray(parsed)) return parsed;
+        
+        // Jika hasilnya objek, cari properti yang merupakan array
+        if (typeof parsed === 'object' && parsed !== null) {
+            for (const key in parsed) {
+                if (Array.isArray(parsed[key])) return parsed[key];
+            }
+        }
+    } catch (e) {}
+
+    // Strategi 2: Regex greedy untuk menemukan [ ... ]
+    try {
+        // Mencari kurung siku pembuka pertama dan penutup terakhir
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+             const parsed = relaxedJsonParse(match[0]);
+             if (Array.isArray(parsed)) return parsed;
+        }
+    } catch(e) {}
+
+    return null;
+};
+
 export const generateTPs = async (
   data: {
     cpElements: { element: string; cp: string; }[];
@@ -94,8 +127,8 @@ export const generateTPs = async (
   }
 ): Promise<TPGroup[]> => {
   try {
-    // Memanggil Google Apps Script dengan action 'generateTPs'
-    const response = await apiRequest('generateTPs', { ...data, model: 'gemini-2.5-pro' });
+    // Menggunakan gemini-2.5-flash untuk kecepatan dan kuota yang lebih baik
+    const response = await apiRequest('generateTPs', { ...data, model: 'gemini-2.5-flash' });
     
     const jsonStr = cleanJsonString(response.text);
     let parsed = relaxedJsonParse(jsonStr);
@@ -154,7 +187,8 @@ export const generateTPs = async (
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
     try {
-        const response = await apiRequest('generateATP', { tpData, model: 'gemini-2.5-pro' });
+        // Menggunakan gemini-2.5-flash
+        const response = await apiRequest('generateATP', { tpData, model: 'gemini-2.5-flash' });
         const jsonStr = cleanJsonString(response.text);
         let reorderedIndices: number[] = [];
         
@@ -287,12 +321,14 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Promise<PROTARow[]> => {
     try {
         // --- IMPLEMENT BATCHING FOR PROTA & TOTAL JP LOGIC ---
-        // Formula: Input JP x 64
-        const TARGET_TOTAL_JP = jamPertemuan * 64;
+        // Formula: Input JP x 36 (Updated per user request)
+        const TARGET_TOTAL_JP = jamPertemuan * 36;
         const TOTAL_TPS = atpData.content.length;
         
-        // Target for actual TP content (keeping ~5-10% buffer for the "Cadangan" row)
-        const TARGET_FOR_CONTENT = Math.floor(TARGET_TOTAL_JP * 0.95);
+        // Target for actual TP content. We aim to use about 90-95% of the budget for TPs
+        // so that the remaining can be put into "Cadangan".
+        // But we must ensure each TP gets at least 2 JP if possible.
+        const TARGET_FOR_CONTENT = Math.floor(TARGET_TOTAL_JP * 0.90); 
         const AVG_JP = Math.max(2, Math.floor(TARGET_FOR_CONTENT / TOTAL_TPS));
 
         // Reduced from 8 to 5 for better stability
@@ -318,21 +354,22 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             const simplifiedAtpData = {
                 subject: atpData.subject,
                 instruction: `Assign 'alokasiWaktu' (JP) for these TPs. 
-                Context: Total annual JP is ${TARGET_TOTAL_JP} for ${TOTAL_TPS} TPs. 
+                Context: Total annual JP available is around ${TARGET_FOR_CONTENT} for ${TOTAL_TPS} TPs (excluding reserve). 
                 Average per TP should be around ${AVG_JP} JP. 
                 Complex topics get more, simple get less. Range: ${Math.max(1, AVG_JP - 1)} to ${AVG_JP + 2} JP.
+                STRICTLY RETURN JSON ARRAY.
                 Return array of objects { index: number, alokasiWaktu: string (e.g., "4 JP") } matching input indices.`,
                 content: simplifiedContent
             };
 
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Delay for stability
+                await new Promise(resolve => setTimeout(resolve, 4000)); // Increased delay to 4s to prevent rate limits
             }
 
             try {
-                const response = await apiRequest('generatePROTA', { atpData: simplifiedAtpData, jamPertemuan, model: 'gemini-2.5-pro' });
-                const jsonStr = cleanJsonString(response.text);
-                let parsedChunk = relaxedJsonParse(jsonStr);
+                // Menggunakan gemini-2.5-flash
+                const response = await apiRequest('generatePROTA', { atpData: simplifiedAtpData, jamPertemuan, model: 'gemini-2.5-flash' });
+                const parsedChunk = extractJsonArray(response.text);
                 
                 if (Array.isArray(parsedChunk)) {
                     allAllocations = [...allAllocations, ...parsedChunk];
@@ -372,7 +409,7 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             };
         });
 
-        // --- POST-PROCESSING FOR TOTAL JP & CADANGAN ---
+        // --- POST-PROCESSING FOR TOTAL JP & CADANGAN (REMAINDER) ---
         let currentUsedJp = 0;
         finalProtaData.forEach(r => {
              currentUsedJp += (parseInt(r.alokasiWaktu.replace(/\D/g,'')) || 0);
@@ -380,7 +417,7 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
 
         let remainder = TARGET_TOTAL_JP - currentUsedJp;
 
-        // Logic: If we exceeded the target, shave off JP from the largest items
+        // Logic: If we exceeded the target (unlikely given AVG_JP calc, but possible), shave off JP
         if (remainder < 0) {
             let toRemove = Math.abs(remainder);
             let loopGuard = 0;
@@ -415,15 +452,17 @@ export const generatePROTA = async (atpData: ATPData, jamPertemuan: number): Pro
             remainder = TARGET_TOTAL_JP - currentUsedJp;
         }
 
-        // Add Cadangan Row (if remainder is 0, we add it as 0 JP or minimum 2? User said "berisi sisa")
-        // Usually reserves should be positive. If 0, maybe set it to 0.
+        // Add Cadangan Row at the END
+        // "Cadangan yang berisi sisa dari pemberian JP tiap TP"
+        // Even if remainder is 0, it's good to show it or maybe show minimum if user wants strict math.
+        // We assume remainder is non-negative now.
         const sisaAkhir = Math.max(0, remainder);
         
         finalProtaData.push({
             no: '',
             topikMateri: 'Cadangan Jam Pelajaran',
             alurTujuanPembelajaran: '',
-            tujuanPembelajaran: '',
+            tujuanPembelajaran: 'Digunakan untuk kegiatan insidental, remedial, atau pengayaan.',
             alokasiWaktu: `${sisaAkhir} JP`,
             semester: 'Genap' // Conventionally at end of year
         });
@@ -457,6 +496,7 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
         }
 
         // --- BATCHING STRATEGY & ROBUSTNESS ---
+        // Keep chunk size small (3) to avoid hallucinations on complex rubrics
         const CHUNK_SIZE = 3;
         const resultsMap = new Map<number, { kriteria: any, targetKktp: any }>();
 
@@ -464,34 +504,35 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
             const chunk = semesterContent.slice(i, i + CHUNK_SIZE);
             
             if (i > 0) {
-                await new Promise(resolve => setTimeout(resolve, 3500)); // Increased delay to prevent hallucination/limits
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Increased delay to 3s to satisfy 50 requests/day limit
             }
 
             const simplifiedAtpDataChunk = {
                 subject: atpData.subject,
                 grade: grade,
-                // Updated Instruction: Strong context enforcement and Rubric definition
+                // Updated Instruction: Stronger count enforcement
                 instruction: `Anda adalah Guru Mata Pelajaran ${atpData.subject} Kelas ${grade}.
                 Tugas: Buat Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) untuk ${chunk.length} TP berikut.
                 
-                ATURAN KRUSIAL (Agar tidak Hallucination):
-                1. Kriteria HARUS 100% relevan dengan materi ${atpData.subject}. JANGAN gunakan istilah dari mapel lain (misal: jika mapel Fikih, jangan bahas biologi).
-                2. Gunakan format JSON Array.
+                ATURAN JSON (STRICT):
+                1. Output WAJIB Array JSON berisi TEPAT ${chunk.length} objek.
+                2. Urutan objek output HARUS SAMA dengan urutan TP input.
+                3. JANGAN menggabungkan atau memecah TP.
+                
+                ATURAN KRITERIA (4 Level):
+                1. "sangatMahir": Melampaui target TP, mandiri.
+                2. "mahir": Mencapai target TP dengan tepat.
+                3. "cukupMahir": Baru sebagian mencapai TP.
+                4. "perluBimbingan": Belum paham konsep dasar.
 
-                ATURAN 4 LEVEL KRITERIA (Interval Nilai):
-                1. "sangatMahir": Siswa mampu menerapkan konsep secara mandiri, analitis, dan melampaui target TP.
-                2. "mahir": Siswa mampu mencapai kompetensi dasar TP dengan tepat dan lengkap.
-                3. "cukupMahir": Siswa baru mampu mencapai sebagian kompetensi atau perlu perbaikan di beberapa bagian.
-                4. "perluBimbingan": Siswa belum memahami konsep dasar dan memerlukan remedial intensif.
-
-                Format Output JSON (Array):
+                Format Output:
                 [{
-                    "no": "Kode TP...",
+                    "no": "Kode TP",
                     "kriteria": {
-                        "sangatMahir": "Deskripsi spesifik mapel...",
-                        "mahir": "Deskripsi spesifik mapel...",
-                        "cukupMahir": "Deskripsi spesifik mapel...",
-                        "perluBimbingan": "Deskripsi spesifik mapel..."
+                        "sangatMahir": "...",
+                        "mahir": "...",
+                        "cukupMahir": "...",
+                        "perluBimbingan": "..."
                     },
                     "targetKktp": "mahir"
                 }]`,
@@ -504,42 +545,41 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
 
             let attempts = 0;
             let chunkSuccess = false;
+            const MAX_CHUNK_RETRIES = 3; 
             
-            // Increased retry attempts
-            while (!chunkSuccess && attempts < 3) {
+            // Retry logic with Smart Backoff for 429 errors
+            while (!chunkSuccess && attempts < MAX_CHUNK_RETRIES) {
                 attempts++;
                 try {
+                    // Menggunakan gemini-2.5-flash
                     const response = await apiRequest('generateKKTP', { 
                         atpData: simplifiedAtpDataChunk, 
                         semester, 
                         grade, 
-                        model: 'gemini-2.5-pro' 
+                        model: 'gemini-2.5-flash' 
                     });
 
-                    const jsonStr = cleanJsonString(response.text);
-                    let parsedChunk = relaxedJsonParse(jsonStr);
-
-                    if (!Array.isArray(parsedChunk) && typeof parsedChunk === 'object' && parsedChunk !== null) {
-                        const values = Object.values(parsedChunk);
-                        if (values.length > 0 && Array.isArray(values[0])) {
-                            parsedChunk = values[0];
-                        }
-                    }
+                    let parsedChunk = extractJsonArray(response.text);
 
                     if (Array.isArray(parsedChunk)) {
-                        // Robust Mismatch Handling
+                        // Handle Excess Items (Truncate)
+                        if (parsedChunk.length > chunk.length) {
+                             console.warn(`KKTP Gen: Received ${parsedChunk.length} items, expected ${chunk.length}. Truncating extra items.`);
+                             parsedChunk = parsedChunk.slice(0, chunk.length);
+                        }
+
+                        // Handle Missing Items (Retry if possible)
                         if (parsedChunk.length !== chunk.length) {
-                            console.warn(`KKTP Count Mismatch (Attempt ${attempts}): Expected ${chunk.length}, Got ${parsedChunk.length}.`);
-                            if (attempts < 3) {
-                                await new Promise(res => setTimeout(res, 2000)); 
-                                continue; 
+                            if (attempts < MAX_CHUNK_RETRIES) {
+                                throw new Error(`Count mismatch: Expected ${chunk.length}, Got ${parsedChunk.length}`);
+                            } else {
+                                console.warn("Max retries reached for count mismatch. Aligning available items.");
+                                // Proceed with partial data
                             }
-                            // If attempts exhausted, proceed to map what we have (Don't break the app)
-                            console.warn("Exhausted retries for KKTP chunk. Mapping available data and filling gaps.");
                         }
 
                         parsedChunk.forEach((item: any, idx: number) => {
-                            // Map only valid indices within chunk range to prevent index shifting errors
+                            // Map only valid indices within chunk range
                             if (idx < chunk.length) {
                                 const absoluteIndex = i + idx;
                                 resultsMap.set(absoluteIndex, {
@@ -551,13 +591,39 @@ export const generateKKTP = async (atpData: ATPData, semester: 'Ganjil' | 'Genap
                         chunkSuccess = true; 
 
                     } else {
-                        console.warn(`Chunk ${i} output is not an array.`, parsedChunk);
-                        if (attempts < 3) continue;
+                         throw new Error("Output is not an array");
                     }
 
-                } catch (chunkError) {
+                } catch (chunkError: any) {
                     console.error(`Error processing chunk ${i} (Attempt ${attempts}):`, chunkError);
-                    if (attempts < 3) await new Promise(res => setTimeout(res, 3000));
+                    
+                    // CRITICAL FALLBACK: If we exhausted retries, generate PLACEHOLDERS locally.
+                    // This prevents the whole table from crashing or missing rows.
+                    if (attempts >= MAX_CHUNK_RETRIES) {
+                        console.warn(`Chunk ${i} failed permanently. Generating manual placeholders.`);
+                        chunk.forEach((row, idx) => {
+                            const absoluteIndex = i + idx;
+                            resultsMap.set(absoluteIndex, {
+                                kriteria: {
+                                    sangatMahir: "Peserta didik mampu mencapai tujuan pembelajaran secara mandiri dan melampaui standar.",
+                                    mahir: "Peserta didik mampu mencapai tujuan pembelajaran sesuai standar.",
+                                    cukupMahir: "Peserta didik cukup mampu mencapai tujuan pembelajaran namun butuh perbaikan.",
+                                    perluBimbingan: "Peserta didik belum mencapai tujuan pembelajaran dan butuh bimbingan."
+                                },
+                                targetKktp: "mahir"
+                            });
+                        });
+                        chunkSuccess = true; // Mark as handled so loop exits
+                    } else {
+                        // Handle Rate Limiting (429) & Server Overload (503) explicitly
+                        const errorMsg = chunkError.message || chunkError.toString();
+                        if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED') || errorMsg.includes('503') || errorMsg.includes('overloaded') || errorMsg.includes('UNAVAILABLE')) {
+                            console.warn("Rate limit or Server Overload detection! Waiting 25s before retry...");
+                            await new Promise(res => setTimeout(res, 25000)); // Wait 25 seconds
+                        } else {
+                            await new Promise(res => setTimeout(res, 3000 * attempts));
+                        }
+                    }
                 }
             }
         }
@@ -613,7 +679,6 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         }
 
         // Context Injection:
-        // Memaksa AI untuk menggunakan materi yang benar dan mencegah halusinasi (misal: mapel Qur'an Hadis tapi output Akidah Akhlak).
         const materialList = semesterContent.map(r => r.topikMateri).join(', ');
         
         const simplifiedProta = {
@@ -627,8 +692,28 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
                 }))
         };
 
-        const response = await apiRequest('generatePROSEM', { protaData: simplifiedProta, semester, grade, model: 'gemini-2.5-flash' });
-        const jsonStr = cleanJsonString(response.text);
+        const MAX_PROSEM_RETRIES = 3;
+        let result;
+        for(let attempt = 1; attempt <= MAX_PROSEM_RETRIES; attempt++) {
+            try {
+                // Menggunakan gemini-2.5-flash
+                const response = await apiRequest('generatePROSEM', { protaData: simplifiedProta, semester, grade, model: 'gemini-2.5-flash' });
+                result = response;
+                break; // Success
+            } catch (e: any) {
+                console.warn(`PROSEM attempt ${attempt} failed:`, e);
+                if (attempt === MAX_PROSEM_RETRIES) throw e;
+                
+                const isServerOverload = e.message && (e.message.includes('503') || e.message.includes('overloaded'));
+                if(isServerOverload) {
+                     await new Promise(r => setTimeout(r, 4000 * attempt));
+                } else {
+                     await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+        }
+
+        const jsonStr = cleanJsonString(result.text);
         
         let parsedResult;
         try {

@@ -99,7 +99,8 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
     };
 
     const MAX_ATTEMPTS = 5; // Increased reliability
-    const RETRY_DELAY = 3000; // Increased to 3s delay for better stability with GAS
+    // Increased delay to 5000ms to handle "Failed to fetch" errors better (often caused by GAS rate limits or network flakiness)
+    const RETRY_DELAY = 5000; 
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
@@ -139,13 +140,29 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
 
             const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
             
-            if (isNetworkError && attempt < MAX_ATTEMPTS) {
+            // Check for specific AI-related errors that should trigger a retry with longer backoff
+            const isAiTransientError = error.message && (
+                error.message.includes('429') || 
+                error.message.includes('503') || 
+                error.message.includes('quota') ||
+                error.message.includes('overloaded') ||
+                error.message.includes('UNAVAILABLE') ||
+                error.message.includes('RESOURCE_EXHAUSTED') ||
+                error.message.toLowerCase().includes('terblokir') ||
+                error.message.toLowerCase().includes('kosong') ||
+                error.message.toLowerCase().includes('blocked')
+            );
+
+            if ((isNetworkError || isAiTransientError) && attempt < MAX_ATTEMPTS) {
                 // Exponential backoff
-                await new Promise(res => setTimeout(res, RETRY_DELAY * attempt)); 
+                // If it's an AI rate limit or overload, wait significantly longer (20s) to let it cool down
+                const waitTime = isAiTransientError ? 20000 : (RETRY_DELAY * attempt);
+                console.warn(`Retrying action "${action}" due to transient error. Waiting ${waitTime}ms...`);
+                await new Promise(res => setTimeout(res, waitTime)); 
                 continue; // Lanjut ke percobaan berikutnya
             }
             
-            // Jika ini percobaan terakhir atau bukan error jaringan, format dan lempar error.
+            // Jika ini percobaan terakhir atau bukan error yang bisa di-retry, format dan lempar error.
             let detailedMessage = error.message;
 
             if (isNetworkError) {

@@ -643,8 +643,9 @@ const App: React.FC = () => {
         setProtas([]); // Clear state immediately
         setProsemData(null); // Also clear prosem state
 
-        setView('view_atp_list');
-        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
+        // Redirect to TP Menu (Dashboard) so the "Buat PROTA" button appears
+        setView('tp_menu'); 
+        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan klik tombol 'Buat PROTA dengan AI' untuk membuat yang baru.");
     } catch (error: any) {
         setProtaError(`Gagal menghapus data lama: ${error.message}`);
     } finally {
@@ -760,10 +761,10 @@ const App: React.FC = () => {
                  content: content 
             };
              const savedData = await apiService.saveKKTP(payload);
-             setKktpData(prev => ({
+             setKktpData(prev => prev ? ({
                  ...prev,
                  [semester.toLowerCase()]: savedData
-             }));
+             }) : { ganjil: semester === 'Ganjil' ? savedData : null, genap: semester === 'Genap' ? savedData : null });
         } else {
             setKktpError(`AI gagal menghasilkan konten untuk Semester ${semester}.`);
         }
@@ -772,6 +773,30 @@ const App: React.FC = () => {
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
+  };
+  
+  const handleRegenerateKktp = async (semester: 'Ganjil' | 'Genap') => {
+      const existingData = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
+
+      if (existingData) {
+          if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data yang ada akan dihapus dan digantikan dengan hasil baru dari AI.`)) {
+              return;
+          }
+          
+          // Use the generation progress state for deletion as well to keep UI consistent
+          setKktpGenerationProgress({ isLoading: true, message: 'Menghapus data lama...' });
+          try {
+              await apiService.deleteKKTP(existingData.id);
+              setKktpData(prev => prev ? { ...prev, [semester.toLowerCase()]: null } : null);
+          } catch (error: any) {
+               setKktpError(`Gagal menghapus data lama: ${error.message}`);
+               setKktpGenerationProgress({ isLoading: false, message: '' });
+               return;
+          }
+      }
+      
+      // Proceed to generate
+      await handleGenerateSingleKktp(semester);
   };
 
   const handleNavigateToProsem = async () => {
@@ -1451,7 +1476,7 @@ const App: React.FC = () => {
     }
     
     if (destination === 'kktp') {
-        await handleViewKktp(); // Changed to just View
+        await handleViewKktp();
         return;
     }
     
@@ -1919,8 +1944,8 @@ const App: React.FC = () => {
                         Rincian KKTP - Semester {data.semester}
                     </h2>
                     <div className="flex gap-2">
-                        <button onClick={() => handleDeleteKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700">
-                            <TrashIcon className="w-5 h-5" /> Hapus
+                        <button onClick={() => handleRegenerateKktp(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                            <SparklesIcon className="w-5 h-5" /> Buat Ulang
                         </button>
                         <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
