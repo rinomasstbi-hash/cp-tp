@@ -19,9 +19,34 @@ const extractJsonArray = (text: string): any[] => {
     }
 };
 
+// Helper aman untuk mengambil API Key dari process.env atau global scope
+const getApiKey = (): string => {
+    try {
+        // Cek process.env standard
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            return process.env.API_KEY;
+        }
+        // Cek window.process (polyfill)
+        if (typeof window !== 'undefined' && (window as any).process && (window as any).process.env && (window as any).process.env.API_KEY) {
+            return (window as any).process.env.API_KEY;
+        }
+    } catch (e) {
+        console.error("Error accessing API Key:", e);
+    }
+    return '';
+};
+
+const createAIClient = () => {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        throw new Error("API Key tidak ditemukan. Pastikan Environment Variable 'API_KEY' sudah dikonfigurasi di Netlify.");
+    }
+    return new GoogleGenAI({ apiKey });
+};
+
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
-    // Inisialisasi di dalam fungsi untuk mencegah crash saat load jika env belum siap
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Inisialisasi di dalam fungsi
+    const ai = createAIClient();
     
     const prompt = `
     Role: Curriculum Expert (Kurikulum Merdeka Indonesia).
@@ -77,7 +102,7 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 };
 
 export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = createAIClient();
     
     // Flatten TPs for context
     let allTps: any[] = [];
@@ -134,7 +159,7 @@ export const generateATP = async (tpData: TPData): Promise<ATPTableRow[]> => {
 };
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = createAIClient();
     
     const prompt = `
     Create Annual Program (PROTA).
@@ -177,7 +202,7 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = createAIClient();
     
     const filteredContent = atpData.content.filter(c => c.semester.toLowerCase() === semester.toLowerCase());
     
