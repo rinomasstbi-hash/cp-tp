@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, PROSEMHeader, PROSEMRow, TPGroup, ATPTableRow, PROTARow, KKTPRow } from '../types';
 
@@ -144,7 +142,8 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
     Task:
     1. Estimate "Alokasi Waktu" (Time Allocation in JP) for each TP.
     2. Ensure total fits academic year (~18 weeks/semester).
-    3. Return JSON Array.
+    3. Output ONLY the number of JP followed by "JP" (e.g., "4 JP"). Do not add minutes.
+    4. Return JSON Array.
     `;
 
     const response = await ai.models.generateContent({
@@ -227,120 +226,87 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
         : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
     
-    const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: 5 }));
+    // We assume 5 weeks per month for standard grid distribution
+    const weeksPerMonth = 5;
+    const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: weeksPerMonth }));
 
     const semesterContent = protaData.content.filter(row => 
         row.semester?.trim().toLowerCase() === semester.toLowerCase()
     );
     
     if (semesterContent.length === 0) {
-        throw new Error(`Data PROTA untuk semester ${semester} tidak ditemukan.`);
+        // Return empty structure rather than error to allow UI to handle it gracefully
+        return { headers, content: [] };
     }
 
-    // Create a lightweight map for the AI to focus on distribution only
-    const distributionMap = semesterContent.map((row, index) => ({
-        id: index + 1,
-        total_jp: parseInt(row.alokasiWaktu.replace(/\D/g, '') || '0')
-    }));
+    // Use algorithmic distribution instead of AI to ensure strict adherence to Math constraints.
+    // Rules:
+    // 1. Distribute JP sequentially.
+    // 2. Max JP per week = protaData.jamPertemuan.
+    // 3. If TP1 needs 3 JP and Week1 has 2 JP space: Week1 gets 2, Week2 gets 1. Next TP starts at Week2 (remaining space).
 
-    const prompt = `
-       Role: Academic Scheduler.
-       Task: Distribute teaching hours (JP) into weekly slots for a Semester Program (PROSEM).
-       
-       Context:
-       - Semester: ${semester}
-       - Months: ${months.join(', ')}
-       - Weeks per month: 5
-       
-       Input Data (List of items to distribute):
-       ${JSON.stringify(distributionMap)}
-       
-       Requirements:
-       1. For each item, distribute the 'total_jp' into the available weeks.
-       2. The sum of the weekly values MUST equal the 'total_jp' exactly.
-       3. Return ONLY a JSON Array mapping IDs to the distribution.
-       
-       Response Schema (JSON):
-       Array<{
-         "id": number,
-         "bulan": {
-           [MonthName: string]: number[] // Array of 5 numbers representing JP per week
-         },
-         "keterangan": string // Optional short note
-       }>
-    `;
+    const maxJpPerWeek = Number(protaData.jamPertemuan) || 2;
+    const totalWeeks = months.length * weeksPerMonth;
+    
+    // Track accumulated usage for every week slot [0...29]
+    const weeklyUsage = new Array(totalWeeks).fill(0);
+    
+    let globalWeekCursor = 0; // Points to the current week index (0-29) being filled
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
-    });
-
-    const aiOutput = extractJsonArray(response.text);
-
-    const finalContent: PROSEMRow[] = semesterContent.map((originalRow, index) => {
-        const inputId = index + 1;
-        const aiItem = aiOutput.find((x: any) => x.id == inputId);
+    const finalContent: PROSEMRow[] = semesterContent.map((row) => {
+        // Fix: Robustly extract ONLY the first numeric value.
+        // If string is "4 JP", gets 4.
+        // If string is "4 JP (160 Menit)", gets 4.
+        // If string is "2 Pertemuan (6 JP)", gets 2 (risk), so we look for digits.
+        // We assume PROTA generation standardizes on "X JP".
+        const jpMatch = row.alokasiWaktu.match(/(\d+)/);
+        const totalJpForTp = jpMatch ? parseInt(jpMatch[0]) : 0;
         
-        const emptyDistribution: Record<string, (string | null)[]> = {};
-        months.forEach(m => { emptyDistribution[m] = [null, null, null, null, null]; });
+        let remainingToDistribute = totalJpForTp;
+        
+        // Initialize empty structure for this row
+        const distribution: Record<string, (string | null)[]> = {};
+        months.forEach(m => { distribution[m] = Array(weeksPerMonth).fill(null); });
 
-        let finalBulan = emptyDistribution;
-        let keterangan = '';
+        // Distribute JP
+        while (remainingToDistribute > 0 && globalWeekCursor < totalWeeks) {
+            const currentUsage = weeklyUsage[globalWeekCursor];
+            const availableSpace = maxJpPerWeek - currentUsage;
 
-        if (aiItem && aiItem.bulan) {
-            finalBulan = {};
-            months.forEach(m => {
-                // Ensure we get exactly 5 weeks, using 0 or null properly
-                const rawWeeks = aiItem.bulan[m];
-                if (Array.isArray(rawWeeks)) {
-                    finalBulan[m] = rawWeeks.slice(0, 5).map((val: any) => 
-                        (val === 0 || val === '0' || val === null) ? null : String(val)
-                    );
-                    while (finalBulan[m].length < 5) finalBulan[m].push(null);
-                } else {
-                     finalBulan[m] = [null, null, null, null, null];
+            if (availableSpace > 0) {
+                // Determine how much we can put in this week
+                const amountToAssign = Math.min(remainingToDistribute, availableSpace);
+                
+                // Map global week index to Month + Week Index
+                const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
+                const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
+                
+                if (monthIndex < months.length) {
+                    const monthName = months[monthIndex];
+                    // Assign to data structure
+                    distribution[monthName][weekIndexInMonth] = String(amountToAssign);
                 }
-            });
-            keterangan = aiItem.keterangan || '';
-        }
+                
+                // Update trackers
+                weeklyUsage[globalWeekCursor] += amountToAssign;
+                remainingToDistribute -= amountToAssign;
+            }
 
-        // Strict validation: Ensure distribution sums up to original Total JP
-        const targetTotal = parseInt(originalRow.alokasiWaktu.replace(/\D/g, '') || '0');
-        let currentTotal = 0;
-        months.forEach(m => {
-            if (finalBulan[m]) finalBulan[m].forEach(val => currentTotal += parseInt(val || '0'));
-        });
-
-        // Auto-correct if AI failed math
-        if (targetTotal > 0 && currentTotal !== targetTotal) {
-             const diff = targetTotal - currentTotal;
-             // Simple adjustment: Add/subtract diff from the first non-null slot, or first slot if all empty
-             let adjusted = false;
-             for (const m of months) {
-                 for (let i = 0; i < 5; i++) {
-                     const val = parseInt(finalBulan[m][i] || '0');
-                     if (val > 0 || (!adjusted && diff > 0)) {
-                         const newVal = Math.max(0, val + diff);
-                         finalBulan[m][i] = newVal === 0 ? null : String(newVal);
-                         adjusted = true;
-                         break;
-                     }
-                 }
-                 if (adjusted) break;
-             }
-             // If still not adjusted (e.g. diff > 0 but no slots found and loop finished), force first slot
-             if (!adjusted && diff > 0) {
-                 finalBulan[months[0]][0] = String(diff);
-             }
+            // If this week is now full, move cursor to next week
+            if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek) {
+                globalWeekCursor++;
+            }
+            
+            // If we filled the current TP but the week isn't full yet, 
+            // we DON'T increment the cursor. The next TP will fill the rest of this week.
         }
 
         return {
-            no: originalRow.no,
-            tujuanPembelajaran: originalRow.tujuanPembelajaran, // Strictly from PROTA
-            alokasiWaktu: originalRow.alokasiWaktu, // Strictly from PROTA
-            bulan: finalBulan,
-            keterangan: keterangan
+            no: row.no,
+            tujuanPembelajaran: row.tujuanPembelajaran,
+            alokasiWaktu: row.alokasiWaktu,
+            bulan: distribution,
+            keterangan: '' 
         };
     });
 

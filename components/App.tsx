@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -657,8 +656,9 @@ const App: React.FC = () => {
         setProtas([]); // Clear state immediately
         setProsemData(null); // Also clear prosem state
 
-        setView('view_atp_list');
-        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan pilih versi ATP di bawah ini untuk membuat PROTA yang baru.");
+        // Ensures we go back to the main menu to see the 'Create' button
+        setView('tp_menu'); 
+        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan buat PROTA baru.");
     } catch (error: any) {
         setProtaError(`Gagal menghapus data lama: ${error.message}`);
     } finally {
