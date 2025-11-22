@@ -25,9 +25,8 @@ export const APP_TITLE = "TP Generator MTsN 4 Jombang";
 // =================================================================
 // KONFIGURASI KEAMANAN
 // =================================================================
-// API Key tidak lagi disimpan di sini (hardcoded) untuk mencegah kebocoran.
-// Aplikasi sekarang menggunakan:
-// 1. Environment Variables (VITE_GEMINI_API_KEY) - Disarankan untuk Deploy
-// 2. LocalStorage (Input via UI) - Disarankan untuk testing/pengguna umum
-export const GEMINI_API_KEY_FALLBACK: string = ''; 
+// Arsitektur aplikasi telah diubah untuk menggunakan "Backend Proxy".
+// API Key Gemini sekarang disimpan dengan aman di Google Apps Script.
+// Aplikasi frontend ini tidak lagi membutuhkan akses langsung ke API Key.
+// Hal ini menghilangkan kebutuhan pengguna untuk memasukkan key mereka sendiri.
 // =================================================================

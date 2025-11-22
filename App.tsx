@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
 import * as apiService from './services/dbService';
@@ -186,28 +183,7 @@ const App: React.FC = () => {
   const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
   const [protaGenerationProgress, setProtaGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
   
-  // State for API Key Modal
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [userApiKeyInput, setUserApiKeyInput] = useState('');
-
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
-
-  useEffect(() => {
-    // Cek apakah API Key sudah ada saat aplikasi dimuat
-    if (!geminiService.hasApiKey()) {
-        setShowApiKeyModal(true);
-    }
-  }, []);
-
-  const handleSaveApiKey = () => {
-      if (userApiKeyInput.trim().length > 10) {
-          geminiService.saveApiKeyToStorage(userApiKeyInput.trim());
-          setShowApiKeyModal(false);
-          window.location.reload(); // Refresh untuk memastikan service menggunakan key baru
-      } else {
-          alert("API Key terlihat tidak valid. Mohon periksa kembali.");
-      }
-  };
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
     setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
@@ -579,7 +555,11 @@ const App: React.FC = () => {
       setAtpError(null);
       try {
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf ATP...', progress: 25 }));
-          const generatedContent = await geminiService.generateATP(selectedTP);
+          const generatedContent = await geminiService.generateATP({
+              subject: selectedTP.subject,
+              grade: selectedTP.grade,
+              tpGroups: selectedTP.tpGroups
+          });
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
           const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
               tpId: selectedTP.id!,
@@ -797,6 +777,69 @@ const App: React.FC = () => {
         setActiveKktpSemester('Ganjil'); // Selalu mulai dari Ganjil
     } catch (error: any) {
         setKktpError(error.message);
+    } finally {
+        setKktpGenerationProgress({ isLoading: false, message: '' });
+    }
+  };
+
+  const handleGenerateSingleKktp = async (semester: 'Ganjil' | 'Genap') => {
+    if (!selectedTP) return;
+    
+    setKktpGenerationProgress({ isLoading: true, message: `Membuat KKTP Semester ${semester}...` });
+    setKktpError(null);
+
+    try {
+        // Pastikan ATP terpilih / dimuat
+        let atpToUse = selectedATP;
+        if (!atpToUse) {
+             // Coba ambil dari list jika ada
+             if(atps.length > 0) {
+                 atpToUse = atps[0];
+             } else {
+                 // Coba fetch
+                 const atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
+                 if (atpsForKktp.length > 0) {
+                     atpToUse = atpsForKktp[0];
+                     setAtps(atpsForKktp); // Update state
+                 }
+             }
+        }
+        
+        if (!atpToUse) {
+            throw new Error("Data ATP tidak ditemukan. Mohon buat ATP terlebih dahulu.");
+        }
+        
+        // Generate content
+        const content = await geminiService.generateKKTP(atpToUse, semester, selectedTP.grade);
+        
+        if (content.length > 0) {
+             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+                atpId: atpToUse.id, 
+                subject: selectedTP.subject, 
+                grade: selectedTP.grade, 
+                semester: semester, 
+                content: content 
+            };
+            
+            // Save to DB
+            const savedData = await apiService.saveKKTP(payload);
+            
+            // Update State
+            setKktpData(prev => {
+                const newData = { ...(prev || { ganjil: null, genap: null }) };
+                if (semester === 'Ganjil') newData.ganjil = savedData;
+                else newData.genap = savedData;
+                return newData;
+            });
+            
+            setTransientMessage(`KKTP Semester ${semester} berhasil dibuat.`);
+        } else {
+             throw new Error(`AI tidak menghasilkan konten untuk Semester ${semester}.`);
+        }
+
+    } catch (error: any) {
+        console.error("Generate Single KKTP Error:", error);
+        setKktpError(`Gagal membuat KKTP: ${error.message}`);
     } finally {
         setKktpGenerationProgress({ isLoading: false, message: '' });
     }
@@ -2031,12 +2074,66 @@ const App: React.FC = () => {
                   {activeKktpSemester === 'Ganjil' && (
                     kktpData?.ganjil 
                       ? <KKTPTable data={kktpData.ganjil} /> 
-                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Ganjil.</div>
+                      : (
+                        <div className="bg-white rounded-lg shadow-lg p-10 flex flex-col items-center justify-center text-center">
+                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                <ChecklistIcon className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-slate-900">Data KKTP Kosong</h3>
+                            <p className="text-slate-500 mt-1 mb-6 max-w-sm">
+                                Belum ada Kriteria Ketercapaian Tujuan Pembelajaran untuk Semester Ganjil.
+                            </p>
+                            <button 
+                                onClick={() => handleGenerateSingleKktp('Ganjil')} 
+                                disabled={kktpGenerationProgress.isLoading}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
+                            >
+                                {kktpGenerationProgress.isLoading && activeKktpSemester === 'Ganjil' ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Memproses...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <SparklesIcon className="w-5 h-5" />
+                                        Buat KKTP Semester Ganjil
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                      )
                   )}
                   {activeKktpSemester === 'Genap' && (
                     kktpData?.genap 
                       ? <KKTPTable data={kktpData.genap} /> 
-                      : <div className="bg-white rounded-lg shadow-lg p-6 text-center text-slate-500">Tidak ada data KKTP yang dihasilkan untuk Semester Genap.</div>
+                      : (
+                        <div className="bg-white rounded-lg shadow-lg p-10 flex flex-col items-center justify-center text-center">
+                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                                <ChecklistIcon className="w-8 h-8 text-slate-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-slate-900">Data KKTP Kosong</h3>
+                            <p className="text-slate-500 mt-1 mb-6 max-w-sm">
+                                Belum ada Kriteria Ketercapaian Tujuan Pembelajaran untuk Semester Genap.
+                            </p>
+                            <button 
+                                onClick={() => handleGenerateSingleKktp('Genap')} 
+                                disabled={kktpGenerationProgress.isLoading}
+                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
+                            >
+                                {kktpGenerationProgress.isLoading && activeKktpSemester === 'Genap' ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Memproses...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <SparklesIcon className="w-5 h-5" />
+                                        Buat KKTP Semester Genap
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                      )
                   )}
                 </div>
             </div>
@@ -2212,55 +2309,6 @@ const App: React.FC = () => {
               {copyNotification}
           </div>
       )}
-
-      {/* API Key Modal */}
-      {showApiKeyModal && (
-          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex justify-center items-center z-[100] p-4">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-                  <div className="bg-slate-50 p-6 border-b border-slate-100 text-center">
-                      <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <SparklesIcon className="w-8 h-8 text-yellow-600" />
-                      </div>
-                      <h3 className="text-xl font-bold text-slate-800">API Key Diperlukan</h3>
-                      <p className="text-slate-500 text-sm mt-2">
-                          Demi keamanan, API Key tidak disimpan di dalam kode aplikasi.
-                      </p>
-                  </div>
-                  <div className="p-6">
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Masukkan Google Gemini API Key Anda:
-                      </label>
-                      <input
-                          type="password"
-                          value={userApiKeyInput}
-                          onChange={(e) => setUserApiKeyInput(e.target.value)}
-                          placeholder="AIzaSy..."
-                          className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all outline-none text-slate-800"
-                          autoFocus
-                      />
-                      <p className="text-xs text-slate-400 mt-3 flex items-start gap-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                          Key ini hanya akan disimpan di browser Anda (LocalStorage) dan tidak akan dikirim ke server kami.
-                      </p>
-                      <button 
-                          onClick={handleSaveApiKey}
-                          className="w-full mt-6 bg-teal-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors flex justify-center items-center gap-2"
-                      >
-                          <SaveIcon className="w-5 h-5" />
-                          Simpan & Lanjutkan
-                      </button>
-                      <div className="mt-4 text-center">
-                          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs text-teal-600 hover:underline">
-                              Belum punya key? Dapatkan di sini
-                          </a>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
        {authPrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
