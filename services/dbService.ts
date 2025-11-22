@@ -5,7 +5,7 @@
 // Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
 // Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
 // Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPOoQ54tTSAvyOYrqdDkqBzH7iWcyoVNzr0KSz1oBFCtpPdG9I958_mzpA0Laldoj2/exec';
+const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQXtgMGM4L4GqaiwuJticpNDq-d_QOffOMQJTp1ZdLaM8SS3XbSYWMXSNLbbneZI1P/exec';
 
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
 
@@ -129,7 +129,14 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             }
             
             if (responseData.status === 'error') {
-                throw new Error(responseData.message || 'Aksi tidak valid.');
+                const msg = responseData.message || 'Aksi tidak valid.';
+                
+                // Deteksi error model not found (biasanya karena kode backend usang)
+                if (msg.includes('not found for API version') || msg.includes('is not supported for generateContent')) {
+                     throw new Error('⚠️ PERINGATAN SISTEM: Kode Google Apps Script (Backend) Anda usang. Model AI lama sudah tidak didukung. \n\nSOLUSI: Silakan salin ulang kode App Script "Code.gs" terbaru yang diberikan di chat, lalu lakukan DEPLOY ulang.');
+                }
+
+                throw new Error(msg);
             }
 
             return responseData.data; // Sukses, keluar dari loop
@@ -140,17 +147,19 @@ export const apiRequest = async (action: string, params: Record<string, any> = {
             const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
             
             // Check for specific AI-related errors that should trigger a retry with longer backoff
-            const isAiTransientError = error.message && (
-                error.message.includes('429') || 
-                error.message.includes('503') || 
-                error.message.includes('quota') ||
-                error.message.includes('overloaded') ||
-                error.message.includes('UNAVAILABLE') ||
-                error.message.includes('RESOURCE_EXHAUSTED') ||
-                error.message.toLowerCase().includes('terblokir') ||
-                error.message.toLowerCase().includes('kosong') ||
-                error.message.toLowerCase().includes('blocked')
-            );
+            // KITA KECUALIKAN error "NOT_FOUND" atau "PERINGATAN SISTEM" dari retry karena retry tidak akan memperbaikinya.
+            const errorMessage = error.message || '';
+            const isAiTransientError = (
+                errorMessage.includes('429') || 
+                errorMessage.includes('503') || 
+                errorMessage.includes('quota') ||
+                errorMessage.includes('overloaded') ||
+                errorMessage.includes('UNAVAILABLE') ||
+                errorMessage.includes('RESOURCE_EXHAUSTED') ||
+                errorMessage.toLowerCase().includes('terblokir') ||
+                errorMessage.toLowerCase().includes('kosong') ||
+                errorMessage.toLowerCase().includes('blocked')
+            ) && !errorMessage.includes('PERINGATAN SISTEM');
 
             if ((isNetworkError || isAiTransientError) && attempt < MAX_ATTEMPTS) {
                 // Exponential backoff
