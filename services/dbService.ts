@@ -108,10 +108,20 @@ const cleanStringsInObject = (data: any): any => {
 export const isUserApproved = async (email: string | null): Promise<boolean> => {
     if (!email) return false;
     if (email === 'rinomasstbi@gmail.com') return true;
+    
+    // Simple session cache to avoid repeated DB calls on reload
+    const cacheKey = `mtsn4jombang_approved_${email}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached === 'true') return true;
+
     try {
         const docRef = doc(db, 'approved_users', email);
         const docSnap = await getDoc(docRef);
-        return docSnap.exists();
+        const approved = docSnap.exists();
+        if (approved) {
+            sessionStorage.setItem(cacheKey, 'true');
+        }
+        return approved;
     } catch (error) {
         console.error("Error checking user approval:", error);
         return false;

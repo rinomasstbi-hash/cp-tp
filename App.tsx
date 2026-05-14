@@ -174,25 +174,13 @@ const App: React.FC = () => {
        }
     }, 10000);
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       clearTimeout(timeoutId);
       if (!isMounted) return;
-
       setUser(currentUser);
-      if (currentUser) {
-         if (currentUser.email) {
-             const approved = await apiService.isUserApproved(currentUser.email);
-             if (isMounted) setIsApproved(approved);
-             if (!approved) {
-                 await apiService.recordAccessRequest(currentUser.email, currentUser.displayName);
-             }
-         } else {
-             if (isMounted) setIsApproved(false);
-         }
-      } else {
-         if (isMounted) setIsApproved(false);
+      if (!currentUser && isMounted) {
+          setAuthChecking(false);
       }
-      if (isMounted) setAuthChecking(false);
     });
 
     return () => {
@@ -201,6 +189,40 @@ const App: React.FC = () => {
         unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+        setIsApproved(false);
+        return;
+    }
+
+    let isMounted = true;
+    const checkApproval = async () => {
+        if (user.email) {
+            try {
+                const approved = await apiService.isUserApproved(user.email);
+                if (isMounted) {
+                    setIsApproved(approved);
+                    setAuthChecking(false);
+                    if (!approved) {
+                        await apiService.recordAccessRequest(user.email!, user.displayName);
+                    }
+                }
+            } catch (error) {
+                console.error("Approval check failed:", error);
+                if (isMounted) setAuthChecking(false);
+            }
+        } else {
+            if (isMounted) {
+                setIsApproved(false);
+                setAuthChecking(false);
+            }
+        }
+    };
+
+    checkApproval();
+    return () => { isMounted = false; };
+  }, [user]);
 
   const [view, setView] = useState<View | 'manage_access'>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -260,32 +282,14 @@ const App: React.FC = () => {
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
   const tpsCache = React.useRef<Record<string, TPData[]>>({});
 
-  const prefetchAllTPs = useCallback(async () => {
-      try {
-          const allTPs = await apiService.getAllTPs();
-          const groupedBySubject = allTPs.reduce((acc, tp) => {
-              if (!acc[tp.subject]) acc[tp.subject] = [];
-              acc[tp.subject].push(tp);
-              return acc;
-          }, {} as Record<string, TPData[]>);
-          tpsCache.current = groupedBySubject;
-      } catch (error) {
-          console.error("Failed to prefetch TPs:", error);
-      }
-  }, []);
-
-  useEffect(() => {
-      prefetchAllTPs();
-  }, [prefetchAllTPs]);
-
   const loadTPsForSubject = useCallback(async (subject: string) => {
-    const isCached = !!tpsCache.current[subject];
-    if (isCached) {
-        setTps(tpsCache.current[subject]);
-    } else {
-        setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
+    const cachedData = tpsCache.current[subject];
+    if (cachedData && cachedData.length > 0) {
+        setTps(cachedData);
+        return; // Skip network call if we have cached data
     }
     
+    setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
     setGlobalError(null);
     try {
       const data = await apiService.getTPsBySubject(subject);
@@ -294,11 +298,9 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error(error);
       setGlobalError(error.message);
-      setTps([]); // Reset state on error
+      setTps([]); 
     } finally {
-      if (!isCached) {
-          setLoadingState({ isLoading: false, title: '', message: '' });
-      }
+      setLoadingState({ isLoading: false, title: '', message: '' });
     }
   }, []);
   
