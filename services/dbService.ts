@@ -47,6 +47,9 @@ export const app = initializeApp(activeConfig);
 export const db = getFirestore(app, activeConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
+
+
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
