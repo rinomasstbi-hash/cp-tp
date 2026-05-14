@@ -99,6 +99,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /access_requests/{email} {
+      allow read, delete: if isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && request.auth.token.email == email && incoming().keys().hasAll(['name', 'requestedAt']) && incoming().name is string && incoming().requestedAt == request.time;
+      allow update: if false; 
+    }
+
     match /tps/{tpId} {
       allow get: if isValidId(tpId);
       allow list: if true;

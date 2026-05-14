@@ -118,6 +118,50 @@ export const isUserApproved = async (email: string | null): Promise<boolean> => 
     }
 };
 
+export const recordAccessRequest = async (email: string, name: string | null): Promise<void> => {
+    try {
+        await setDoc(doc(db, 'access_requests', email), { 
+            name: name || email,
+            requestedAt: serverTimestamp() 
+        });
+    } catch (error) {
+        console.error("Error recording access request:", error);
+    }
+};
+
+export const getAccessRequests = async (): Promise<{email: string, name: string, requestedAt: number}[]> => {
+    try {
+        const querySnapshot = await getDocs(collection(db, 'access_requests'));
+        return querySnapshot.docs.map(doc => ({ 
+            email: doc.id,
+            name: doc.data().name,
+            requestedAt: dateToNumber(doc.data().requestedAt)
+        }));
+    } catch (error) {
+        console.error("Error getting access requests:", error);
+        return [];
+    }
+};
+
+export const approveAccessRequest = async (email: string): Promise<void> => {
+    try {
+        await addApprovedUser(email);
+        await deleteDoc(doc(db, 'access_requests', email));
+    } catch (error) {
+         console.error("Error approving access request:", error);
+         throw error;
+    }
+};
+
+export const rejectAccessRequest = async (email: string): Promise<void> => {
+    try {
+        await deleteDoc(doc(db, 'access_requests', email));
+    } catch (error) {
+         console.error("Error rejecting access request:", error);
+         throw error;
+    }
+};
+
 export const getApprovedUsers = async (): Promise<{email: string}[]> => {
     try {
         const querySnapshot = await getDocs(collection(db, 'approved_users'));

@@ -166,8 +166,15 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-         const approved = await apiService.isUserApproved(currentUser.email);
-         setIsApproved(approved);
+         if (currentUser.email) {
+             const approved = await apiService.isUserApproved(currentUser.email);
+             setIsApproved(approved);
+             if (!approved) {
+                 await apiService.recordAccessRequest(currentUser.email, currentUser.displayName);
+             }
+         } else {
+             setIsApproved(false);
+         }
       } else {
          setIsApproved(false);
       }
@@ -2399,8 +2406,9 @@ const App: React.FC = () => {
           <AlertIcon className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h2 className="text-3xl font-bold text-slate-800 mb-4">Akses Menunggu Verifikasi</h2>
           <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-8">
-            Akun Anda (<span className="font-semibold">{user.email}</span>) telah berhasil login, namun belum diverifikasi oleh admin.
-            Harap hubungi <a href="mailto:rinomasstbi@gmail.com" className="text-teal-600 font-bold hover:underline">rinomasstbi@gmail.com</a> untuk meminta akses ke aplikasi Asisten Guru (AGRU).
+            Akun Anda (<span className="font-semibold">{user.email}</span>) telah berhasil login, dan permintaan akses Anda <span className="font-semibold text-teal-600">telah otomatis dikirim</span> ke admin.
+            <br/><br/>
+            Silakan tunggu hingga admin menyetujui akun Anda. Jika ada urgensi, Anda bisa menghubungi <a href="mailto:rinomasstbi@gmail.com" className="text-teal-600 font-bold hover:underline">rinomasstbi@gmail.com</a>.
           </p>
           <button 
              onClick={() => window.location.reload()}

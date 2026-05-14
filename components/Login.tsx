@@ -19,7 +19,11 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       onLoginSuccess();
     } catch (err: any) {
       console.error("Login error:", err);
-      setError(err.message || 'Terjadi kesalahan saat login.');
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Popup otentikasi ditutup sebelum login selesai. Silakan coba lagi. Jika Anda mengalami masalah, coba buka aplikasi di tab baru atau izinkan pop-up di browser Anda.');
+      } else {
+        setError(err.message || 'Terjadi kesalahan saat login.');
+      }
     } finally {
       setIsLoading(false);
     }
