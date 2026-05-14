@@ -28,7 +28,7 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
                  className="h-12 w-auto"
                />
             </div>
-            <div className="ml-4">
+            <div className="ml-4 hidden sm:block">
               <span className="block text-base sm:text-xl font-extrabold text-white tracking-wide uppercase">
                 Asisten Guru (AGRU)
               </span>
@@ -257,19 +257,29 @@ const App: React.FC = () => {
   const [protaGenerationProgress, setProtaGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
   
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
+  const tpsCache = React.useRef<Record<string, TPData[]>>({});
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
-    setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
+    const isCached = !!tpsCache.current[subject];
+    if (isCached) {
+        setTps(tpsCache.current[subject]);
+    } else {
+        setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
+    }
+    
     setGlobalError(null);
     try {
       const data = await apiService.getTPsBySubject(subject);
       setTps(data);
+      tpsCache.current[subject] = data;
     } catch (error: any) {
       console.error(error);
       setGlobalError(error.message);
       setTps([]); // Reset state on error
     } finally {
-      setLoadingState({ isLoading: false, title: '', message: '' });
+      if (!isCached) {
+          setLoadingState({ isLoading: false, title: '', message: '' });
+      }
     }
   }, []);
   
