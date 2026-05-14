@@ -4,6 +4,19 @@ import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, dele
 import firebaseConfig from '../firebase-applet-config.json';
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
 
+const envConfig = {
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
+
+const activeConfig = envConfig.projectId ? envConfig : firebaseConfig;
+
 enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -30,8 +43,8 @@ interface FirestoreErrorInfo {
   }
 }
 
-export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const app = initializeApp(activeConfig);
+export const db = getFirestore(app, activeConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
