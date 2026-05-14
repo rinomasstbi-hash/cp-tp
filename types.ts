@@ -13,7 +13,7 @@ export interface TPGroup {
 
 export interface TPData {
   id?: string; 
-  userId?: string; // Menjadi opsional karena tidak ada login
+  userId: string;
   subject: string; 
   cpElements: { element: string; cp: string; }[];
   grade: string;
@@ -22,8 +22,8 @@ export interface TPData {
   cpSourceVersion: string;
   additionalNotes: string;
   tpGroups: TPGroup[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ATPTableRow {
@@ -37,12 +37,13 @@ export interface ATPTableRow {
 
 export interface ATPData {
   id: string;
+  userId: string;
   tpId: string;
   subject: string;
   content: ATPTableRow[];
   creatorName: string;
   creatorEmail: string;
-  createdAt: string;
+  createdAt: number;
 }
 
 export interface PROTARow {
@@ -56,12 +57,13 @@ export interface PROTARow {
 
 export interface PROTAData {
   id: string;
+  userId: string;
   tpId: string;
   subject: string;
   jamPertemuan: number; // Store the JP used for generation
   content: PROTARow[];
   creatorName: string;
-  createdAt: string;
+  createdAt: number;
 }
 
 export interface KKTPKriteria {
@@ -81,12 +83,13 @@ export interface KKTPRow {
 
 export interface KKTPData {
   id: string;
+  userId: string;
   atpId: string;
   subject: string;
   grade: string;
   semester: 'Ganjil' | 'Genap';
   content: KKTPRow[];
-  createdAt: string;
+  createdAt: number;
 }
 
 export interface PROSEMHeader {
@@ -104,13 +107,14 @@ export interface PROSEMRow {
 
 export interface PROSEMData {
   id: string;
+  userId: string;
   protaId: string;
   subject: string;
   grade: string;
   semester: 'Ganjil' | 'Genap';
   headers: PROSEMHeader[];
   content: PROSEMRow[];
-  createdAt: string;
+  createdAt: number;
 }
 
 

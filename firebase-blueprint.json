@@ -1,0 +1,186 @@
+{
+  "entities": {
+    "TP": {
+      "title": "Tujuan Pembelajaran",
+      "description": "Learning objectives data",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "cpElements": {
+          "type": "array"
+        },
+        "grade": {
+          "type": "string"
+        },
+        "creatorEmail": {
+          "type": "string"
+        },
+        "creatorName": {
+          "type": "string"
+        },
+        "cpSourceVersion": {
+          "type": "string"
+        },
+        "additionalNotes": {
+          "type": "string"
+        },
+        "tpGroups": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": ["userId", "subject", "creatorEmail", "creatorName", "createdAt", "updatedAt"]
+    },
+    "ATP": {
+      "title": "Alur Tujuan Pembelajaran",
+      "description": "Learning outcomes flow",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "tpId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "content": {
+          "type": "array"
+        },
+        "creatorName": {
+          "type": "string"
+        },
+        "creatorEmail": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["userId", "tpId", "subject", "creatorName", "creatorEmail", "createdAt"]
+    },
+    "PROTA": {
+      "title": "Program Tahunan",
+      "description": "Annual program data",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "tpId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "jamPertemuan": {
+          "type": "number"
+        },
+        "content": {
+          "type": "array"
+        },
+        "creatorName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["userId", "tpId", "subject", "createdAt"]
+    },
+    "KKTP": {
+      "title": "Kriteria Ketercapaian Tujuan Pembelajaran",
+      "description": "Learning achievement criteria",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "atpId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "grade": {
+          "type": "string"
+        },
+        "semester": {
+          "type": "string"
+        },
+        "content": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["userId", "atpId", "subject", "semester", "createdAt"]
+    },
+    "PROSEM": {
+      "title": "Program Semester",
+      "description": "Semester program",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "protaId": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "grade": {
+          "type": "string"
+        },
+        "semester": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "array"
+        },
+        "content": {
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["userId", "protaId", "subject", "semester", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/tps/{tpId}": {
+      "schema": "TP",
+      "description": "Tujuan Pembelajaran Collection"
+    },
+    "/atps/{atpId}": {
+      "schema": "ATP",
+      "description": "Alur Tujuan Pembelajaran Collection"
+    },
+    "/protas/{protaId}": {
+      "schema": "PROTA",
+      "description": "Program Tahunan Collection"
+    },
+    "/kktps/{kktpId}": {
+      "schema": "KKTP",
+      "description": "Kriteria Ketercapaian Tujuan Pembelajaran Collection"
+    },
+    "/prosems/{prosemId}": {
+      "schema": "PROSEM",
+      "description": "Program Semester Collection"
+    }
+  }
+}

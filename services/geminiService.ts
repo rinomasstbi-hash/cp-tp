@@ -1,98 +1,162 @@
+import { GoogleGenAI, Type } from '@google/genai';
 import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
-import { apiRequest } from './dbService';
 
-// ============================================================================
-// CATATAN PENTING: ARSITEKTUR PROXY
-// ============================================================================
-// Service ini telah diubah total. Alih-alih memanggil Google Gemini API
-// secara langsung dari browser (yang tidak aman), sekarang semua permintaan
-// dikirim ke backend Google Apps Script kita.
-//
-// Backend-lah yang akan menyimpan API Key secara aman dan melakukan
-// panggilan ke Gemini, lalu mengembalikan hasilnya ke sini. Ini disebut
-// "Proxy Pattern" dan merupakan praktik keamanan standar.
-//
-// Anda TIDAK PERLU lagi memasukkan API Key di browser.
-// ============================================================================
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const model = "gemini-2.5-pro";
 
-
-// ============================================================================
-// LANGKAH 1: GENERATE TUJUAN PEMBELAJARAN (TP)
-// ============================================================================
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
     try {
-        // 'input' akan di-serialize dan dikirim ke backend.
-        const result = await apiRequest('proxyGenerateTPs', { input });
-        
-        // Asumsi backend mengembalikan array JSON yang sudah bersih.
-        if (!result || !Array.isArray(result) || result.length === 0) {
-            throw new Error("AI tidak menghasilkan data TP yang valid. Backend mungkin mengalami masalah atau respons kosong.");
-        }
-        
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
+            config: {
+                systemInstruction: "Anda adalah AI asisten guru MTsN 4 Jombang. Hasilkan array objek TPGroup. Hasilkan data JSON murni.",
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            semester: { type: Type.STRING },
+                            materi: { type: Type.STRING },
+                            subMateriGroups: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        subMateri: { type: Type.STRING },
+                                        tps: { type: Type.ARRAY, items: { type: Type.STRING } }
+                                    },
+                                    required: ["subMateri", "tps"]
+                                }
+                            }
+                        },
+                        required: ["semester", "materi", "subMateriGroups"]
+                    }
+                }
+            }
+        });
+        const result = response.text ? JSON.parse(response.text) : null;
+        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result as TPGroup[];
-
-    } catch (error: any) {
-        console.error("Error in generateTPs proxy call:", error);
-        // Lempar ulang error agar bisa ditangkap oleh UI
-        throw new Error(`Gagal membuat TP: ${error.message || 'Kesalahan tidak diketahui dari backend.'}`);
+    } catch (e: any) {
+        console.error(e);
+        throw new Error(`Gagal membuat TP: ${e.message}`);
     }
 };
 
-// ============================================================================
-// LANGKAH 2: GENERATE ALUR TUJUAN PEMBELAJARAN (ATP)
-// ============================================================================
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
     try {
-        const result = await apiRequest('proxyGenerateATP', { tpData });
-        if (!result || !Array.isArray(result) || result.length === 0) {
-            throw new Error("AI tidak menghasilkan data ATP yang valid.");
-        }
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}`,
+            config: {
+                systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            topikMateri: { type: Type.STRING },
+                            tp: { type: Type.STRING },
+                            kodeTp: { type: Type.STRING },
+                            atpSequence: { type: Type.INTEGER },
+                            semester: { type: Type.STRING }
+                        },
+                        required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
+                    }
+                }
+            }
+        });
+        const result = response.text ? JSON.parse(response.text) : null;
+        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result as ATPTableRow[];
     } catch (error: any) {
-       console.error("Error in generateATP proxy call:", error);
+       console.error(error);
        throw new Error(`Gagal membuat ATP: ${error.message}`);
     }
 };
 
-// ============================================================================
-// LANGKAH 3: GENERATE PROGRAM TAHUNAN (PROTA)
-// ============================================================================
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
     try {
-        const result = await apiRequest('proxyGeneratePROTA', { atpData, totalJpPerWeek });
-        if (!result || !Array.isArray(result) || result.length === 0) {
-            throw new Error("AI tidak menghasilkan data PROTA yang valid.");
-        }
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya.`,
+            config: {
+                systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            no: { type: Type.INTEGER },
+                            topikMateri: { type: Type.STRING },
+                            alurTujuanPembelajaran: { type: Type.STRING },
+                            tujuanPembelajaran: { type: Type.STRING },
+                            alokasiWaktu: { type: Type.STRING },
+                            semester: { type: Type.STRING }
+                        },
+                        required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
+                    }
+                }
+            }
+        });
+        const result = response.text ? JSON.parse(response.text) : null;
+        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result as PROTARow[];
     } catch (error: any) {
-       console.error("Error in generatePROTA proxy call:", error);
+       console.error(error);
        throw new Error(`Gagal membuat PROTA: ${error.message}`);
     }
 };
 
-// ============================================================================
-// LANGKAH 4: GENERATE KRITERIA KETERCAPAIAN (KKTP)
-// ============================================================================
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
     try {
-        const result = await apiRequest('proxyGenerateKKTP', { atpData, semester, grade });
-         if (!result || !Array.isArray(result)) { // Boleh array kosong
-            throw new Error("AI mengembalikan data KKTP dalam format yang tidak valid.");
-        }
+        const contentBySem = atpData.content.filter(x => x.semester.toLowerCase() === semester.toLowerCase());
+        if (contentBySem.length === 0) return [];
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
+            config: {
+                systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            no: { type: Type.INTEGER },
+                            materiPokok: { type: Type.STRING },
+                            tp: { type: Type.STRING },
+                            kriteria: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    sangatMahir: { type: Type.STRING },
+                                    mahir: { type: Type.STRING },
+                                    cukupMahir: { type: Type.STRING },
+                                    perluBimbingan: { type: Type.STRING }
+                                },
+                                required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
+                            },
+                            targetKktp: { type: Type.STRING }
+                        },
+                        required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
+                    }
+                }
+            }
+        });
+        const result = response.text ? JSON.parse(response.text) : null;
+        if (!result || !Array.isArray(result)) throw new Error("Respons invalid");
         return result as KKTPRow[];
     } catch (error: any) {
-       console.error("Error in generateKKTP proxy call:", error);
+       console.error(error);
        throw new Error(`Gagal membuat KKTP: ${error.message}`);
     }
 };
 
-// ============================================================================
-// LANGKAH 5: GENERATE PROGRAM SEMESTER (PROSEM) - Murni Algoritmik
-// ============================================================================
-// Fungsi ini tidak memanggil AI, sehingga tidak perlu diubah menjadi proxy.
-// Tetap berjalan di sisi klien untuk kecepatan dan efisiensi.
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
-    
     const isGanjil = semester.toLowerCase() === 'ganjil';
     const months = isGanjil 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']

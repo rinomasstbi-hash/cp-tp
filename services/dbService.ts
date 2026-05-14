@@ -1,20 +1,71 @@
-
-// ====================================================================================
-// !! PENTING: KONFIGURASI BACKEND !!
-// ====================================================================================
-// Ganti nilai placeholder di bawah ini dengan URL "Aplikasi Web" dari Google Apps Script Anda.
-// Contoh: const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/ABCDEFG.../exec";
-// Pastikan URL berada di dalam tanda kutip tunggal (').
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQXtgMGM4L4GqaiwuJticpNDq-d_QOffOMQJTp1ZdLaM8SS3XbSYWMXSNLbbneZI1P/exec';
-
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
 
-/**
- * Recursively cleans '$' symbols from all string values within an object or array.
- * This is a defensive measure to ensure data integrity throughout the app.
- * @param data The data to clean (object, array, string, etc.).
- * @returns The cleaned data.
- */
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+// Convert timestamp (number) back and forth is needed sometimes but we are using numbers via serverTimestamp() which becomes FieldValue then number locally?
+// No, serverTimestamp() evaluates to Date locally if we use toDate(), or number? 
+// Wait, for simplicity let's stick to using Date.now() or let Firebase use Timestamp and we map it to `number`.
+const dateToNumber = (val: any): number => {
+    if (!val) return Date.now();
+    if (typeof val === 'number') return val;
+    if (typeof val.toMillis === 'function') return val.toMillis();
+    if (val instanceof Date) return val.getTime();
+    return Date.now();
+};
+
 const cleanStringsInObject = (data: any): any => {
     if (Array.isArray(data)) {
         return data.map(item => cleanStringsInObject(item));
@@ -34,282 +85,508 @@ const cleanStringsInObject = (data: any): any => {
     return data;
 };
 
+// ============================================================================
+// Approved Users
+// ============================================================================
 
-/**
- * Helper function to ensure nested JSON strings are parsed into arrays and cleans all string fields.
- * This adds robustness, in case the backend returns stringified JSON for these fields.
- * It handles strings, null, or undefined values to prevent runtime errors.
- * @param data The data object to parse.
- * @param jsonFields An array of keys that should contain array data.
- * @returns The parsed and cleaned data object.
- */
-const parseData = <T extends object>(data: any, jsonFields: (keyof T)[]): T => {
-    if (!data || typeof data !== 'object') {
-        return data as T;
+export const isUserApproved = async (email: string | null): Promise<boolean> => {
+    if (!email) return false;
+    if (email === 'rinomasstbi@gmail.com') return true;
+    try {
+        const docRef = doc(db, 'approved_users', email);
+        const docSnap = await getDoc(docRef);
+        return docSnap.exists();
+    } catch (error) {
+        console.error("Error checking user approval:", error);
+        return false;
     }
-    const parsedData = { ...data };
-    for (const field of jsonFields) {
-        const key = field as string;
-        const value = parsedData[key];
-        
-        if (typeof value === 'string') {
-            try {
-                // Only parse non-empty strings, otherwise default to an empty array.
-                parsedData[key] = value ? JSON.parse(value) : [];
-            } catch (e) {
-                console.error(`Failed to parse field "${key}". Defaulting to empty array. Value was:`, value, e);
-                parsedData[key] = [];
-            }
-        } else if (value === null || value === undefined) {
-             // If the field is null or undefined, initialize it as an empty array to ensure type safety.
-             parsedData[key] = [];
-        }
-        // If it's already a valid array, do nothing.
-    }
-    
-    // **FIX:** After parsing structure, clean all string values recursively.
-    return cleanStringsInObject(parsedData) as T;
 };
 
-
-/**
- * Mengirim permintaan ke backend Google Apps Script dengan mekanisme coba lagi (retry).
- * SEMUA permintaan sekarang menggunakan metode POST dengan URLSearchParams untuk keandalan CORS yang lebih baik.
- * @param {string} action - Aksi yang akan dilakukan oleh backend.
- * @param {Record<string, any>} params - Parameter untuk aksi tersebut.
- * @returns {Promise<any>} - Data yang dikembalikan dari API.
- */
-export const apiRequest = async (action: string, params: Record<string, any> = {}) => {
-    const url = GOOGLE_APPS_SCRIPT_URL;
-    
-    const payload = new URLSearchParams();
-    payload.append('action', action);
-    payload.append('params', JSON.stringify(params));
-
-    const options: RequestInit = {
-        method: 'POST',
-        mode: 'cors',
-        cache: 'no-store', // Disable caching explicitly
-        body: payload,
-        credentials: 'omit',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-    };
-
-    const MAX_ATTEMPTS = 5; // Increased reliability
-    // Increased delay to 5000ms to handle "Failed to fetch" errors better (often caused by GAS rate limits or network flakiness)
-    const RETRY_DELAY = 5000; 
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        try {
-            const response = await fetch(url, options);
-            const rawResponseText = await response.text();
-
-            if (rawResponseText.trim().startsWith('<!DOCTYPE html>')) {
-                 throw new Error(`Server Google Apps Script mengembalikan halaman HTML, bukan data JSON. Ini adalah tanda adanya error di sisi server.
-- PASTIKAN Anda sudah melakukan "Deploy" -> "Penerapan baru" setelah menyimpan perubahan pada skrip.
-- Periksa Log Eksekusi di editor Google Apps Script untuk melihat detail error yang sebenarnya.`);
-            }
-
-            let responseData;
-            try {
-                responseData = JSON.parse(rawResponseText);
-            } catch (e) {
-                console.error('Gagal mem-parsing respons JSON dari server:', rawResponseText);
-                if (!response.ok) {
-                     throw new Error(`HTTP error ${response.status} - ${response.statusText}. Respons server tidak dapat diproses.`);
-                }
-                throw new Error('Server memberikan respons dalam format yang tidak terduga. Silakan periksa log server.');
-            }
-
-            if (!response.ok) {
-                const errorMessage = responseData?.message || `HTTP error ${response.status} - ${response.statusText}`;
-                throw new Error(errorMessage);
-            }
-            
-            if (responseData.status === 'error') {
-                const msg = responseData.message || 'Aksi tidak valid.';
-                
-                // Deteksi error model not found (biasanya karena kode backend usang)
-                if (msg.includes('not found for API version') || msg.includes('is not supported for generateContent')) {
-                     throw new Error('⚠️ PERINGATAN SISTEM: Kode Google Apps Script (Backend) Anda usang. Model AI lama sudah tidak didukung. \n\nSOLUSI: Silakan salin ulang kode App Script "Code.gs" terbaru yang diberikan di chat, lalu lakukan DEPLOY ulang.');
-                }
-
-                throw new Error(msg);
-            }
-
-            return responseData.data; // Sukses, keluar dari loop
-
-        } catch (error: any) {
-            console.error(`API request error for action "${action}" (Attempt ${attempt}/${MAX_ATTEMPTS}):`, error);
-
-            const isNetworkError = error instanceof TypeError && error.message === 'Failed to fetch';
-            
-            // Check for specific AI-related errors that should trigger a retry with longer backoff
-            // KITA KECUALIKAN error "NOT_FOUND" atau "PERINGATAN SISTEM" dari retry karena retry tidak akan memperbaikinya.
-            const errorMessage = error.message || '';
-            const isAiTransientError = (
-                errorMessage.includes('429') || 
-                errorMessage.includes('503') || 
-                errorMessage.includes('quota') ||
-                errorMessage.includes('overloaded') ||
-                errorMessage.includes('UNAVAILABLE') ||
-                errorMessage.includes('RESOURCE_EXHAUSTED') ||
-                errorMessage.toLowerCase().includes('terblokir') ||
-                errorMessage.toLowerCase().includes('kosong') ||
-                errorMessage.toLowerCase().includes('blocked')
-            ) && !errorMessage.includes('PERINGATAN SISTEM');
-
-            if ((isNetworkError || isAiTransientError) && attempt < MAX_ATTEMPTS) {
-                // Exponential backoff
-                // If it's an AI rate limit or overload, wait significantly longer (20s) to let it cool down
-                const waitTime = isAiTransientError ? 20000 : (RETRY_DELAY * attempt);
-                console.warn(`Retrying action "${action}" due to transient error. Waiting ${waitTime}ms...`);
-                await new Promise(res => setTimeout(res, waitTime)); 
-                continue; // Lanjut ke percobaan berikutnya
-            }
-            
-            // Jika ini percobaan terakhir atau bukan error yang bisa di-retry, format dan lempar error.
-            let detailedMessage = error.message;
-
-            if (isNetworkError) {
-                detailedMessage = `Gagal terhubung ke server (Failed to fetch).
-1. Periksa koneksi internet Anda.
-2. Jika menggunakan VPN/Proxy, coba matikan.
-3. Script backend mungkin sedang "cold start", silakan coba lagi tombol aksi.`;
-            } 
-            else if (typeof error.message === 'string' && error.message.includes("Cannot read properties of null")) {
-                detailedMessage = `Terjadi kesalahan konfigurasi di backend. Kemungkinan besar, nama salah satu sheet (TP_Data, ATP_Data, dll.) tidak ditemukan di file Google Sheet Anda atau salah ketik di dalam skrip.`;
-            }
-
-            throw new Error(detailedMessage);
-        }
+export const getApprovedUsers = async (): Promise<{email: string}[]> => {
+    try {
+        const querySnapshot = await getDocs(collection(db, 'approved_users'));
+        return querySnapshot.docs.map(doc => ({ email: doc.id }));
+    } catch (error) {
+        console.error("Error getting approved users:", error);
+        return [];
     }
-     // Baris ini seharusnya tidak akan tercapai, tetapi diperlukan agar fungsi memiliki return path.
-    throw new Error('Gagal memproses permintaan setelah semua percobaan.');
 };
 
+export const addApprovedUser = async (email: string): Promise<void> => {
+    try {
+        await setDoc(doc(db, 'approved_users', email), { addedAt: serverTimestamp() });
+    } catch (error) {
+        console.error("Error adding approved user:", error);
+        throw error;
+    }
+};
+
+export const removeApprovedUser = async (email: string): Promise<void> => {
+    try {
+        await deleteDoc(doc(db, 'approved_users', email));
+    } catch (error) {
+         console.error("Error removing approved user:", error);
+         throw error;
+    }
+};
+
+// ============================================================================
+// TP (Tujuan Pembelajaran)
+// ============================================================================
 
 export const getTPsBySubject = async (subject: string): Promise<TPData[]> => {
-    const data = await apiRequest('getTPsBySubject', { subject });
-    if (Array.isArray(data)) {
-        return data.map(tp => parseData<TPData>(tp, ['tpGroups', 'cpElements']));
+    const q = query(collection(db, 'tps'), where('subject', '==', subject));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt),
+                updatedAt: dateToNumber(data.updatedAt)
+            }) as TPData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'tps');
+        return [];
     }
-    return [];
 };
 
 export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<TPData> => {
-    const result = await apiRequest('saveTP', { data });
-    return parseData<TPData>(result, ['tpGroups', 'cpElements']);
+    const newDocRef = doc(collection(db, 'tps'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser!.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    };
+    try {
+        await setDoc(newDocRef, payload);
+        return {
+            ...data,
+            id: newDocRef.id,
+            userId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'tps');
+        throw error;
+    }
 };
 
 export const updateTP = async (id: string, data: Partial<TPData>): Promise<TPData> => {
-    const result = await apiRequest('updateTP', { id, data });
-    return parseData<TPData>(result, ['tpGroups', 'cpElements']);
+    const docRef = doc(db, 'tps', id);
+    try {
+        const docSnap = await getDoc(docRef);
+        if(!docSnap.exists()) throw new Error("Document not found");
+        const currentData = docSnap.data();
+        
+        const payload = {
+            userId: currentData.userId,
+            subject: data.subject ?? currentData.subject,
+            cpElements: data.cpElements ?? currentData.cpElements,
+            grade: data.grade ?? currentData.grade,
+            creatorEmail: data.creatorEmail ?? currentData.creatorEmail,
+            creatorName: data.creatorName ?? currentData.creatorName,
+            cpSourceVersion: data.cpSourceVersion ?? currentData.cpSourceVersion,
+            additionalNotes: data.additionalNotes ?? currentData.additionalNotes,
+            tpGroups: data.tpGroups ?? currentData.tpGroups,
+            createdAt: currentData.createdAt,
+            updatedAt: serverTimestamp()
+        };
+        
+        await updateDoc(docRef, payload);
+        return {
+            ...currentData,
+            ...payload,
+            id,
+            createdAt: dateToNumber(currentData.createdAt),
+            updatedAt: Date.now()
+        } as TPData;
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `tps/${id}`);
+        throw error;
+    }
 };
 
-export const deleteTP = (id: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteTP', { id });
+export const deleteTP = async (id: string): Promise<{ success: boolean }> => {
+    try {
+        await deleteDoc(doc(db, 'tps', id));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `tps/${id}`);
+        throw error;
+    }
 };
 
-export const deleteATPsByTPId = (tpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteATPsByTPId', { tpId });
+// ============================================================================
+// ATP (Alur Tujuan Pembelajaran)
+// ============================================================================
+
+export const deleteATPsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return { success: false };
+    const q = query(collection(db, 'atps'), where('tpId', '==', tpId), where('userId', '==', userId));
+    try {
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+         handleFirestoreError(error, OperationType.DELETE, `atps`);
+         throw error;
+    }
 };
 
 export const getATPsByTPId = async (tpId: string): Promise<ATPData[]> => {
-    const data = await apiRequest('getATPsByTPId', { tpId });
-    if (Array.isArray(data)) {
-        return data.map(atp => parseData<ATPData>(atp, ['content']));
+    const q = query(collection(db, 'atps'), where('tpId', '==', tpId));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt)
+            }) as ATPData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'atps');
+        return [];
     }
-    return [];
 };
 
-export const saveATP = async (data: Omit<ATPData, 'id' | 'createdAt'>): Promise<ATPData> => {
-    const result = await apiRequest('saveATP', { data });
-    return parseData<ATPData>(result, ['content']);
+export const saveATP = async (data: Omit<ATPData, 'id' | 'createdAt' | 'userId'>): Promise<ATPData> => {
+    const newDocRef = doc(collection(db, 'atps'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser!.uid,
+        createdAt: serverTimestamp(),
+    };
+    try {
+        await setDoc(newDocRef, payload);
+        return {
+            ...data,
+            id: newDocRef.id,
+            userId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'atps');
+        throw error;
+    }
 };
 
-export const deleteATP = (id: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteATP', { id });
+export const deleteATP = async (id: string): Promise<{ success: boolean }> => {
+    try {
+        await deleteDoc(doc(db, 'atps', id));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `atps/${id}`);
+        throw error;
+    }
 };
 
 export const updateATP = async (id: string, data: Partial<ATPData>): Promise<ATPData> => {
-    const result = await apiRequest('updateATP', { id, data });
-    return parseData<ATPData>(result, ['content']);
+    const docRef = doc(db, 'atps', id);
+    try {
+        const docSnap = await getDoc(docRef);
+        if(!docSnap.exists()) throw new Error("Document not found");
+        const currentData = docSnap.data();
+        
+        const payload = {
+            userId: currentData.userId,
+            tpId: data.tpId ?? currentData.tpId,
+            subject: data.subject ?? currentData.subject,
+            content: data.content ?? currentData.content,
+            creatorName: data.creatorName ?? currentData.creatorName,
+            creatorEmail: data.creatorEmail ?? currentData.creatorEmail,
+            createdAt: currentData.createdAt
+        };
+        await updateDoc(docRef, payload);
+        return {
+            ...currentData,
+            ...payload,
+            id,
+            createdAt: dateToNumber(currentData.createdAt)
+        } as ATPData;
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `atps/${id}`);
+        throw error;
+    }
 };
 
-// --- PROTA Functions ---
-export const deletePROTAsByTPId = (tpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROTAsByTPId', { tpId });
+// ============================================================================
+// PROTA (Program Tahunan)
+// ============================================================================
+
+export const deletePROTAsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return { success: false };
+    const q = query(collection(db, 'protas'), where('tpId', '==', tpId), where('userId', '==', userId));
+    try {
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+         handleFirestoreError(error, OperationType.DELETE, `protas`);
+         throw error;
+    }
 };
 
 export const getPROTAsByTPId = async (tpId: string): Promise<PROTAData[]> => {
-    const data = await apiRequest('getPROTAsByTPId', { tpId });
-    if (Array.isArray(data)) {
-        return data.map(prota => parseData<PROTAData>(prota, ['content']));
+    const q = query(collection(db, 'protas'), where('tpId', '==', tpId));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt)
+            }) as PROTAData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'protas');
+        return [];
     }
-    return [];
 };
 
-export const savePROTA = async (data: Omit<PROTAData, 'id' | 'createdAt'>): Promise<PROTAData> => {
-    const result = await apiRequest('savePROTA', { data });
-    return parseData<PROTAData>(result, ['content']);
+export const savePROTA = async (data: Omit<PROTAData, 'id' | 'createdAt' | 'userId'>): Promise<PROTAData> => {
+    const newDocRef = doc(collection(db, 'protas'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser!.uid,
+        createdAt: serverTimestamp(),
+    };
+    try {
+        await setDoc(newDocRef, payload);
+        return {
+            ...data,
+            id: newDocRef.id,
+            userId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'protas');
+        throw error;
+    }
 };
 
-export const deletePROTA = (id: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROTA', { id });
+export const deletePROTA = async (id: string): Promise<{ success: boolean }> => {
+    try {
+        await deleteDoc(doc(db, 'protas', id));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `protas/${id}`);
+        throw error;
+    }
 };
 
 export const updatePROTA = async (id: string, data: Partial<PROTAData>): Promise<PROTAData> => {
-    const result = await apiRequest('updatePROTA', { id, data });
-    return parseData<PROTAData>(result, ['content']);
+    const docRef = doc(db, 'protas', id);
+    try {
+        const docSnap = await getDoc(docRef);
+        if(!docSnap.exists()) throw new Error("Document not found");
+        const currentData = docSnap.data();
+        const payload = {
+            userId: currentData.userId,
+            tpId: data.tpId ?? currentData.tpId,
+            subject: data.subject ?? currentData.subject,
+            jamPertemuan: data.jamPertemuan ?? currentData.jamPertemuan,
+            content: data.content ?? currentData.content,
+            creatorName: data.creatorName ?? currentData.creatorName,
+            createdAt: currentData.createdAt
+        };
+        await updateDoc(docRef, payload);
+        return {
+            ...currentData,
+            ...payload,
+            id,
+            createdAt: dateToNumber(currentData.createdAt)
+        } as PROTAData;
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `protas/${id}`);
+        throw error;
+    }
 };
 
-// --- KKTP Functions ---
+// ============================================================================
+// KKTP
+// ============================================================================
+
 export const getKKTPsByATPId = async (atpId: string): Promise<KKTPData[]> => {
-    const data = await apiRequest('getKKTPsByATPId', { atpId });
-    if (Array.isArray(data)) {
-        return data.map(kktp => parseData<KKTPData>(kktp, ['content']));
+    const q = query(collection(db, 'kktps'), where('atpId', '==', atpId));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt)
+            }) as KKTPData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'kktps');
+        return [];
     }
-    return [];
 };
 
-export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt'>): Promise<KKTPData> => {
-    const result = await apiRequest('saveKKTP', { data });
-    return parseData<KKTPData>(result, ['content']);
+export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt' | 'userId'>): Promise<KKTPData> => {
+    const newDocRef = doc(collection(db, 'kktps'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser!.uid,
+        createdAt: serverTimestamp(),
+    };
+    try {
+        await setDoc(newDocRef, payload);
+        return {
+            ...data,
+            id: newDocRef.id,
+            userId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'kktps');
+        throw error;
+    }
 };
 
-export const deleteKKTP = (id: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteKKTP', { id });
+export const deleteKKTP = async (id: string): Promise<{ success: boolean }> => {
+    try {
+        await deleteDoc(doc(db, 'kktps', id));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `kktps/${id}`);
+        throw error;
+    }
 };
 
-export const deleteKKTPsByATPId = (atpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteKKTPsByATPId', { atpId });
+export const deleteKKTPsByATPId = async (atpId: string): Promise<{ success: boolean }> => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return { success: false };
+    const q = query(collection(db, 'kktps'), where('atpId', '==', atpId), where('userId', '==', userId));
+    try {
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+         handleFirestoreError(error, OperationType.DELETE, `kktps`);
+         throw error;
+    }
 };
 
-export const deleteKKTPsByTPId = (tpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deleteKKTPsByTPId', { tpId });
+export const deleteKKTPsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
+    // Need to do this properly. Easiest way in NoSQL is mapping, but we don't have tpId on KKTP directly in schema.
+    // However the previous implementation just passed tpId to GAS backend.
+    // Let's first query ATPs for this TP, then delete related KKTPs.
+    try {
+        const atps = await getATPsByTPId(tpId);
+        const batch = writeBatch(db);
+        for(const atp of atps) {
+             const userId = auth.currentUser?.uid || '';
+             const q = query(collection(db, 'kktps'), where('atpId', '==', atp.id), where('userId', '==', userId));
+             const snapshot = await getDocs(q);
+             snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        }
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `kktps_by_tp`);
+        throw error;
+    }
 };
 
-// --- PROSEM Functions ---
+// ============================================================================
+// PROSEM
+// ============================================================================
+
 export const getPROSEMByProtaId = async (protaId: string): Promise<PROSEMData[]> => {
-    const data = await apiRequest('getPROSEMsByPROTAId', { protaId });
-    if (Array.isArray(data)) {
-        return data.map(prosem => parseData<PROSEMData>(prosem, ['content', 'headers']));
+    const q = query(collection(db, 'prosems'), where('protaId', '==', protaId));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt)
+            }) as PROSEMData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'prosems');
+        return [];
     }
-    return [];
 };
 
-export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt'>): Promise<PROSEMData> => {
-    const result = await apiRequest('savePROSEM', { data });
-    return parseData<PROSEMData>(result, ['content', 'headers']);
+export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt' | 'userId'>): Promise<PROSEMData> => {
+    const newDocRef = doc(collection(db, 'prosems'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser!.uid,
+        createdAt: serverTimestamp(),
+    };
+    try {
+        await setDoc(newDocRef, payload);
+        return {
+            ...data,
+            id: newDocRef.id,
+            userId: auth.currentUser!.uid,
+            createdAt: Date.now(),
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'prosems');
+        throw error;
+    }
 };
 
-export const deletePROSEMsByPROTAId = (protaId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROSEMsByPROTAId', { protaId });
+export const deletePROSEMsByPROTAId = async (protaId: string): Promise<{ success: boolean }> => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return { success: false };
+    const q = query(collection(db, 'prosems'), where('protaId', '==', protaId), where('userId', '==', userId));
+    try {
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+         handleFirestoreError(error, OperationType.DELETE, `prosems`);
+         throw error;
+    }
 };
 
-export const deletePROSEMsByTPId = (tpId: string): Promise<{ success: boolean }> => {
-    return apiRequest('deletePROSEMsByTPId', { tpId });
+export const deletePROSEMsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
+    try {
+        const protas = await getPROTAsByTPId(tpId);
+        const batch = writeBatch(db);
+        for(const prota of protas) {
+             const userId = auth.currentUser?.uid || '';
+             const q = query(collection(db, 'prosems'), where('protaId', '==', prota.id), where('userId', '==', userId));
+             const snapshot = await getDocs(q);
+             snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        }
+        await batch.commit();
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `prosems_by_tp`);
+        throw error;
+    }
 };

@@ -10,12 +10,17 @@ import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon, SaveIcon } from './components/icons';
 
-const Header: React.FC = () => {
+import Login from './components/Login';
+import ManageAccess from './components/ManageAccess';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { auth } from './services/dbService';
+
+const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void }> = ({ userEmail, currentView, onViewChange, onLogin }) => {
   return (
     <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-start h-20">
-          <div className="flex items-center">
+        <div className="flex items-center justify-between h-20">
+          <div className="flex items-center cursor-pointer" onClick={() => onViewChange('select_subject')}>
             <div className="flex-shrink-0">
                <img 
                  src="https://id.ppdb.mtsn4jombang.org/assets/img/logo/logo_ppdb695.png" 
@@ -31,6 +36,31 @@ const Header: React.FC = () => {
                 Tahun Pelajaran 2025/2026
               </span>
             </div>
+          </div>
+          <div className="flex items-center space-x-4">
+            {userEmail === 'rinomasstbi@gmail.com' && (
+              <button
+                onClick={() => onViewChange(currentView === 'manage_access' ? 'select_subject' : 'manage_access')}
+                className="text-sm font-medium text-teal-400 hover:text-teal-300 transition"
+              >
+                {currentView === 'manage_access' ? 'Kembali ke Aplikasi' : 'Kelola Akses'}
+              </button>
+            )}
+            {userEmail ? (
+                <button
+                   onClick={() => signOut(auth).then(() => window.location.reload())}
+                   className="text-sm font-medium border border-slate-600 rounded-md px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+                >
+                  Sign out
+                </button>
+            ) : (
+                <button
+                   onClick={onLogin}
+                   className="text-sm font-medium border border-teal-500 bg-teal-600 rounded-md px-4 py-1.5 text-white hover:bg-teal-700 transition flex items-center space-x-2"
+                >
+                  <span>Login Guru</span>
+                </button>
+            )}
           </div>
         </div>
       </div>
@@ -128,7 +158,25 @@ const SemesterDisplay: React.FC<{ title: string; groups: TPGroup[]; numberingOff
 
 
 const App: React.FC = () => {
-  const [view, setView] = useState<View>('select_subject');
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [isApproved, setIsApproved] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+         const approved = await apiService.isUserApproved(currentUser.email);
+         setIsApproved(approved);
+      } else {
+         setIsApproved(false);
+      }
+      setAuthChecking(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const [view, setView] = useState<View | 'manage_access'>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [tps, setTps] = useState<TPData[]>([]);
   const [selectedTP, setSelectedTP] = useState<TPData | null>(null);
@@ -248,68 +296,69 @@ const App: React.FC = () => {
   useEffect(() => {
     const loadAllDeviceStatus = async (tpId: string) => {
         setLoadingState({ isLoading: true, title: 'Memuat Status', message: 'Memeriksa perangkat ajar yang sudah ada...' });
-        let atpsData: ATPData[] = [];
-        let protasData: PROTAData[] = [];
 
         try {
-            // Step 1: Fetch ATP and PROTA separately for resilience
-            try {
-                atpsData = await apiService.getATPsByTPId(tpId);
+            const [atpsResult, protasResult] = await Promise.allSettled([
+                apiService.getATPsByTPId(tpId),
+                apiService.getPROTAsByTPId(tpId)
+            ]);
+
+            let atpsData: ATPData[] = [];
+            let protasData: PROTAData[] = [];
+
+            if (atpsResult.status === 'fulfilled') {
+                atpsData = atpsResult.value;
                 setAtps(atpsData);
-            } catch (e) {
-                console.error("Gagal memuat ATP:", e);
+            } else {
+                console.error("Gagal memuat ATP:", atpsResult.reason);
                 setAtpError("Gagal memuat data ATP.");
             }
 
-            // increased delay to prevent rate limit (was 1000)
-            await new Promise(r => setTimeout(r, 1500));
-
-            try {
-                protasData = await apiService.getPROTAsByTPId(tpId);
+            if (protasResult.status === 'fulfilled') {
+                protasData = protasResult.value;
                 setProtas(protasData);
-            } catch (e) {
-                console.error("Gagal memuat PROTA:", e);
+            } else {
+                console.error("Gagal memuat PROTA:", protasResult.reason);
                 setProtaError("Gagal memuat data PROTA.");
             }
 
-            // increased delay to prevent rate limit (was 1000)
-            await new Promise(r => setTimeout(r, 1500));
+            const dependentPromises = [];
 
-            // Step 2: Fetch dependents based on what was successfully loaded
             if (atpsData.length > 0) {
-                try {
-                    const kktpsData = await apiService.getKKTPsByATPId(atpsData[0].id);
-                    setKktpData(kktpsData.length > 0 ? {
-                        ganjil: kktpsData.find(k => k.semester === 'Ganjil') || null,
-                        genap: kktpsData.find(k => k.semester === 'Genap') || null,
-                    } : null);
-                } catch (e) {
-                     console.error("Gagal memuat KKTP:", e);
-                     // Note: Don't set global error to avoid blocking the UI if just KKTP fails
-                }
+                dependentPromises.push((async () => {
+                    try {
+                        const kktpsData = await apiService.getKKTPsByATPId(atpsData[0].id);
+                        setKktpData(kktpsData.length > 0 ? {
+                            ganjil: kktpsData.find(k => k.semester === 'Ganjil') || null,
+                            genap: kktpsData.find(k => k.semester === 'Genap') || null,
+                        } : null);
+                    } catch (e) {
+                         console.error("Gagal memuat KKTP:", e);
+                    }
+                })());
             } else {
                 setKktpData(null);
             }
 
-            // increased delay to prevent rate limit (was 1000)
-            await new Promise(r => setTimeout(r, 1500));
-
             if (protasData.length > 0) {
-                try {
-                    const prosemDataResult = await apiService.getPROSEMByProtaId(protasData[0].id);
-                    setProsemData(prosemDataResult.length > 0 ? {
-                        ganjil: prosemDataResult.find(p => p.semester === 'Ganjil') || null,
-                        genap: prosemDataResult.find(p => p.semester === 'Genap') || null,
-                    } : null);
-                } catch (e) {
-                    console.error("Gagal memuat PROSEM:", e);
-                }
+                dependentPromises.push((async () => {
+                    try {
+                        const prosemDataResult = await apiService.getPROSEMByProtaId(protasData[0].id);
+                        setProsemData(prosemDataResult.length > 0 ? {
+                            ganjil: prosemDataResult.find(p => p.semester === 'Ganjil') || null,
+                            genap: prosemDataResult.find(p => p.semester === 'Genap') || null,
+                        } : null);
+                    } catch (e) {
+                        console.error("Gagal memuat PROSEM:", e);
+                    }
+                })());
             } else {
                 setProsemData(null);
             }
 
+            await Promise.allSettled(dependentPromises);
+
         } catch (error: any) {
-            // This is a fallback for any unexpected errors in the flow
             setGlobalError(error.message);
             setAtps([]);
             setProtas([]);
@@ -1071,11 +1120,11 @@ const App: React.FC = () => {
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Dr. Aziz Ja'far, S.Th.I., M.Pd.I</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. 197610062007101008</td>
               <td class="signature-td">NIP. -</td>
             </tr>
           </tbody>
@@ -1571,6 +1620,9 @@ const App: React.FC = () => {
     }
 
     switch (view) {
+      case 'manage_access':
+        return <ManageAccess />;
+
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} />;
 
@@ -1635,33 +1687,37 @@ const App: React.FC = () => {
                               Pada: {new Date(tp.createdAt).toLocaleString('id-ID')}
                           </p>
                       </div>
-                      <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
-                         <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
-                          <EditIcon className="w-4 h-4"/>
-                          <span>Edit</span>
-                        </button>
-                        <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors">
-                          <TrashIcon className="w-4 h-4"/>
-                          <span>Hapus</span>
-                        </button>
-                      </div>
+                      {user && isApproved && (
+                          <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
+                             <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
+                              <EditIcon className="w-4 h-4"/>
+                              <span>Edit</span>
+                            </button>
+                            <button onClick={(e) => handleDelete(e, tp)} title="Hapus TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition-colors">
+                              <TrashIcon className="w-4 h-4"/>
+                              <span>Hapus</span>
+                            </button>
+                          </div>
+                      )}
                   </div>
                 </div>
               ))}
-              <button 
-                onClick={handleCreateNew} 
-                className="group w-full bg-transparent p-4 rounded-lg border-2 border-dashed border-slate-300 hover:border-teal-500 hover:bg-slate-50 transition-all duration-300 cursor-pointer flex items-center text-slate-500 hover:text-teal-600"
-              >
-                <div className="flex items-center gap-5 w-full">
-                    <div className="flex-shrink-0 w-20 h-20 bg-slate-200/50 rounded-xl flex items-center justify-center group-hover:bg-teal-100/50 transition-colors">
-                        <PlusIcon className="w-10 h-10" />
+              {user && isApproved && (
+                  <button 
+                    onClick={handleCreateNew} 
+                    className="group w-full bg-transparent p-4 rounded-lg border-2 border-dashed border-slate-300 hover:border-teal-500 hover:bg-slate-50 transition-all duration-300 cursor-pointer flex items-center text-slate-500 hover:text-teal-600"
+                  >
+                    <div className="flex items-center gap-5 w-full">
+                        <div className="flex-shrink-0 w-20 h-20 bg-slate-200/50 rounded-xl flex items-center justify-center group-hover:bg-teal-100/50 transition-colors">
+                            <PlusIcon className="w-10 h-10" />
+                        </div>
+                        <div className="flex-grow text-left">
+                            <h3 className="text-lg font-semibold">Buat Tujuan Pembelajaran Baru</h3>
+                            <p className="text-sm mt-1">Mulai dari awal untuk membuat set TP, ATP, dan perangkat ajar lainnya.</p>
+                        </div>
                     </div>
-                    <div className="flex-grow text-left">
-                        <h3 className="text-lg font-semibold">Buat Tujuan Pembelajaran Baru</h3>
-                        <p className="text-sm mt-1">Mulai dari awal untuk membuat set TP, ATP, dan perangkat ajar lainnya.</p>
-                    </div>
-                </div>
-              </button>
+                  </button>
+              )}
             </div>
           </div>
         );
@@ -1752,10 +1808,12 @@ const App: React.FC = () => {
                   <h1 className="text-3xl font-bold text-slate-800">Alur Tujuan Pembelajaran (ATP)</h1>
                   <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
                 </div>
-                <button onClick={handleCreateNewAtp} disabled={atpGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
-                    <SparklesIcon className="w-5 h-5"/>
-                    Buat ATP Baru dengan AI
-                </button>
+                {user && isApproved && (
+                    <button onClick={handleCreateNewAtp} disabled={atpGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                        <SparklesIcon className="w-5 h-5"/>
+                        Buat ATP Baru dengan AI
+                    </button>
+                )}
             </div>
             {atpError && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
@@ -1779,16 +1837,22 @@ const App: React.FC = () => {
                             <p className="text-sm text-slate-500">Total {atp.content.length} alur tujuan pembelajaran</p>
                             <p className="text-xs text-slate-400 mt-2">Dibuat pada: {new Date(atp.createdAt).toLocaleString('id-ID')}</p>
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                           <button onClick={(e) => handleEditATP(e, atp)} title="Edit ATP" className="p-2 text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-full"><EditIcon className="w-5 h-5"/></button>
-                           <button onClick={(e) => handleDeleteATP(e, atp)} title="Hapus ATP" className="p-2 text-red-600 bg-red-100 hover:bg-red-200 rounded-full"><TrashIcon className="w-5 h-5"/></button>
-                        </div>
+                        {user && isApproved && (
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                               <button onClick={(e) => handleEditATP(e, atp)} title="Edit ATP" className="p-2 text-blue-600 bg-blue-100 hover:bg-blue-200 rounded-full"><EditIcon className="w-5 h-5"/></button>
+                               <button onClick={(e) => handleDeleteATP(e, atp)} title="Hapus ATP" className="p-2 text-red-600 bg-red-100 hover:bg-red-200 rounded-full"><TrashIcon className="w-5 h-5"/></button>
+                            </div>
+                        )}
                     </div>
                     </div>
                 ))}
                 </div>
             ) : (
-                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md"><h3 className="text-xl font-semibold text-slate-700">Belum Ada ATP</h3><p className="text-slate-500 mt-2">Belum ada Alur Tujuan Pembelajaran yang dibuat untuk set TP ini.</p><p className="text-slate-500">Silakan klik tombol "Buat ATP Baru" untuk memulai.</p></div>
+                <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
+                   <h3 className="text-xl font-semibold text-slate-700">Belum Ada ATP</h3>
+                   <p className="text-slate-500 mt-2">Belum ada Alur Tujuan Pembelajaran yang dibuat untuk set TP ini.</p>
+                   {user && isApproved && <p className="text-slate-500">Silakan klik tombol "Buat ATP Baru" untuk memulai.</p>}
+                </div>
             )}
           </div>
         );
@@ -1911,9 +1975,11 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 {protaExists && (
                   <>
-                    <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                      <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                    </button>
+                    {user && isApproved && (
+                        <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                          <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                        </button>
+                    )}
                     <button onClick={handleExportProtaToWord} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                       <DownloadIcon className="w-5 h-5"/> Ekspor ke Word
                     </button>
@@ -1933,13 +1999,15 @@ const App: React.FC = () => {
                 <div className="text-center py-16 px-4 bg-white rounded-lg shadow-md">
                     <h3 className="text-xl font-semibold text-slate-700">Belum Ada PROTA</h3>
                     <p className="text-slate-500 mt-2 max-w-xl mx-auto">Program Tahunan (PROTA) dibuat berdasarkan Alur Tujuan Pembelajaran (ATP). Silakan pilih ATP terlebih dahulu.</p>
-                    <button 
-                        onClick={() => setView('view_atp_list')} 
-                        className="mt-6 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700"
-                    >
-                        <FlowChartIcon className="w-5 h-5"/>
-                        Pilih ATP untuk Membuat PROTA
-                    </button>
+                    {user && isApproved && (
+                        <button 
+                            onClick={() => setView('view_atp_list')} 
+                            className="mt-6 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700"
+                        >
+                            <FlowChartIcon className="w-5 h-5"/>
+                            Pilih ATP untuk Membuat PROTA
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="bg-white rounded-lg shadow-lg p-6">
@@ -1989,10 +2057,12 @@ const App: React.FC = () => {
                     <h2 className="text-2xl font-bold text-slate-800">
                         Rincian KKTP - Semester {data.semester}
                     </h2>
-                    <div className="flex gap-2">
-                        <button onClick={() => handleDeleteAndRegenerateKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
-                            <SparklesIcon className="w-5 h-5" /> Buat Ulang
-                        </button>
+                    <div className="flex gap-2 print:hidden">
+                        {user && isApproved && (
+                            <button onClick={() => handleDeleteAndRegenerateKKTP(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                                <SparklesIcon className="w-5 h-5" /> Buat Ulang
+                            </button>
+                        )}
                         <button onClick={() => handleExportKktpToWord(data.semester)} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                         </button>
@@ -2083,23 +2153,25 @@ const App: React.FC = () => {
                             <p className="text-slate-500 mt-1 mb-6 max-w-sm">
                                 Belum ada Kriteria Ketercapaian Tujuan Pembelajaran untuk Semester Ganjil.
                             </p>
-                            <button 
-                                onClick={() => handleGenerateSingleKktp('Ganjil')} 
-                                disabled={kktpGenerationProgress.isLoading}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
-                            >
-                                {kktpGenerationProgress.isLoading && activeKktpSemester === 'Ganjil' ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        <span>Memproses...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <SparklesIcon className="w-5 h-5" />
-                                        Buat KKTP Semester Ganjil
-                                    </>
-                                )}
-                            </button>
+                            {user && isApproved && (
+                                <button 
+                                    onClick={() => handleGenerateSingleKktp('Ganjil')} 
+                                    disabled={kktpGenerationProgress.isLoading}
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {kktpGenerationProgress.isLoading && activeKktpSemester === 'Ganjil' ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Memproses...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <SparklesIcon className="w-5 h-5" />
+                                            Buat KKTP Semester Ganjil
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
                       )
                   )}
@@ -2115,23 +2187,25 @@ const App: React.FC = () => {
                             <p className="text-slate-500 mt-1 mb-6 max-w-sm">
                                 Belum ada Kriteria Ketercapaian Tujuan Pembelajaran untuk Semester Genap.
                             </p>
-                            <button 
-                                onClick={() => handleGenerateSingleKktp('Genap')} 
-                                disabled={kktpGenerationProgress.isLoading}
-                                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
-                            >
-                                {kktpGenerationProgress.isLoading && activeKktpSemester === 'Genap' ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        <span>Memproses...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <SparklesIcon className="w-5 h-5" />
-                                        Buat KKTP Semester Genap
-                                    </>
-                                )}
-                            </button>
+                            {user && isApproved && (
+                                <button 
+                                    onClick={() => handleGenerateSingleKktp('Genap')} 
+                                    disabled={kktpGenerationProgress.isLoading}
+                                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {kktpGenerationProgress.isLoading && activeKktpSemester === 'Genap' ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Memproses...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <SparklesIcon className="w-5 h-5" />
+                                            Buat KKTP Semester Genap
+                                        </>
+                                    )}
+                                </button>
+                            )}
                         </div>
                       )
                   )}
@@ -2196,9 +2270,11 @@ const App: React.FC = () => {
                     </div>
                     {prosemExists && (
                         <div className="flex items-center gap-3">
-                            <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                                <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                            </button>
+                            {user && isApproved && (
+                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -2240,15 +2316,17 @@ const App: React.FC = () => {
                                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                                         </button>
                                     ) : (
-                                        <button onClick={() => handleGenerateSingleProsem('Ganjil')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
-                                            <SparklesIcon className="w-5 h-5" /> Buat PROSEM Ganjil
-                                        </button>
+                                        user && isApproved && (
+                                            <button onClick={() => handleGenerateSingleProsem('Ganjil')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                                                <SparklesIcon className="w-5 h-5" /> Buat PROSEM Ganjil
+                                            </button>
+                                        )
                                     )}
                                 </div>
                             </div>
                             {prosemData?.ganjil 
                                 ? <PROSEMTableContent data={prosemData.ganjil} /> 
-                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil. Klik tombol 'Buat PROSEM Ganjil' untuk memulai.</div>
+                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil. {user && isApproved && "Klik tombol 'Buat PROSEM Ganjil' untuk memulai."}</div>
                             }
                         </div>
                     )}
@@ -2262,15 +2340,17 @@ const App: React.FC = () => {
                                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                                         </button>
                                     ) : (
-                                        <button onClick={() => handleGenerateSingleProsem('Genap')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
-                                            <SparklesIcon className="w-5 h-5" /> Buat PROSEM Genap
-                                        </button>
+                                        user && isApproved && (
+                                            <button onClick={() => handleGenerateSingleProsem('Genap')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
+                                                <SparklesIcon className="w-5 h-5" /> Buat PROSEM Genap
+                                            </button>
+                                        )
                                     )}
                                 </div>
                             </div>
                             {prosemData?.genap 
                                 ? <PROSEMTableContent data={prosemData.genap} /> 
-                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Genap. Klik tombol 'Buat PROSEM Genap' untuk memulai.</div>
+                                : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Genap. {user && isApproved && "Klik tombol 'Buat PROSEM Genap' untuk memulai."}</div>
                             }
                         </div>
                     )}
@@ -2301,9 +2381,54 @@ const App: React.FC = () => {
     }
   };
 
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  if (authChecking) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (user && !isApproved) {
+    return (
+      <div className="bg-slate-100 min-h-screen">
+        <Header userEmail={user.email} currentView={view} onViewChange={(v) => setView(v as View | 'manage_access')} onLogin={() => {}} />
+        <div className="max-w-7xl mx-auto px-4 py-16 text-center">
+          <AlertIcon className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-3xl font-bold text-slate-800 mb-4">Akses Menunggu Verifikasi</h2>
+          <p className="text-xl text-slate-600 max-w-2xl mx-auto mb-8">
+            Akun Anda (<span className="font-semibold">{user.email}</span>) telah berhasil login, namun belum diverifikasi oleh admin.
+            Harap hubungi <a href="mailto:rinomasstbi@gmail.com" className="text-teal-600 font-bold hover:underline">rinomasstbi@gmail.com</a> untuk meminta akses ke aplikasi Asisten Guru (AGRU).
+          </p>
+          <button 
+             onClick={() => window.location.reload()}
+             className="bg-teal-600 hover:bg-teal-700 text-white font-medium py-3 px-8 rounded-lg shadow-md transition"
+          >
+            Cek Status Akses Lagi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-slate-100 min-h-screen">
-      <Header />
+      <Header userEmail={user?.email} currentView={view} onViewChange={(v) => setView(v as View | 'manage_access')} onLogin={() => setShowLoginModal(true)} />
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="relative bg-white rounded-lg shadow-lg max-w-md w-full">
+            <button 
+              onClick={() => setShowLoginModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+               <CloseIcon className="w-6 h-6" />
+            </button>
+            <Login onLoginSuccess={() => setShowLoginModal(false)} />
+          </div>
+        </div>
+      )}
       {copyNotification && (
           <div className="fixed top-24 right-6 bg-slate-800 text-white text-sm font-semibold py-2 px-4 rounded-md shadow-lg z-50 animate-fade-in-out">
               {copyNotification}
