@@ -22,7 +22,7 @@ interface SubjectSelectorProps {
 }
 
 const getSubjectIcon = (subject: string) => {
-  const className = "h-24 w-24 text-white";
+  const className = "h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 text-white";
   
   if (subject.includes("Qur'an") || subject.includes("Akidah") || subject.includes("Fikih") || subject.includes("Islam") || subject.includes("Aswaja") || subject.includes("Arab")) {
     return <MosqueIcon className={className} />;
@@ -100,19 +100,19 @@ const SubjectSelector: React.FC<SubjectSelectorProps> = ({ onSelectSubject }) =>
       </div>
       <main className="w-full max-w-7xl">
         {filteredSubjects.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {filteredSubjects.map((subject, index) => (
               <button
                 key={subject}
                 onClick={() => onSelectSubject(subject)}
-                className={`group relative flex flex-col justify-start p-6 h-36 rounded-2xl shadow-lg text-white overflow-hidden transition-transform duration-300 transform hover:scale-105 bg-gradient-to-br ${gradients[index % gradients.length]}`}
+                className={`group relative flex flex-col justify-start p-4 md:p-6 h-28 md:h-36 rounded-2xl shadow-lg text-white overflow-hidden transition-transform duration-300 transform hover:scale-105 bg-gradient-to-br ${gradients[index % gradients.length]}`}
               >
                 <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
                   {getSubjectIcon(subject)}
                 </div>
-                <div className="relative z-10">
-                  <h3 className="text-2xl font-bold tracking-wide">{subject}</h3>
-                  <div className="w-10 h-1 bg-white/50 mt-2 rounded-full"></div>
+                <div className="relative z-10 w-full">
+                  <h3 className="text-lg sm:text-lg md:text-2xl font-bold tracking-tight md:tracking-wide leading-tight line-clamp-2 md:line-clamp-none">{subject}</h3>
+                  <div className="w-8 md:w-10 h-1 bg-white/50 mt-2 md:mt-2 rounded-full"></div>
                 </div>
               </button>
             ))}

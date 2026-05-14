@@ -41,7 +41,7 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
             {userEmail === 'rinomasstbi@gmail.com' && (
               <button
                 onClick={() => onViewChange(currentView === 'manage_access' ? 'select_subject' : 'manage_access')}
-                className="text-sm font-medium text-teal-400 hover:text-teal-300 transition"
+                className="hidden sm:block text-sm font-medium text-teal-400 hover:text-teal-300 transition"
               >
                 {currentView === 'manage_access' ? 'Kembali ke Aplikasi' : 'Kelola Akses'}
               </button>
@@ -161,6 +161,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -258,6 +259,24 @@ const App: React.FC = () => {
   
   const SELECTED_SUBJECT_KEY = 'mtsn4jombang_selected_subject';
   const tpsCache = React.useRef<Record<string, TPData[]>>({});
+
+  const prefetchAllTPs = useCallback(async () => {
+      try {
+          const allTPs = await apiService.getAllTPs();
+          const groupedBySubject = allTPs.reduce((acc, tp) => {
+              if (!acc[tp.subject]) acc[tp.subject] = [];
+              acc[tp.subject].push(tp);
+              return acc;
+          }, {} as Record<string, TPData[]>);
+          tpsCache.current = groupedBySubject;
+      } catch (error) {
+          console.error("Failed to prefetch TPs:", error);
+      }
+  }, []);
+
+  useEffect(() => {
+      prefetchAllTPs();
+  }, [prefetchAllTPs]);
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
     const isCached = !!tpsCache.current[subject];
@@ -427,6 +446,10 @@ const App: React.FC = () => {
   };
 
   const handleCreateNew = () => {
+    if (!user) {
+        setShowLoginModal(true);
+        return;
+    }
     setEditingTP(null);
     setView('create_tp');
   };
@@ -2415,8 +2438,6 @@ const App: React.FC = () => {
         return null;
     }
   };
-
-  const [showLoginModal, setShowLoginModal] = useState(false);
 
   if (authChecking) {
     return (

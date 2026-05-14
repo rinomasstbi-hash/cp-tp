@@ -213,6 +213,24 @@ export const getTPsBySubject = async (subject: string): Promise<TPData[]> => {
     }
 };
 
+export const getAllTPs = async (): Promise<TPData[]> => {
+    try {
+        const querySnapshot = await getDocs(collection(db, 'tps'));
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return cleanStringsInObject({
+                ...data,
+                id: doc.id,
+                createdAt: dateToNumber(data.createdAt),
+                updatedAt: dateToNumber(data.updatedAt)
+            }) as TPData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'tps');
+        return [];
+    }
+};
+
 export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<TPData> => {
     const newDocRef = doc(collection(db, 'tps'));
     const payload = {
