@@ -1,11 +1,24 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiInstance: GoogleGenAI | null = null;
 const model = "gemini-2.5-pro";
+
+const getAI = () => {
+    if (!aiInstance) {
+        // Fallback to empty string or a public key if it's available, otherwise it might fail on action
+        const key = process.env.GEMINI_API_KEY || ''; 
+        if(!key) {
+            console.warn("GEMINI_API_KEY is not defined. AI functionality will fail.");
+        }
+        aiInstance = new GoogleGenAI({ apiKey: key });
+    }
+    return aiInstance;
+};
 
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
     try {
+        const ai = getAI();
         const response = await ai.models.generateContent({
             model,
             contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
@@ -47,6 +60,7 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
     try {
+        const ai = getAI();
         const response = await ai.models.generateContent({
             model,
             contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}`,
@@ -80,6 +94,7 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
     try {
+        const ai = getAI();
         const response = await ai.models.generateContent({
             model,
             contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya.`,
@@ -116,6 +131,7 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
     try {
         const contentBySem = atpData.content.filter(x => x.semester.toLowerCase() === semester.toLowerCase());
         if (contentBySem.length === 0) return [];
+        const ai = getAI();
         const response = await ai.models.generateContent({
             model,
             contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
