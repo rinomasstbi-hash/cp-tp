@@ -163,24 +163,42 @@ const App: React.FC = () => {
   const [isApproved, setIsApproved] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    // Fallback if Firebase auth listener fails to respond
+    const timeoutId = setTimeout(() => {
+       if (isMounted) {
+           console.warn("Auth check timed out.");
+           setAuthChecking(false);
+       }
+    }, 10000);
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      clearTimeout(timeoutId);
+      if (!isMounted) return;
+
       setUser(currentUser);
       if (currentUser) {
          if (currentUser.email) {
              const approved = await apiService.isUserApproved(currentUser.email);
-             setIsApproved(approved);
+             if (isMounted) setIsApproved(approved);
              if (!approved) {
                  await apiService.recordAccessRequest(currentUser.email, currentUser.displayName);
              }
          } else {
-             setIsApproved(false);
+             if (isMounted) setIsApproved(false);
          }
       } else {
-         setIsApproved(false);
+         if (isMounted) setIsApproved(false);
       }
-      setAuthChecking(false);
+      if (isMounted) setAuthChecking(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+        isMounted = false;
+        clearTimeout(timeoutId);
+        unsubscribe();
+    };
   }, []);
 
   const [view, setView] = useState<View | 'manage_access'>('select_subject');
