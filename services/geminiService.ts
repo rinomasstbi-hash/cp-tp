@@ -1,57 +1,17 @@
-import { GoogleGenAI, Type } from '@google/genai';
 import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
-
-let aiInstance: GoogleGenAI | null = null;
-const model = "gemini-2.5-pro";
-
-const getAI = () => {
-    if (!aiInstance) {
-        // Fallback to empty string or a public key if it's available, otherwise it might fail on action
-        const key = process.env.GEMINI_API_KEY || ''; 
-        if(!key) {
-            console.warn("GEMINI_API_KEY is not defined. AI functionality will fail.");
-        }
-        aiInstance = new GoogleGenAI({ apiKey: key });
-    }
-    return aiInstance;
-};
 
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
     try {
-        const ai = getAI();
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
-            config: {
-                systemInstruction: "Anda adalah AI asisten guru MTsN 4 Jombang. Hasilkan array objek TPGroup. Hasilkan data JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            semester: { type: Type.STRING },
-                            materi: { type: Type.STRING },
-                            subMateriGroups: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        subMateri: { type: Type.STRING },
-                                        tps: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    },
-                                    required: ["subMateri", "tps"]
-                                }
-                            }
-                        },
-                        required: ["semester", "materi", "subMateriGroups"]
-                    }
-                }
-            }
+        const response = await fetch('/api/generate/tps', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(input)
         });
-        const result = response.text ? JSON.parse(response.text) : null;
-        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
-        return result as TPGroup[];
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to generate TPs');
+        }
+        return await response.json();
     } catch (e: any) {
         console.error(e);
         throw new Error(`Gagal membuat TP: ${e.message}`);
@@ -60,32 +20,16 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
     try {
-        const ai = getAI();
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}`,
-            config: {
-                systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            topikMateri: { type: Type.STRING },
-                            tp: { type: Type.STRING },
-                            kodeTp: { type: Type.STRING },
-                            atpSequence: { type: Type.INTEGER },
-                            semester: { type: Type.STRING }
-                        },
-                        required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
-                    }
-                }
-            }
+        const response = await fetch('/api/generate/atp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(tpData)
         });
-        const result = response.text ? JSON.parse(response.text) : null;
-        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
-        return result as ATPTableRow[];
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to generate ATP');
+        }
+        return await response.json();
     } catch (error: any) {
        console.error(error);
        throw new Error(`Gagal membuat ATP: ${error.message}`);
@@ -94,33 +38,16 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
     try {
-        const ai = getAI();
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya.`,
-            config: {
-                systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            no: { type: Type.INTEGER },
-                            topikMateri: { type: Type.STRING },
-                            alurTujuanPembelajaran: { type: Type.STRING },
-                            tujuanPembelajaran: { type: Type.STRING },
-                            alokasiWaktu: { type: Type.STRING },
-                            semester: { type: Type.STRING }
-                        },
-                        required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
-                    }
-                }
-            }
+        const response = await fetch('/api/generate/prota', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ atpData, totalJpPerWeek })
         });
-        const result = response.text ? JSON.parse(response.text) : null;
-        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
-        return result as PROTARow[];
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to generate PROTA');
+        }
+        return await response.json();
     } catch (error: any) {
        console.error(error);
        throw new Error(`Gagal membuat PROTA: ${error.message}`);
@@ -129,43 +56,16 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
 
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
     try {
-        const contentBySem = atpData.content.filter(x => x.semester.toLowerCase() === semester.toLowerCase());
-        if (contentBySem.length === 0) return [];
-        const ai = getAI();
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
-            config: {
-                systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            no: { type: Type.INTEGER },
-                            materiPokok: { type: Type.STRING },
-                            tp: { type: Type.STRING },
-                            kriteria: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    sangatMahir: { type: Type.STRING },
-                                    mahir: { type: Type.STRING },
-                                    cukupMahir: { type: Type.STRING },
-                                    perluBimbingan: { type: Type.STRING }
-                                },
-                                required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
-                            },
-                            targetKktp: { type: Type.STRING }
-                        },
-                        required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
-                    }
-                }
-            }
+        const response = await fetch('/api/generate/kktp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ atpData, semester, grade })
         });
-        const result = response.text ? JSON.parse(response.text) : null;
-        if (!result || !Array.isArray(result)) throw new Error("Respons invalid");
-        return result as KKTPRow[];
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to generate KKTP');
+        }
+        return await response.json();
     } catch (error: any) {
        console.error(error);
        throw new Error(`Gagal membuat KKTP: ${error.message}`);
