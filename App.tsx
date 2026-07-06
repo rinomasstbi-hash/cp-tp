@@ -11,8 +11,7 @@ import LoadingOverlay from './components/LoadingOverlay';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon, SaveIcon } from './components/icons';
 
 import Login from './components/Login';
-import ManageAccess from './components/ManageAccess';
-import { AdminSettings } from './components/AdminSettings';
+import AdminDashboard from './components/AdminDashboard';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, auth } from './services/authService';
 
 const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void }> = ({ userEmail, currentView, onViewChange, onLogin }) => {
@@ -38,20 +37,7 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
             </div>
           </div>
           <div className="flex items-center space-x-2 md:space-x-4">
-            {userEmail?.toLowerCase().trim() === 'rinomasstbi@gmail.com' && (<>
-              <button
-                onClick={() => onViewChange(currentView === 'view_admin_settings' ? 'select_subject' : 'view_admin_settings')}
-                className="text-xs md:text-sm font-bold bg-amber-500 text-white px-2 py-1 md:px-3 md:py-1.5 rounded hover:bg-amber-600 transition"
-              >
-                {currentView === 'view_admin_settings' ? 'Kembali' : 'API'}
-              </button>
-              <button
-                onClick={() => onViewChange(currentView === 'manage_access' ? 'select_subject' : 'manage_access')}
-                className="text-xs md:text-sm font-bold bg-teal-500 text-white px-2 py-1 md:px-3 md:py-1.5 rounded hover:bg-teal-600 transition"
-              >
-                {currentView === 'manage_access' ? 'Kembali' : 'Users'}
-              </button>
-            </>)}
+            
             {userEmail ? (
                 <div className="flex items-center gap-3">
                   <span className="hidden md:block text-slate-300 text-xs">{userEmail}</span>
@@ -211,7 +197,7 @@ const App: React.FC = () => {
     setAuthChecking(false);
   }, [user]);
 
-  const [view, setView] = useState<View | 'manage_access'>('select_subject');
+  const [view, setView] = useState<View | 'admin_dashboard'>('select_subject');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [tps, setTps] = useState<TPData[]>([]);
   const [selectedTP, setSelectedTP] = useState<TPData | null>(null);
@@ -1659,10 +1645,8 @@ const App: React.FC = () => {
     }
 
     switch (view) {
-      case 'view_admin_settings':
-        return <AdminSettings />;
-      case 'manage_access':
-        return <ManageAccess />;
+      case 'admin_dashboard':
+        return <AdminDashboard onBack={() => setView('select_subject')} />;
 
       case 'select_subject':
         return <SubjectSelector onSelectSubject={handleSelectSubject} isAdmin={isAdmin} onViewChange={setView} />;
@@ -2433,7 +2417,7 @@ const App: React.FC = () => {
   if (user && !isApproved) {
     return (
       <div className="bg-slate-100 min-h-screen">
-        <Header userEmail={user.email} currentView={view} onViewChange={(v) => setView(v as View | 'manage_access')} onLogin={() => {}} />
+        <Header userEmail={user.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => {}} />
         <div className="max-w-7xl mx-auto px-4 py-16 text-center">
           <AlertIcon className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h2 className="text-3xl font-bold text-slate-800 mb-4">Akses Menunggu Verifikasi</h2>
@@ -2455,7 +2439,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-slate-100 min-h-screen">
-      <Header userEmail={user?.email} currentView={view} onViewChange={(v) => setView(v as View | 'manage_access')} onLogin={() => setShowLoginModal(true)} />
+      <Header userEmail={user?.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => setShowLoginModal(true)} />
       {showLoginModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative bg-white rounded-lg shadow-lg max-w-md w-full">

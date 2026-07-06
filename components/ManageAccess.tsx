@@ -71,7 +71,7 @@ const ManageAccess: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8 mt-8">
+    <div className="max-w-7xl mx-auto space-y-8">
       
       {error && (
         <div className="mb-4 text-red-600 bg-red-50 p-3 rounded-md shadow-sm">
