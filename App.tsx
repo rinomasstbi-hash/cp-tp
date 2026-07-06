@@ -13,8 +13,9 @@ import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, Clos
 import Login from './components/Login';
 import AdminDashboard from './components/AdminDashboard';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, auth } from './services/authService';
+import { AdminSettings as GlobalSettings, getAdminSettings } from './services/dbService';
 
-const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void }> = ({ userEmail, currentView, onViewChange, onLogin }) => {
+const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void; globalSettings?: GlobalSettings | null; isAdmin?: boolean }> = ({ userEmail, currentView, onViewChange, onLogin, globalSettings, isAdmin }) => {
   return (
     <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -29,10 +30,10 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
             </div>
             <div className="ml-4 hidden sm:block">
               <span className="block text-base sm:text-xl font-extrabold text-white tracking-wide uppercase">
-                Asisten Guru (AGRU)
+                {globalSettings?.namaAplikasi || 'Asisten Guru (AGRU)'}
               </span>
               <span className="block text-sm text-slate-300">
-                Tahun Pelajaran 2025/2026
+                Tahun Pelajaran {globalSettings?.tahunPelajaran || '2025/2026'}
               </span>
             </div>
           </div>
@@ -40,6 +41,15 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
             
             {userEmail ? (
                 <div className="flex items-center gap-3">
+                  {isAdmin && (
+                    <button
+                      onClick={() => onViewChange(currentView === 'admin_dashboard' ? 'select_subject' : 'admin_dashboard')}
+                      className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-full transition"
+                      title="Pengaturan Admin"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+                  )}
                   <span className="hidden md:block text-slate-300 text-xs">{userEmail}</span>
                   <button
                    onClick={() => signOut(auth).then(() => window.location.reload())}
@@ -157,9 +167,18 @@ const App: React.FC = () => {
   const [authChecking, setAuthChecking] = useState(true);
   const [isApproved, setIsApproved] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+  const refreshSettings = () => {
+    getAdminSettings().then(res => {
+      if (res) setGlobalSettings(res);
+    });
+  };
 
   useEffect(() => {
     let isMounted = true;
+    getAdminSettings().then(res => {
+        if (res && isMounted) setGlobalSettings(res);
+    });
     
     // Fallback if Firebase auth listener fails to respond
     const timeoutId = setTimeout(() => {
@@ -223,7 +242,10 @@ const App: React.FC = () => {
       isOpen: true,
       title,
       message,
-      onConfirm
+      onConfirm: () => {
+        onConfirm();
+        closeConfirm();
+      }
     });
   };
 
@@ -1085,7 +1107,7 @@ const App: React.FC = () => {
         <tr><td class="no-wrap" style="width: 150px; padding-left: 0;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
         <tr><td class="no-wrap" style="padding-left: 0;">Mata Pelajaran</td><td>: ${selectedATP.subject}</td></tr>
         <tr><td class="no-wrap" style="padding-left: 0;">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
-        <tr><td class="no-wrap" style="padding-left: 0;">Tahun Ajaran</td><td>: 2025/2026</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0;">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
       </table>
     `;
 
@@ -1145,11 +1167,11 @@ const App: React.FC = () => {
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Dr. Aziz Ja'far, S.Th.I., M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Dr. Aziz Ja'far, S.Th.I., M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. 197610062007101008</td>
+              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '197610062007101008'}</td>
               <td class="signature-td">NIP. -</td>
             </tr>
           </tbody>
@@ -1212,7 +1234,7 @@ const App: React.FC = () => {
         <tr><td class="no-wrap" style="width: 150px;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
         <tr><td class="no-wrap">Mata Pelajaran</td><td>: ${currentProta.subject}</td></tr>
         <tr><td class="no-wrap">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
-        <tr><td class="no-wrap">Tahun Ajaran</td><td>: 2025/2026</td></tr>
+        <tr><td class="no-wrap">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
       </table>
     `;
 
@@ -1277,11 +1299,11 @@ const App: React.FC = () => {
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${currentProta.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
               <td class="signature-td">NIP. -</td>
             </tr>
           </tbody>
@@ -1411,11 +1433,11 @@ const App: React.FC = () => {
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
               <td class="signature-td">NIP. -</td>
             </tr>
           </tbody>
@@ -1482,7 +1504,7 @@ const App: React.FC = () => {
           <tr><td style="padding-right: 10px;">Madrasah</td><td>: MTsN 4 Jombang</td></tr>
           <tr><td>Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
           <tr><td>Kelas/Semester</td><td>: ${dataToExport.grade} / ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
-          <tr><td>Tahun Pelajaran</td><td>: 2025/2026</td></tr>
+          <tr><td>Tahun Pelajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
         </table>
       `;
   
@@ -1543,11 +1565,11 @@ const App: React.FC = () => {
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">Sulthon Sulaiman, M.Pd.I</td>
+              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. 198106162005011003</td>
+              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
               <td class="signature-td">NIP. -</td>
             </tr>
           </tbody>
@@ -1646,10 +1668,21 @@ const App: React.FC = () => {
 
     switch (view) {
       case 'admin_dashboard':
-        return <AdminDashboard onBack={() => setView('select_subject')} />;
+        return <AdminDashboard onBack={() => setView('select_subject')} showConfirm={showConfirm} refreshSettings={refreshSettings} />;
 
       case 'select_subject':
-        return <SubjectSelector onSelectSubject={handleSelectSubject} isAdmin={isAdmin} onViewChange={setView} />;
+        return <SubjectSelector 
+          onSelectSubject={handleSelectSubject} 
+          isAdmin={isAdmin} 
+          onViewChange={setView}
+          subjects={globalSettings?.mataPelajaran || [
+            "Al-Qur'an Hadis", "Akidah Akhlak", "Fikih", "Sejarah Kebudayaan Islam", 
+            "Bahasa Arab", "Pendidikan Pancasila", "Bahasa Indonesia", "Matematika", 
+            "Ilmu Pengetahuan Alam", "Ilmu Pengetahuan Sosial", "Bahasa Inggris", 
+            "Pend. Jasmani, Olahraga, dan Kesehatan", "Informatika", "Seni Budaya & Prakarya", 
+            "Mabadi' Fiqh", "Aswaja", "Bahasa Jawa"
+          ]}
+        />;
 
       case 'subject_dashboard':
         return (
@@ -1931,7 +1964,7 @@ const App: React.FC = () => {
                                 </tr>
                                 <tr>
                                     <td className="font-semibold pr-4 py-1 whitespace-nowrap">Tahun Ajaran</td>
-                                    <td>: 2025/2026</td>
+                                    <td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -2417,7 +2450,7 @@ const App: React.FC = () => {
   if (user && !isApproved) {
     return (
       <div className="bg-slate-100 min-h-screen">
-        <Header userEmail={user.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => {}} />
+        <Header userEmail={user.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => {}} globalSettings={globalSettings} isAdmin={isAdmin} />
         <div className="max-w-7xl mx-auto px-4 py-16 text-center">
           <AlertIcon className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h2 className="text-3xl font-bold text-slate-800 mb-4">Akses Menunggu Verifikasi</h2>
@@ -2439,7 +2472,7 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-slate-100 min-h-screen">
-      <Header userEmail={user?.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => setShowLoginModal(true)} />
+      <Header userEmail={user?.email} currentView={view} onViewChange={(v) => setView(v as View | 'admin_dashboard')} onLogin={() => setShowLoginModal(true)} globalSettings={globalSettings} isAdmin={isAdmin} />
       {showLoginModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative bg-white rounded-lg shadow-lg max-w-md w-full">

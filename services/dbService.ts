@@ -669,3 +669,32 @@ export const deletePROSEMsByTPId = async (tpId: string): Promise<{ success: bool
         throw error;
     }
 };
+
+
+export interface AdminSettings {
+  geminiApiKey: string;
+  tahunPelajaran: string;
+  kepalaMadrasah: string;
+  nipKepalaMadrasah: string;
+  mataPelajaran: string[];
+  namaAplikasi?: string;
+}
+
+export const getAdminSettings = async (): Promise<AdminSettings | null> => {
+  try {
+    const docRef = doc(db, 'settings', 'admin');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as AdminSettings;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting admin settings:", error);
+    return null;
+  }
+};
+
+export const saveAdminSettings = async (settings: Partial<AdminSettings>): Promise<void> => {
+  const docRef = doc(db, 'settings', 'admin');
+  await setDoc(docRef, settings, { merge: true });
+};

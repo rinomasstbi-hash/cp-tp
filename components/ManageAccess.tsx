@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import * as apiService from '../services/dbService';
 
-const ManageAccess: React.FC = () => {
+interface ManageAccessProps {
+  showConfirm: (t: string, m: string, cb: () => void) => void;
+}
+
+const ManageAccess: React.FC<ManageAccessProps> = ({ showConfirm }) => {
   const [users, setUsers] = useState<{email: string}[]>([]);
   const [requests, setRequests] = useState<{email: string, name: string, requestedAt: number}[]>([]);
   const [newEmail, setNewEmail] = useState('');
@@ -11,8 +15,8 @@ const ManageAccess: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [u, r] = await Promise.all([
-         apiService.getApprovedUsers(),
+      const [u, r] = await Promise.all([ 
+         apiService.getApprovedUsers(), 
          apiService.getAccessRequests()
       ]);
       setUsers(u);
@@ -39,35 +43,61 @@ const ManageAccess: React.FC = () => {
     }
   };
 
-  const handleRemove = async (email: string) => {
+  const handleRemove = (email: string) => {
     if (email === 'rinomasstbi@gmail.com') {
-      alert('Tidak dapat menghapus admin utama.');
+      showConfirm(
+        'Aksi Tidak Diizinkan', 
+        'Tidak dapat menghapus admin utama.',
+        () => {
+            // Close handled by App.tsx automatically? No, wait. showConfirm passes a callback. But close is handled inside App.tsx? 
+            // Wait, in App.tsx showConfirm just sets the state. 
+            // Let's look at showConfirm in App.tsx again.
+        }
+      );
       return;
     }
-    try {
-      await apiService.removeApprovedUser(email);
-      fetchData();
-    } catch (e: any) {
-      setError(e.message);
-    }
+    showConfirm(
+      'Cabut Akses',
+      `Apakah Anda yakin ingin mencabut akses untuk ${email}?`,
+      async () => {
+        try {
+          await apiService.removeApprovedUser(email);
+          fetchData();
+        } catch (e: any) {
+          setError(e.message);
+        }
+      }
+    );
   };
 
-  const handleApproveRequest = async (email: string) => {
-    try {
-      await apiService.approveAccessRequest(email);
-      fetchData();
-    } catch (e: any) {
-      setError(e.message);
-    }
+  const handleApproveRequest = (email: string) => {
+    showConfirm(
+      'Setujui Permintaan',
+      `Apakah Anda yakin ingin menyetujui akses untuk ${email}?`,
+      async () => {
+        try {
+          await apiService.approveAccessRequest(email);
+          fetchData();
+        } catch (e: any) {
+          setError(e.message);
+        }
+      }
+    );
   };
 
-  const handleRejectRequest = async (email: string) => {
-    try {
-      await apiService.rejectAccessRequest(email);
-      fetchData();
-    } catch (e: any) {
-      setError(e.message);
-    }
+  const handleRejectRequest = (email: string) => {
+    showConfirm(
+      'Tolak Permintaan',
+      `Apakah Anda yakin ingin menolak akses untuk ${email}?`,
+      async () => {
+        try {
+          await apiService.rejectAccessRequest(email);
+          fetchData();
+        } catch (e: any) {
+          setError(e.message);
+        }
+      }
+    );
   };
 
   return (
@@ -79,61 +109,10 @@ const ManageAccess: React.FC = () => {
         </div>
       )}
 
-      {/* Permintaan Akses Section */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Permintaan Akses Baru</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-y">
-                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Nama Lengkap</th>
-                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Email</th>
-                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Waktu Permintaan</th>
-                <th className="py-3 px-4 font-semibold text-slate-700 w-48 text-right text-sm">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="text-center py-6 text-slate-500 text-sm">Memuat data...</td>
-                </tr>
-              ) : requests.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-center py-6 text-slate-500 text-sm bg-slate-50/50">Tidak ada permintaan akses baru.</td>
-                </tr>
-              ) : (
-                requests.map(r => (
-                  <tr key={r.email} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3 px-4 text-slate-800 font-medium">{r.name}</td>
-                    <td className="py-3 px-4 text-slate-600">{r.email}</td>
-                    <td className="py-3 px-4 text-slate-500 text-sm">{new Date(r.requestedAt).toLocaleString('id-ID')}</td>
-                    <td className="py-3 px-4 text-right flex justify-end gap-2">
-                       <button 
-                          onClick={() => handleApproveRequest(r.email)}
-                          className="bg-teal-100 text-teal-700 hover:bg-teal-200 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
-                        >
-                          Setujui
-                        </button>
-                        <button 
-                          onClick={() => handleRejectRequest(r.email)}
-                          className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
-                        >
-                          Tolak
-                        </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Kelola Pengguna Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-bold text-slate-800 mb-6">Pengguna Terdaftar</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Manajemen Akses Pengguna</h2>
         
-        <div className="flex gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <input 
             type="email"
             value={newEmail}
@@ -153,52 +132,94 @@ const ManageAccess: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-y">
-                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Email</th>
-                <th className="py-3 px-4 font-semibold text-slate-700 w-32 text-right text-sm">Aksi</th>
+                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Email / Pengguna</th>
+                <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Status</th>
+                <th className="py-3 px-4 font-semibold text-slate-700 w-48 text-right text-sm">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={2} className="text-center py-6 text-slate-500 text-sm">Memuat data...</td>
+                  <td colSpan={3} className="text-center py-6 text-slate-500 text-sm">Memuat data...</td>
                 </tr>
-              ) : users.length === 0 ? (
+              ) : (users.length === 0 && requests.length === 0) ? (
                 <tr>
-                  <td colSpan={2} className="text-center py-6 text-slate-500 text-sm">Belum ada pengguna tambahan yang disetujui.</td>
+                  <td colSpan={3} className="text-center py-6 text-slate-500 text-sm">Tidak ada pengguna atau permintaan.</td>
                 </tr>
               ) : (
-                users.map(u => (
-                  <tr key={u.email} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3 px-4 text-slate-800">{u.email}</td>
-                    <td className="py-3 px-4 text-right">
-                      {u.email !== 'rinomasstbi@gmail.com' ? (
-                        <button 
-                          onClick={() => handleRemove(u.email)}
-                          className="text-red-500 hover:text-red-700 font-medium text-sm"
-                        >
-                          Cabut Akses
-                        </button>
-                      ) : (
-                        <span className="text-slate-400 text-xs font-semibold bg-slate-100 px-2 py-1 rounded">Admin Utama</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                <>
+                  {requests.map(r => (
+                    <tr key={r.email} className="hover:bg-slate-50 transition-colors bg-amber-50/30">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-800">{r.name}</div>
+                        <div className="text-slate-500 text-sm">{r.email}</div>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <span className="text-amber-600 font-semibold bg-amber-100 px-2 py-1 rounded text-xs">Menunggu Persetujuan</span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                         <div className="flex justify-end gap-2">
+                           <button 
+                             onClick={() => handleApproveRequest(r.email)}
+                             className="bg-teal-100 text-teal-700 hover:bg-teal-200 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
+                           >
+                             Setujui
+                           </button>
+                           <button 
+                             onClick={() => handleRejectRequest(r.email)}
+                             className="bg-red-100 text-red-700 hover:bg-red-200 px-3 py-1.5 rounded text-sm font-semibold transition-colors"
+                           >
+                             Tolak
+                           </button>
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                  
+                  {users.map(u => (
+                    <tr key={u.email} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-800">{u.email}</div>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        {u.email === 'rinomasstbi@gmail.com' ? (
+                            <span className="text-indigo-600 font-semibold bg-indigo-100 px-2 py-1 rounded text-xs">Admin Utama</span>
+                        ) : (
+                            <span className="text-emerald-600 font-semibold bg-emerald-100 px-2 py-1 rounded text-xs">Disetujui</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {u.email !== 'rinomasstbi@gmail.com' && (
+                          <button 
+                            onClick={() => handleRemove(u.email)}
+                            className="text-red-500 hover:text-red-700 font-medium text-sm"
+                          >
+                            Cabut Akses
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Fallback for main admin if not in users list */}
+                  {!users.find(u => u.email === 'rinomasstbi@gmail.com') && (
+                    <tr className="hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-800">rinomasstbi@gmail.com</div>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <span className="text-indigo-600 font-semibold bg-indigo-100 px-2 py-1 rounded text-xs">Admin Utama</span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
-               {/* Make sure the main admin is always displayed if they somehow aren't in the DB list */}
-               {!users.find(u => u.email === 'rinomasstbi@gmail.com') && (
-                 <tr className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3 px-4 text-slate-800">rinomasstbi@gmail.com</td>
-                    <td className="py-3 px-4 text-right">
-                       <span className="text-slate-400 text-xs font-semibold bg-slate-100 px-2 py-1 rounded">Admin Utama</span>
-                    </td>
-                 </tr>
-               )}
             </tbody>
           </table>
         </div>
       </div>
-      
     </div>
   );
 };

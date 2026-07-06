@@ -1,15 +1,11 @@
-import React, { useState, useEffect } from 'react';
+const fs = require('fs');
+const code = `import React, { useState, useEffect } from 'react';
 import { getAdminSettings, saveAdminSettings, AdminSettings as SettingsType } from '../services/dbService';
 
-interface AdminSettingsProps {
-  onSave?: () => void;
-}
-
-export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
+export const AdminSettings: React.FC = () => {
     const [settings, setSettings] = useState<SettingsType>({
         geminiApiKey: '',
         tahunPelajaran: '2025/2026',
-        namaAplikasi: 'Asisten Guru (AGRU)',
         kepalaMadrasah: 'Sulthon Sulaiman, M.Pd.I',
         nipKepalaMadrasah: '198106162005011003',
         mataPelajaran: [
@@ -47,7 +43,6 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
         try {
             await saveAdminSettings(settings);
             setMessage({ type: 'success', text: 'Pengaturan berhasil disimpan!' });
-            if (onSave) onSave();
         } catch (error: any) {
             setMessage({ type: 'error', text: 'Gagal menyimpan: ' + error.message });
         } finally {
@@ -79,17 +74,8 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
     return (
         <div className="max-w-7xl mx-auto space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                <h2 className="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Konfigurasi Umum</h2>
+                <h2 className="text-xl font-bold text-slate-800 mb-6 border-b pb-2">Konfigurasi Umum (Export Word)</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-2">Nama Aplikasi</label>
-                        <input 
-                            type="text"
-                            value={settings.namaAplikasi || 'Asisten Guru (AGRU)'}
-                            onChange={(e) => setSettings({...settings, namaAplikasi: e.target.value})}
-                            className="w-full border border-slate-300 rounded-md p-2.5 focus:ring-teal-500 focus:border-teal-500"
-                        />
-                    </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-2">Tahun Pelajaran</label>
                         <input 
@@ -99,6 +85,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                             className="w-full border border-slate-300 rounded-md p-2.5 focus:ring-teal-500 focus:border-teal-500"
                         />
                     </div>
+                    <div></div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-2">Nama Kepala Madrasah</label>
                         <input 
@@ -172,7 +159,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
             </div>
 
             {message && (
-                <div className={`p-4 rounded-md font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                <div className={\`p-4 rounded-md font-medium \${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}\`}>
                     {message.text}
                 </div>
             )}
@@ -194,3 +181,5 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
         </div>
     );
 };
+`;
+fs.writeFileSync('components/AdminSettings.tsx', code);

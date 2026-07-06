@@ -4,9 +4,11 @@ import { AdminSettings } from './AdminSettings';
 
 interface AdminDashboardProps {
   onBack: () => void;
+  showConfirm: (t: string, m: string, cb: () => void) => void;
+  refreshSettings: () => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, showConfirm, refreshSettings }) => {
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-300">
       <button 
@@ -26,11 +28,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         </section>
 
         <section>
-          <AdminSettings />
+          <AdminSettings onSave={refreshSettings} />
         </section>
 
         <section>
-          <ManageAccess />
+          <ManageAccess showConfirm={showConfirm} />
         </section>
       </div>
     </div>
