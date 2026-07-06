@@ -37,28 +37,31 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
               </span>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
-            {userEmail === 'rinomasstbi@gmail.com' && (<>
+          <div className="flex items-center space-x-2 md:space-x-4">
+            {userEmail?.toLowerCase().trim() === 'rinomasstbi@gmail.com' && (<>
               <button
                 onClick={() => onViewChange(currentView === 'view_admin_settings' ? 'select_subject' : 'view_admin_settings')}
-                className="text-sm font-medium text-amber-400 hover:text-amber-300 transition mr-2"
+                className="text-xs md:text-sm font-bold bg-amber-500 text-white px-2 py-1 md:px-3 md:py-1.5 rounded hover:bg-amber-600 transition"
               >
-                {currentView === 'view_admin_settings' ? 'Kembali' : 'Pengaturan API'}
+                {currentView === 'view_admin_settings' ? 'Kembali' : 'API'}
               </button>
               <button
                 onClick={() => onViewChange(currentView === 'manage_access' ? 'select_subject' : 'manage_access')}
-                className="text-sm font-medium text-teal-400 hover:text-teal-300 transition"
+                className="text-xs md:text-sm font-bold bg-teal-500 text-white px-2 py-1 md:px-3 md:py-1.5 rounded hover:bg-teal-600 transition"
               >
-                {currentView === 'manage_access' ? 'Kembali' : 'Kelola Akses'}
+                {currentView === 'manage_access' ? 'Kembali' : 'Users'}
               </button>
             </>)}
             {userEmail ? (
-                <button
+                <div className="flex items-center gap-3">
+                  <span className="hidden md:block text-slate-300 text-xs">{userEmail}</span>
+                  <button
                    onClick={() => signOut(auth).then(() => window.location.reload())}
                    className="text-sm font-medium border border-slate-600 rounded-md px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-700 transition"
                 >
                   Sign out
                 </button>
+                </div>
             ) : (
                 <button
                    onClick={onLogin}
@@ -215,6 +218,7 @@ const App: React.FC = () => {
   const [editingTP, setEditingTP] = useState<TPData | null>(null);
   const [loadingState, setLoadingState] = useState({ isLoading: false, title: '', message: '' });
   const [isSubjectDashboardLoading, setIsSubjectDashboardLoading] = useState(false);
+  const isAdmin = user?.email?.toLowerCase().trim() === 'rinomasstbi@gmail.com';
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -1661,7 +1665,7 @@ const App: React.FC = () => {
         return <ManageAccess />;
 
       case 'select_subject':
-        return <SubjectSelector onSelectSubject={handleSelectSubject} />;
+        return <SubjectSelector onSelectSubject={handleSelectSubject} isAdmin={isAdmin} onViewChange={setView} />;
 
       case 'subject_dashboard':
         return (
