@@ -3,26 +3,46 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
+async function generateWithRetry(ai: GoogleGenAI, params: any, maxRetries = 3) {
+  let lastError;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error: any) {
+      lastError = error;
+      console.error(`Attempt ${i + 1} failed: ${error.message}`);
+      if (error.status === 503 || error.status === 429 || error.message?.includes('503') || error.message?.includes('429')) {
+        const waitTime = Math.pow(2, i) * 1000 + Math.random() * 1000;
+        console.log(`Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
-
   app.use(express.json({ limit: '50mb' }));
 
   const getAI = () => {
-    const key = process.env.GEMINI_API_KEY;
+    const key = (process.env.MY_GEMINI_API_KEY || process.env.GEMINI_API_KEY)?.trim();
     if (!key) {
       throw new Error('GEMINI_API_KEY environment variable is required');
     }
     return new GoogleGenAI({ apiKey: key });
   };
-  const model = "gemini-2.5-pro";
+
+  const model = "gemini-2.5-flash";
 
   app.post("/api/generate/tps", async (req, res) => {
     try {
       const input = req.body;
       const ai = getAI();
-      const response = await ai.models.generateContent({
+      const response = await generateWithRetry(ai, {
         model,
         contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
         config: {
@@ -64,9 +84,9 @@ async function startServer() {
     try {
       const tpData = req.body;
       const ai = getAI();
-      const response = await ai.models.generateContent({
+      const response = await generateWithRetry(ai, {
         model,
-        contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}`,
+        contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}. Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.`,
         config: {
             systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
             responseMimeType: "application/json",
@@ -79,7 +99,7 @@ async function startServer() {
                         tp: { type: Type.STRING },
                         kodeTp: { type: Type.STRING },
                         atpSequence: { type: Type.INTEGER },
-                        semester: { type: Type.STRING }
+                        semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
                     },
                     required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
                 }
@@ -98,9 +118,9 @@ async function startServer() {
     try {
       const { atpData, totalJpPerWeek } = req.body;
       const ai = getAI();
-      const response = await ai.models.generateContent({
+      const response = await generateWithRetry(ai, {
         model,
-        contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya.`,
+        contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
         config: {
             systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
             responseMimeType: "application/json",
@@ -114,7 +134,7 @@ async function startServer() {
                         alurTujuanPembelajaran: { type: Type.STRING },
                         tujuanPembelajaran: { type: Type.STRING },
                         alokasiWaktu: { type: Type.STRING },
-                        semester: { type: Type.STRING }
+                        semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
                     },
                     required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
                 }
@@ -132,13 +152,22 @@ async function startServer() {
   app.post("/api/generate/kktp", async (req, res) => {
     try {
       const { atpData, semester, grade } = req.body;
-      const contentBySem = atpData.content.filter((x: any) => x.semester.toLowerCase() === semester.toLowerCase());
+      const isSemesterMatch = (itemSem: string, targetSem: string) => {
+          if (!itemSem) return false;
+          const iLower = String(itemSem).toLowerCase();
+          const tLower = String(targetSem).toLowerCase();
+          if (iLower === tLower) return true;
+          if (tLower === 'ganjil') return ['ganjil', '1', 'gasal', 'odd', 'satu'].some(s => iLower.includes(s));
+          if (tLower === 'genap') return ['genap', '2', 'even', 'dua'].some(s => iLower.includes(s));
+          return false;
+      };
+      const contentBySem = atpData.content.filter((x: any) => isSemesterMatch(x.semester, semester));
       if (contentBySem.length === 0) {
           res.json([]);
           return;
       }
       const ai = getAI();
-      const response = await ai.models.generateContent({
+      const response = await generateWithRetry(ai, {
         model,
         contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
         config: {
@@ -187,7 +216,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

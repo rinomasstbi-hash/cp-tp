@@ -10,7 +10,7 @@ interface TPMenuProps {
   prosemData: { ganjil: PROSEMData | null; genap: PROSEMData | null } | null;
   onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'prosem') => void;
   onBack: () => void;
-  isLoading: boolean;
+  isLoading?: boolean;
 }
 
 const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData, onNavigate, onBack, isLoading }) => {
@@ -119,7 +119,15 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
             <BackIcon className="w-5 h-5" />
             Kembali ke Dasbor Mapel
           </button>
-          <h1 className="text-3xl font-bold text-slate-800">Alur Pembuatan Perangkat Ajar</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-3xl font-bold text-slate-800">Alur Pembuatan Perangkat Ajar</h1>
+            {isLoading && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-teal-50 text-teal-600 text-sm font-medium rounded-full animate-pulse">
+                <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+                Memeriksa data...
+              </div>
+            )}
+          </div>
           <p className="text-slate-500 mt-1">
             Mapel: <span className="font-semibold">{tp.subject}</span> | 
             Kelas: <span className="font-semibold">{tp.grade}</span> |
@@ -128,68 +136,61 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
         </div>
       </div>
       
-      {isLoading ? (
-        <div className="text-center py-20">
-            <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-            <p className="mt-4 text-slate-600">Memeriksa status perangkat ajar...</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {workflowSteps.map((step, index) => {
-            const isLocked = step.status === 'locked';
-            return (
-              <div 
-                key={index} 
-                className={`group relative p-6 rounded-2xl shadow-lg transition-all duration-300 h-40 overflow-hidden 
-                  ${isLocked 
-                    ? 'bg-slate-100 cursor-not-allowed' 
-                    : `bg-gradient-to-br ${gradients[index]} text-white hover:shadow-xl transform hover:-translate-y-1`
-                  }`
-                }
-              >
-                {/* Decorative Background Icon */}
-                {!isLocked && (
-                    <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
-                        {step.backgroundIcon}
-                    </div>
-                )}
-                
-                <div className="relative z-10 flex flex-col justify-between h-full">
-                    {/* Top section: Main Icon + Title + Status */}
-                    <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-4">
-                            <div className={`flex-shrink-0 p-3 rounded-lg inline-block ${
-                                isLocked ? 'bg-slate-200' : 'bg-white/20'
-                            }`}>
-                                {React.cloneElement(step.icon, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
-                            </div>
-                            <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
-                        </div>
-                        {getStatusIndicator(step.status)}
-                    </div>
-                    
-                    {/* Bottom section: Button */}
-                    <div className="self-start">
-                      <button
-                        onClick={step.action}
-                        disabled={isLocked}
-                        className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-sm
-                          ${isLocked 
-                            ? 'bg-slate-200 text-slate-500' 
-                            : step.status === 'completed' 
-                              ? 'bg-white/20 text-white hover:bg-white/30'
-                              : 'bg-white text-teal-600 hover:bg-slate-100 transform hover:scale-105'}
-                        `}
-                      >
-                        {step.actionLabel}
-                      </button>
-                    </div>
-                </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {workflowSteps.map((step, index) => {
+          const isLocked = step.status === 'locked';
+          return (
+            <div 
+              key={index} 
+              className={`group relative p-6 rounded-2xl shadow-lg transition-all duration-300 h-40 overflow-hidden 
+                ${isLocked 
+                  ? 'bg-slate-100 cursor-not-allowed' 
+                  : `bg-gradient-to-br ${gradients[index]} text-white hover:shadow-xl transform hover:-translate-y-1`
+                }`
+              }
+            >
+              {/* Decorative Background Icon */}
+              {!isLocked && (
+                  <div className="absolute -right-5 -bottom-5 opacity-20 transition-transform duration-500 ease-in-out group-hover:rotate-6 group-hover:scale-125">
+                      {step.backgroundIcon}
+                  </div>
+              )}
+              
+              <div className="relative z-10 flex flex-col justify-between h-full">
+                  {/* Top section: Main Icon + Title + Status */}
+                  <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-4">
+                          <div className={`flex-shrink-0 p-3 rounded-lg inline-block ${
+                              isLocked ? 'bg-slate-200' : 'bg-white/20'
+                          }`}>
+                              {React.cloneElement(step.icon, { className: `h-8 w-8 ${isLocked ? 'text-slate-400' : 'text-white'}` })}
+                          </div>
+                          <h3 className={`text-xl font-bold ${isLocked ? 'text-slate-800' : 'text-white'}`}>{step.title}</h3>
+                      </div>
+                      {getStatusIndicator(step.status)}
+                  </div>
+                  
+                  {/* Bottom section: Button */}
+                  <div className="self-start">
+                    <button
+                      onClick={step.action}
+                      disabled={isLocked}
+                      className={`px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-sm
+                        ${(isLocked)
+                          ? 'bg-slate-200 text-slate-500 cursor-not-allowed' 
+                          : step.status === 'completed' 
+                            ? 'bg-white/20 text-white hover:bg-white/30'
+                            : 'bg-white text-teal-600 hover:bg-slate-100 transform hover:scale-105'}
+                      `}
+                    >
+                      {step.actionLabel}
+                    </button>
+                  </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

@@ -1,5 +1,18 @@
 import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
 
+const handleGeminiError = (e: any, context: string) => {
+    console.error(e);
+    let errorMsg = e.message || 'Terjadi kesalahan tidak terduga';
+    if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('high demand')) {
+        errorMsg = 'Server AI Google saat ini sedang sibuk (high demand). Silakan coba lagi beberapa saat.';
+    } else if (errorMsg.includes('429')) {
+        errorMsg = 'Terlalu banyak permintaan ke server AI. Silakan tunggu beberapa saat lalu coba lagi.';
+    } else if (errorMsg.includes('403') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('PERMISSION_DENIED')) {
+        errorMsg = 'API Key Anda tidak valid atau telah diblokir. Harap periksa kembali konfigurasi API Key Anda.';
+    }
+    throw new Error(`${context}: ${errorMsg}`);
+};
+
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
     try {
         const response = await fetch('/api/generate/tps', {
@@ -13,9 +26,9 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
         }
         return await response.json();
     } catch (e: any) {
-        console.error(e);
-        throw new Error(`Gagal membuat TP: ${e.message}`);
+        handleGeminiError(e, 'Gagal membuat TP');
     }
+    return []; // Should not reach here
 };
 
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
@@ -31,9 +44,9 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
         }
         return await response.json();
     } catch (error: any) {
-       console.error(error);
-       throw new Error(`Gagal membuat ATP: ${error.message}`);
+       handleGeminiError(error, 'Gagal membuat ATP');
     }
+    return [];
 };
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
@@ -49,9 +62,9 @@ export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): P
         }
         return await response.json();
     } catch (error: any) {
-       console.error(error);
-       throw new Error(`Gagal membuat PROTA: ${error.message}`);
+       handleGeminiError(error, 'Gagal membuat PROTA');
     }
+    return [];
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
@@ -67,9 +80,9 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
         }
         return await response.json();
     } catch (error: any) {
-       console.error(error);
-       throw new Error(`Gagal membuat KKTP: ${error.message}`);
+       handleGeminiError(error, 'Gagal membuat KKTP');
     }
+    return [];
 };
 
 export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
@@ -81,8 +94,18 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     const weeksPerMonth = 5;
     const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: weeksPerMonth }));
 
+    const isSemesterMatch = (itemSem: string, targetSem: string) => {
+        if (!itemSem) return false;
+        const iLower = String(itemSem).toLowerCase();
+        const tLower = String(targetSem).toLowerCase();
+        if (iLower === tLower) return true;
+        if (tLower === 'ganjil') return ['ganjil', '1', 'gasal', 'odd', 'satu'].some(s => iLower.includes(s));
+        if (tLower === 'genap') return ['genap', '2', 'even', 'dua'].some(s => iLower.includes(s));
+        return false;
+    };
+
     const semesterContent = protaData.content.filter(row => 
-        row.semester?.trim().toLowerCase() === semester.toLowerCase()
+        isSemesterMatch(row.semester, semester)
     );
     
     if (semesterContent.length === 0) {

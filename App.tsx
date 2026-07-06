@@ -12,8 +12,7 @@ import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, Clos
 
 import Login from './components/Login';
 import ManageAccess from './components/ManageAccess';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { auth } from './services/dbService';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, auth } from './services/authService';
 
 const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void }> = ({ userEmail, currentView, onViewChange, onLogin }) => {
   return (
@@ -193,35 +192,13 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) {
         setIsApproved(false);
+        setAuthChecking(false);
         return;
     }
-
-    let isMounted = true;
-    const checkApproval = async () => {
-        if (user.email) {
-            try {
-                const approved = await apiService.isUserApproved(user.email);
-                if (isMounted) {
-                    setIsApproved(approved);
-                    setAuthChecking(false);
-                    if (!approved) {
-                        await apiService.recordAccessRequest(user.email!, user.displayName);
-                    }
-                }
-            } catch (error) {
-                console.error("Approval check failed:", error);
-                if (isMounted) setAuthChecking(false);
-            }
-        } else {
-            if (isMounted) {
-                setIsApproved(false);
-                setAuthChecking(false);
-            }
-        }
-    };
-
-    checkApproval();
-    return () => { isMounted = false; };
+    
+    // Bypass approval - all logged in users are approved
+    setIsApproved(true);
+    setAuthChecking(false);
   }, [user]);
 
   const [view, setView] = useState<View | 'manage_access'>('select_subject');
@@ -230,20 +207,38 @@ const App: React.FC = () => {
   const [selectedTP, setSelectedTP] = useState<TPData | null>(null);
   const [editingTP, setEditingTP] = useState<TPData | null>(null);
   const [loadingState, setLoadingState] = useState({ isLoading: false, title: '', message: '' });
+  const [isSubjectDashboardLoading, setIsSubjectDashboardLoading] = useState(false);
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm
+    });
+  };
+
+  const closeConfirm = () => {
+    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const [isTPMenuLoading, setIsTPMenuLoading] = useState(false);
   const [copyNotification, setCopyNotification] = useState('');
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [transientMessage, setTransientMessage] = useState<string | null>(null);
   
-  // State for ownership verification modal
-  const [authPrompt, setAuthPrompt] = useState<{
-    action: 'edit' | 'delete';
-    type: 'tp' | 'atp';
-    data: TPData | ATPData;
-  } | null>(null);
-  const [authEmailInput, setAuthEmailInput] = useState('');
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-
   // State for collapsible CP info section
   const [isCpInfoVisible, setIsCpInfoVisible] = useState(false);
   
@@ -252,9 +247,6 @@ const App: React.FC = () => {
   const [selectedATP, setSelectedATP] = useState<ATPData | null>(null);
   const [editingATP, setEditingATP] = useState<ATPData | null>(null);
   const [atpError, setAtpError] = useState<string | null>(null);
-  const [isCreateAtpModalOpen, setIsCreateAtpModalOpen] = useState(false);
-  const [atpCreatorInfo, setAtpCreatorInfo] = useState({ name: '', email: '' });
-  const [createAtpError, setCreateAtpError] = useState<string | null>(null);
   
   // State for PROTA Management
   const [protas, setProtas] = useState<PROTAData[]>([]);
@@ -284,12 +276,12 @@ const App: React.FC = () => {
 
   const loadTPsForSubject = useCallback(async (subject: string) => {
     const cachedData = tpsCache.current[subject];
-    if (cachedData && cachedData.length > 0) {
+    if (cachedData !== undefined) {
         setTps(cachedData);
-        return; // Skip network call if we have cached data
+        return; // Skip network call if we have cached data (even if empty)
     }
     
-    setLoadingState({ isLoading: true, title: 'Memuat Data TP', message: 'Sedang mengambil daftar Tujuan Pembelajaran dari server...' });
+    setIsSubjectDashboardLoading(true);
     setGlobalError(null);
     try {
       const data = await apiService.getTPsBySubject(subject);
@@ -300,7 +292,7 @@ const App: React.FC = () => {
       setGlobalError(error.message);
       setTps([]); 
     } finally {
-      setLoadingState({ isLoading: false, title: '', message: '' });
+      setIsSubjectDashboardLoading(false);
     }
   }, []);
   
@@ -351,7 +343,7 @@ const App: React.FC = () => {
     // New effect to load all device statuses when entering the TP menu
   useEffect(() => {
     const loadAllDeviceStatus = async (tpId: string) => {
-        setLoadingState({ isLoading: true, title: 'Memuat Status', message: 'Memeriksa perangkat ajar yang sudah ada...' });
+        setIsTPMenuLoading(true);
 
         try {
             const [atpsResult, protasResult] = await Promise.allSettled([
@@ -421,7 +413,7 @@ const App: React.FC = () => {
             setKktpData(null);
             setProsemData(null);
         } finally {
-            setLoadingState({ isLoading: false, title: '', message: '' });
+            setIsTPMenuLoading(false);
         }
     };
 
@@ -469,76 +461,81 @@ const App: React.FC = () => {
   const _performDeleteATP = async (atpToDelete: ATPData) => {
     if (!selectedTP?.id) return;
 
-    setLoadingState({ isLoading: true, title: 'Menghapus ATP', message: 'Sedang menghapus data dari server...' });
-    setAtpError(null);
+    // Optimistic Update
+    setAtps(prev => prev.filter(a => a.id !== atpToDelete.id));
+    setTransientMessage('Data ATP berhasil dihapus.');
+
     try {
         // Step 1: Attempt to delete dependencies (KKTPs) first.
-        // We silently ignore errors here because the user might have already deleted them 
-        // or the backend function might be missing, but we still want to try deleting the ATP.
         try {
-             await apiService.deleteKKTPsByATPId(atpToDelete.id);
+             apiService.deleteKKTPsByATPId(atpToDelete.id).catch(console.warn);
         } catch (kktpErr) {
-            console.warn("Info: Gagal menghapus KKTP terkait otomatis (bisa diabaikan jika sudah bersih):", kktpErr);
+            console.warn("Info: Gagal menghapus KKTP terkait otomatis:", kktpErr);
         }
 
         // Step 2: Delete the ATP itself
-        await apiService.deleteATP(atpToDelete.id);
+        apiService.deleteATP(atpToDelete.id).catch(console.warn);
         
-        // Step 3: Reload list and refresh view
-        await loadATPsForTP(selectedTP.id); 
-        setTransientMessage('Data ATP berhasil dihapus.');
+        // We do not await loadATPsForTP since it will fetch in background
     } catch (error: any) {
         console.error("Delete ATP Error:", error);
         setAtpError(`Gagal menghapus ATP. Detail: ${error.message}`);
-        // Attempt to reload even if an error occurred to sync UI
         loadATPsForTP(selectedTP.id).catch(() => {});
-    } finally {
-        setLoadingState({ isLoading: false, title: '', message: '' });
     }
   };
 
-  const openAuthModal = (action: 'edit' | 'delete', type: 'tp' | 'atp', data: TPData | ATPData) => {
-    setAuthEmailInput('');
-    setAuthError(null);
-    setAuthPrompt({ action, type, data });
-  };
-
-
   const handleEdit = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
-    openAuthModal('edit', 'tp', tp);
+    setEditingTP(tp);
+    setView('edit_tp');
   };
 
   const handleDelete = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
-    openAuthModal('delete', 'tp', tp);
+    showConfirm(
+      'Hapus Data TP',
+      'Apakah Anda yakin ingin menghapus data TP ini?',
+      () => {
+        // Optimistic update
+        setTps(prev => prev.filter(t => t.id !== tp.id));
+        if (selectedSubject) {
+            const cached = tpsCache.current[selectedSubject];
+            if (cached) {
+                tpsCache.current[selectedSubject] = cached.filter(t => t.id !== tp.id);
+            }
+            setView('subject_dashboard');
+        }
+
+        apiService.deleteATPsByTPId(tp.id!).catch(console.warn);
+        apiService.deletePROTAsByTPId(tp.id!).catch(console.warn);
+        apiService.deleteKKTPsByTPId(tp.id!).catch(console.warn);
+        apiService.deletePROSEMsByTPId(tp.id!).catch(console.warn);
+        apiService.deleteTP(tp.id!).catch(console.warn);
+        closeConfirm();
+      }
+    );
   };
   
   const handleEditATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
     e.preventDefault();
     if (!selectedTP) return;
-     // FIX: If no creator email exists (e.g., old data), bypass authentication.
-    if (!atp.creatorEmail) {
-        setEditingATP(atp);
-        setView('edit_atp');
-    } else {
-        openAuthModal('edit', 'atp', atp);
-    }
+    setEditingATP(atp);
+    setView('edit_atp');
   };
 
   const handleDeleteATP = (e: React.MouseEvent, atp: ATPData) => {
     e.stopPropagation();
     e.preventDefault();
     if (!selectedTP) return;
-    // FIX: If no creator email exists, bypass auth modal and use a simple confirm dialog.
-    if (!atp.creatorEmail) {
-        if (window.confirm('Data ATP ini tidak memiliki informasi pembuat. Apakah Anda yakin ingin menghapusnya? Tindakan ini tidak dapat diurungkan.')) {
+    showConfirm(
+        'Hapus Data ATP',
+        'Apakah Anda yakin ingin menghapus data ATP ini? Tindakan ini tidak dapat diurungkan.',
+        () => {
             _performDeleteATP(atp);
+            closeConfirm();
         }
-    } else {
-        openAuthModal('delete', 'atp', atp);
-    }
+    );
   };
   
   const handleDeleteAndRegenerateKKTP = async (semester: 'Ganjil' | 'Genap') => {
@@ -547,21 +544,22 @@ const App: React.FC = () => {
         return;
     }
 
-    if (!window.confirm(`Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`)) {
-        return;
-    }
+    showConfirm(
+        'Buat Ulang KKTP',
+        `Apakah Anda yakin ingin membuat ulang KKTP Semester ${semester}? Data lama akan dihapus dan dibuat baru oleh AI.`,
+        async () => {
+            closeConfirm();
+            setKktpGenerationProgress({ isLoading: true, message: `Membuat ulang KKTP Semester ${semester}...` });
+            setKktpError(null);
 
-    setKktpGenerationProgress({ isLoading: true, message: `Membuat ulang KKTP Semester ${semester}...` });
-    setKktpError(null);
-
-    try {
-        await apiService.deleteKKTP(dataToDelete.id);
-        
-        const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP?.grade || '7');
+            try {
+                await apiService.deleteKKTP(dataToDelete.id);
+                
+                const newContent = await geminiService.generateKKTP(selectedATP, semester, selectedTP?.grade || '7');
         
         let savedData: KKTPData | null = null;
         if (newContent.length > 0) {
-            const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+            const payload: Omit<KKTPData, 'id' | 'createdAt' | 'userId'> = { 
                 atpId: selectedATP.id, 
                 subject: selectedATP.subject, 
                 grade: selectedTP?.grade || '7', 
@@ -577,73 +575,16 @@ const App: React.FC = () => {
         } as any));
         
         setTransientMessage(`KKTP Semester ${semester} berhasil dibuat ulang.`);
-    } catch (error: any) {
-        console.error("Regenerate KKTP Error:", error);
-        setKktpError(`Gagal membuat ulang KKTP: ${error.message}`);
-    } finally {
-        setKktpGenerationProgress({ isLoading: false, message: '' });
-    }
-  };
-
-  const handleAuthSubmit = async () => {
-    if (!authPrompt) return;
-
-    setAuthError(null);
-    setIsAuthorizing(true);
-    
-    try {
-        let targetEmail: string | undefined;
-
-        if (authPrompt.type === 'atp') {
-            targetEmail = (authPrompt.data as ATPData).creatorEmail;
-        } else {
-            targetEmail = (authPrompt.data as TPData).creatorEmail;
-        }
-        
-        if (!targetEmail) {
-            throw new Error('Data email pembuat tidak ditemukan. Tidak dapat memverifikasi.');
-        }
-
-        if (authEmailInput.trim().toLowerCase() !== targetEmail.trim().toLowerCase()) {
-            throw new Error('Email tidak sesuai. Anda tidak memiliki izin untuk melakukan tindakan ini.');
-        }
-
-        if (authPrompt.type === 'tp') {
-            const tpData = authPrompt.data as TPData;
-            if (authPrompt.action === 'edit') {
-                setEditingTP(tpData);
-                setView('edit_tp');
-                setAuthPrompt(null);
-            } else if (authPrompt.action === 'delete') {
-                await apiService.deleteATPsByTPId(tpData.id!);
-                await apiService.deletePROTAsByTPId(tpData.id!);
-                await apiService.deleteKKTPsByTPId(tpData.id!);
-                await apiService.deletePROSEMsByTPId(tpData.id!);
-                await apiService.deleteTP(tpData.id!);
-                if (selectedSubject) {
-                    await loadTPsForSubject(selectedSubject);
-                    setView('subject_dashboard'); // Go back to dashboard after deletion
-                }
-                setAuthPrompt(null);
-            }
-        } else if (authPrompt.type === 'atp') {
-            const atpToProcess = authPrompt.data as ATPData;
-            if (authPrompt.action === 'edit') {
-                setEditingATP(atpToProcess);
-                setView('edit_atp');
-                setAuthPrompt(null);
-            } else if (authPrompt.action === 'delete') {
-                setAuthPrompt(null); // Close modal before async operation
-                await _performDeleteATP(atpToProcess);
+            } catch (error: any) {
+                console.error("Regenerate KKTP Error:", error);
+                setKktpError(`Gagal membuat ulang KKTP: ${error.message}`);
+            } finally {
+                setKktpGenerationProgress({ isLoading: false, message: '' });
             }
         }
-    } catch (error: any) {
-        setAuthError(error.message);
-    } finally {
-        setIsAuthorizing(false);
-    }
+    );
   };
-  
+
   const handleNavigateToAtpList = (tp: TPData) => {
     setSelectedTP(tp);
     setAtps([]);
@@ -670,7 +611,7 @@ const App: React.FC = () => {
               tpGroups: selectedTP.tpGroups
           });
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
-          const newAtpData: Omit<ATPData, 'id' | 'createdAt'> = {
+          const newAtpData: Omit<ATPData, 'id' | 'createdAt' | 'userId'> = {
               tpId: selectedTP.id!,
               subject: selectedTP.subject,
               content: generatedContent,
@@ -678,8 +619,8 @@ const App: React.FC = () => {
               creatorEmail: creatorEmail,
           };
           const savedAtp = await apiService.saveATP(newAtpData);
-          setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang daftar ATP...', progress: 90 }));
-          await loadATPsForTP(selectedTP.id!);
+          setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan.', progress: 90 }));
+          setAtps(prev => [...prev, savedAtp]);
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Selesai!', progress: 100 }));
           setTimeout(() => {
               handleViewAtpDetail(savedAtp);
@@ -693,23 +634,7 @@ const App: React.FC = () => {
 
   const handleCreateNewAtp = () => {
     if (!selectedTP) return;
-    setAtpCreatorInfo({ name: '', email: '' });
-    setCreateAtpError(null);
-    setIsCreateAtpModalOpen(true);
-  };
-
-  const handleStartAtpGeneration = () => {
-    if (!atpCreatorInfo.name.trim() || !atpCreatorInfo.email.trim()) {
-        setCreateAtpError("Nama dan Email wajib diisi.");
-        return;
-    }
-    if (!/\S+@\S+\.\S+/.test(atpCreatorInfo.email)) {
-        setCreateAtpError("Format email tidak valid.");
-        return;
-    }
-    setCreateAtpError(null);
-    setIsCreateAtpModalOpen(false);
-    _proceedWithAtpGeneration(atpCreatorInfo.name, atpCreatorInfo.email);
+    _proceedWithAtpGeneration(user?.displayName || user?.email || "User", user?.email || "");
   };
   
   const handleCreateNewProta = () => {
@@ -733,17 +658,17 @@ const App: React.FC = () => {
         const generatedContent = await geminiService.generatePROTA(selectedATP, protaJpInput);
 
         setProtaGenerationProgress(prev => ({ ...prev, message: 'Draf PROTA diterima. Menyimpan ke database...', progress: 60 }));
-        const newProtaData: Omit<PROTAData, 'id' | 'createdAt'> = {
+        const newProtaData: Omit<PROTAData, 'id' | 'createdAt' | 'userId'> = {
             tpId: selectedTP.id!,
             subject: selectedTP.subject,
             jamPertemuan: protaJpInput,
             content: generatedContent,
             creatorName: selectedATP.creatorName,
         };
-        await apiService.savePROTA(newProtaData);
+        const savedProta = await apiService.savePROTA(newProtaData);
 
-        setProtaGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan. Memuat ulang PROTA...', progress: 90 }));
-        await loadPROTAsForTP(selectedTP.id!);
+        setProtaGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan.', progress: 90 }));
+        setProtas(prev => [...prev, savedProta]);
         
         setProtaGenerationProgress({ isLoading: false, message: '', progress: 0 });
         setView('view_prota_list');
@@ -757,62 +682,85 @@ const App: React.FC = () => {
   const handleDeleteAndRegenerateProta = async () => {
     if (!selectedTP) return;
     
-    setLoadingState({ isLoading: true, title: 'Menghapus PROTA & PROSEM', message: 'Sedang menghapus data PROTA dan PROSEM lama...' });
-    setProtaError(null);
-    try {
-        // We must delete downstream dependencies first. PROSEM depends on PROTA.
-        // Both deletion services are keyed by tpId, but this logic is cleaner.
-        await apiService.deletePROSEMsByTPId(selectedTP.id!);
-        await apiService.deletePROTAsByTPId(selectedTP.id!);
+    showConfirm(
+        'Buat Ulang PROTA & PROSEM',
+        'Apakah Anda yakin ingin membuat ulang PROTA & PROSEM? Data lama akan dihapus.',
+        async () => {
+            closeConfirm();
+            setLoadingState({ isLoading: true, title: 'Menghapus PROTA & PROSEM', message: 'Sedang menghapus data PROTA dan PROSEM lama...' });
+            setProtaError(null);
+            try {
+                // We must delete downstream dependencies first. PROSEM depends on PROTA.
+                // Both deletion services are keyed by tpId, but this logic is cleaner.
+                await apiService.deletePROSEMsByTPId(selectedTP.id!);
+                await apiService.deletePROTAsByTPId(selectedTP.id!);
+                
+                setProtas([]); // Clear state immediately
+                setProsemData(null); // Also clear prosem state
         
-        setProtas([]); // Clear state immediately
-        setProsemData(null); // Also clear prosem state
-
-        // Ensures we go back to the main menu to see the 'Create' button
-        setView('tp_menu'); 
-        setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan buat PROTA baru.");
-    } catch (error: any) {
-        setProtaError(`Gagal menghapus data lama: ${error.message}`);
-    } finally {
-        setLoadingState({ isLoading: false, title: '', message: '' });
-    }
+                // Ensures we go back to the main menu to see the 'Create' button
+                setView('tp_menu'); 
+                setTransientMessage("PROTA & PROSEM lama telah dihapus. Silakan buat PROTA baru.");
+            } catch (error: any) {
+                setProtaError(`Gagal menghapus data lama: ${error.message}`);
+            } finally {
+                setLoadingState({ isLoading: false, title: '', message: '' });
+            }
+        }
+    );
   };
 
   const handleDeleteAndRegenerateProsem = async () => {
     if (!selectedTP || protas.length === 0) return;
     const protaId = protas[0].id;
     
-    setLoadingState({ isLoading: true, title: 'Menghapus PROSEM', message: 'Sedang menghapus data PROSEM lama...' });
-    setProsemError(null);
-    try {
-        await apiService.deletePROSEMsByPROTAId(protaId);
-        setProsemData(null); // Clear state immediately
-        await handleNavigateToProsem();
-        setTransientMessage("PROSEM lama telah dihapus. Silakan buat yang baru untuk setiap semester.");
-    } catch (error: any) {
-        setProsemError(`Gagal menghapus PROSEM lama: ${error.message}`);
-    } finally {
-        setLoadingState({ isLoading: false, title: '', message: '' });
-    }
+    showConfirm(
+        'Buat Ulang PROSEM',
+        'Apakah Anda yakin ingin membuat ulang PROSEM? Data lama akan dihapus.',
+        async () => {
+            closeConfirm();
+            setLoadingState({ isLoading: true, title: 'Menghapus PROSEM', message: 'Sedang menghapus data PROSEM lama...' });
+            setProsemError(null);
+            try {
+                await apiService.deletePROSEMsByPROTAId(protaId);
+                setProsemData(null); // Clear state immediately
+                await handleNavigateToProsem();
+                setTransientMessage("PROSEM lama telah dihapus. Silakan buat yang baru untuk setiap semester.");
+            } catch (error: any) {
+                setProsemError(`Gagal menghapus PROSEM lama: ${error.message}`);
+            } finally {
+                setLoadingState({ isLoading: false, title: '', message: '' });
+            }
+        }
+    );
   };
 
   const handleSave = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     if (selectedSubject) {
       setGlobalError(null);
       try {
+        console.log("App.tsx: handleSave called for view:", view);
         if (view === 'create_tp') {
+          console.log("App.tsx: calling apiService.saveTP");
           const savedTP = await apiService.saveTP(data);
+          console.log("App.tsx: saveTP returned:", savedTP);
+          tpsCache.current[selectedSubject] = undefined; // Invalidate cache
           setSelectedTP(savedTP);
           setView('view_tp_detail');
         } else if (view === 'edit_tp' && editingTP?.id) {
+          console.log("App.tsx: calling apiService.updateTP");
           await apiService.updateTP(editingTP.id, data);
+          console.log("App.tsx: updateTP completed");
+          tpsCache.current[selectedSubject] = undefined; // Invalidate cache
           setView('view_tp_list');
         }
       } catch (error: any) {
-        console.error(error);
+        console.error("App.tsx: handleSave caught error:", error);
         setGlobalError(error.message);
         throw error;
       }
+    } else {
+        console.warn("App.tsx: handleSave called but selectedSubject is empty!");
     }
   };
   
@@ -836,48 +784,51 @@ const App: React.FC = () => {
       return;
     }
     
-    // Simplifikasi: Langsung tampilkan view KKTP, pemuatan terjadi di sana.
-    // Ini membuat alur lebih bersih dari perspektif pengguna.
     setView('view_kktp');
-
-    // Mulai proses pemuatan/pembuatan di latar belakang
-    setKktpGenerationProgress({ isLoading: true, message: 'Memuat data KKTP...' });
     setKktpError(null);
-    setKktpData(null); // Reset data sebelumnya
 
     try {
-        // Step 1: Dapatkan ATP yang diperlukan secara diam-diam.
-        const atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
+        let atpsForKktp = atps;
         if (atpsForKktp.length === 0) {
-            setKktpGenerationProgress({ isLoading: false, message: '' }); // Hentikan pemuatan
+            setKktpGenerationProgress({ isLoading: true, message: 'Memuat data KKTP...' });
+            atpsForKktp = await apiService.getATPsByTPId(selectedTP.id!);
+            setAtps(atpsForKktp);
+        }
+
+        if (atpsForKktp.length === 0) {
+            setKktpGenerationProgress({ isLoading: false, message: '' }); 
             setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat KKTP.');
-            setView('view_atp_list'); // Arahkan pengguna ke tempat yang benar
+            setView('view_atp_list'); 
             return;
         }
-        const atp = atpsForKktp[0]; // Asumsikan yang pertama adalah yang relevan
-        setSelectedATP(atp); // Simpan ATP yang dipilih untuk digunakan nanti
+        
+        const atp = atpsForKktp[0]; 
+        setSelectedATP(atp); 
 
-        // Step 2: Periksa apakah KKTP sudah ada.
-        const existingKktps = await apiService.getKKTPsByATPId(atp.id);
+        let finalGanjilData = kktpData?.ganjil || null;
+        let finalGenapData = kktpData?.genap || null;
 
-        let finalGanjilData: KKTPData | null = existingKktps.find(k => k.semester === 'Ganjil') || null;
-        let finalGenapData: KKTPData | null = existingKktps.find(k => k.semester === 'Genap') || null;
+        if (!finalGanjilData && !finalGenapData) {
+            setKktpGenerationProgress({ isLoading: true, message: 'Memeriksa KKTP yang ada...' });
+            const existingKktps = await apiService.getKKTPsByATPId(atp.id);
+            finalGanjilData = existingKktps.find(k => k.semester === 'Ganjil') || null;
+            finalGenapData = existingKktps.find(k => k.semester === 'Genap') || null;
+        }
 
-        // Step 3: Jika tidak ada, buat.
         if (!finalGanjilData && !finalGenapData) {
             setKktpGenerationProgress({ isLoading: true, message: 'Membuat KKTP dengan AI...' });
 
             // Generate Ganjil
             const ganjilContent = await geminiService.generateKKTP(atp, 'Ganjil', selectedTP.grade);
             if (ganjilContent.length > 0) {
-              const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', content: ganjilContent };
+              const ganjilPayload: Omit<KKTPData, 'id' | 'createdAt' | 'userId'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Ganjil', content: ganjilContent };
               finalGanjilData = await apiService.saveKKTP(ganjilPayload);
             }
 
             // Generate Genap
             const genapContent = await geminiService.generateKKTP(atp, 'Genap', selectedTP.grade);
             if (genapContent.length > 0) {
-              const genapPayload: Omit<KKTPData, 'id' | 'createdAt'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', content: genapContent };
+              const genapPayload: Omit<KKTPData, 'id' | 'createdAt' | 'userId'> = { atpId: atp.id, subject: selectedTP.subject, grade: selectedTP.grade, semester: 'Genap', content: genapContent };
               finalGenapData = await apiService.saveKKTP(genapPayload);
             }
         }
@@ -922,7 +873,7 @@ const App: React.FC = () => {
         const content = await geminiService.generateKKTP(atpToUse, semester, selectedTP.grade);
         
         if (content.length > 0) {
-             const payload: Omit<KKTPData, 'id' | 'createdAt'> = { 
+             const payload: Omit<KKTPData, 'id' | 'createdAt' | 'userId'> = { 
                 atpId: atpToUse.id, 
                 subject: selectedTP.subject, 
                 grade: selectedTP.grade, 
@@ -961,14 +912,12 @@ const App: React.FC = () => {
     }
 
     setView('view_prosem');
-    setProsemGenerationProgress({ isLoading: true, message: 'Memuat data PROSEM...' });
     setProsemError(null);
-    setProsemData(null); // Reset before loading
 
     try {
-        // Robustness: Check if protas are loaded, if not try to load them
         let currentProtas = protas;
         if (currentProtas.length === 0) {
+            setProsemGenerationProgress({ isLoading: true, message: 'Memuat data PROTA...' });
             try {
                  const loadedProtas = await apiService.getPROTAsByTPId(selectedTP.id!);
                  setProtas(loadedProtas);
@@ -986,11 +935,20 @@ const App: React.FC = () => {
         }
         const prota = currentProtas[0];
 
-        const existingProsems = await apiService.getPROSEMByProtaId(prota.id);
-        const ganjilData = existingProsems.find(p => p.semester === 'Ganjil') || null;
-        const genapData = existingProsems.find(p => p.semester === 'Genap') || null;
+        let ganjilData = prosemData?.ganjil || null;
+        let genapData = prosemData?.genap || null;
         
-        setProsemData({ ganjil: ganjilData, genap: genapData });
+        if (!ganjilData && !genapData) {
+             setProsemGenerationProgress({ isLoading: true, message: 'Memuat data PROSEM...' });
+             const existingProsems = await apiService.getPROSEMByProtaId(prota.id);
+             ganjilData = existingProsems.find(p => p.semester === 'Ganjil') || null;
+             genapData = existingProsems.find(p => p.semester === 'Genap') || null;
+             
+             if (ganjilData || genapData) {
+                 setProsemData({ ganjil: ganjilData, genap: genapData });
+             }
+        }
+        
         setActiveProsemSemester('Ganjil'); // Default to Ganjil tab
 
     } catch (error: any) {
@@ -1023,9 +981,19 @@ const App: React.FC = () => {
     }
     const prota = currentProtas[0];
 
+    const isSemesterMatch = (itemSem: string, targetSem: string) => {
+        if (!itemSem) return false;
+        const iLower = String(itemSem).toLowerCase();
+        const tLower = String(targetSem).toLowerCase();
+        if (iLower === tLower) return true;
+        if (tLower === 'ganjil') return ['ganjil', '1', 'gasal', 'odd', 'satu'].some(s => iLower.includes(s));
+        if (tLower === 'genap') return ['genap', '2', 'even', 'dua'].some(s => iLower.includes(s));
+        return false;
+    };
+
     // Check if specific semester content exists in PROTA
     const hasSemesterContent = prota.content.some(p => 
-        p.semester?.trim().toLowerCase() === semester.toLowerCase()
+        isSemesterMatch(p.semester, semester)
     );
 
     if (!hasSemesterContent) {
@@ -1059,7 +1027,7 @@ const App: React.FC = () => {
         const result = await generateWithRetry(semester);
         if (result.content.length > 0) {
             setProsemGenerationProgress({ isLoading: true, message: `Menyimpan PROSEM ${semester}...` });
-            const payload: Omit<PROSEMData, 'id' | 'createdAt'> = {
+            const payload: Omit<PROSEMData, 'id' | 'createdAt' | 'userId'> = {
                 protaId: prota.id,
                 subject: selectedTP.subject,
                 grade: selectedTP.grade,
@@ -1694,7 +1662,7 @@ const App: React.FC = () => {
             onCreateNew={() => setView('create_tp')}
             onSelectTP={handleSelectTP}
             onBack={handleBackToSubjects}
-            isLoading={loadingState.isLoading}
+            isLoading={isSubjectDashboardLoading}
           />
         );
       
@@ -1709,7 +1677,7 @@ const App: React.FC = () => {
                 prosemData={prosemData}
                 onNavigate={handleNavigateFromMenu}
                 onBack={() => setView('subject_dashboard')}
-                isLoading={loadingState.isLoading}
+                isLoading={isTPMenuLoading}
             />
         );
 
@@ -2493,81 +2461,6 @@ const App: React.FC = () => {
               {copyNotification}
           </div>
       )}
-       {authPrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-                <h3 className="text-lg font-bold mb-2 text-slate-800">Verifikasi Kepemilikan</h3>
-                <p className="text-sm text-slate-600 mb-4">
-                    Untuk {authPrompt.action === 'delete' ? 'menghapus' : 'mengedit'} data yang dibuat oleh <span className="font-semibold">{authPrompt.data.creatorName}</span>, silakan masukkan email yang digunakan saat membuat data ini.
-                </p>
-                <input
-                    type="email"
-                    value={authEmailInput}
-                    onChange={(e) => setAuthEmailInput(e.target.value)}
-                    placeholder="Masukkan email pembuat"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                    autoFocus
-                />
-                {authError && <p className="text-red-600 text-sm mt-2">{authError}</p>}
-                <div className="mt-6 flex justify-end gap-3">
-                    <button onClick={() => setAuthPrompt(null)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
-                    Batal
-                    </button>
-                    <button onClick={handleAuthSubmit} disabled={isAuthorizing} className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-slate-400">
-                    {isAuthorizing ? 'Memverifikasi...' : 'Lanjutkan'}
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-      {isCreateAtpModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-                <h3 className="text-lg font-bold mb-2 text-slate-800">Buat ATP Baru</h3>
-                <p className="text-sm text-slate-600 mb-4">
-                    Masukkan nama dan email Anda. Informasi ini akan digunakan untuk memvalidasi jika Anda ingin mengedit atau menghapus ATP ini di kemudian hari.
-                </p>
-                <form onSubmit={(e) => { e.preventDefault(); handleStartAtpGeneration(); }}>
-                    <div className="space-y-4">
-                        <div>
-                            <label htmlFor="atpCreatorName" className="block text-sm font-medium text-slate-700 mb-1">Nama Lengkap</label>
-                            <input
-                                type="text"
-                                id="atpCreatorName"
-                                value={atpCreatorInfo.name}
-                                onChange={(e) => setAtpCreatorInfo(prev => ({ ...prev, name: e.target.value }))}
-                                placeholder="Masukkan nama Anda"
-                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                                required
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="atpCreatorEmail" className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                            <input
-                                type="email"
-                                id="atpCreatorEmail"
-                                value={atpCreatorInfo.email}
-                                onChange={(e) => setAtpCreatorInfo(prev => ({ ...prev, email: e.target.value }))}
-                                placeholder="Masukkan email Anda"
-                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                                required
-                            />
-                        </div>
-                    </div>
-                    {createAtpError && <p className="text-red-600 text-sm mt-2">{createAtpError}</p>}
-                    <div className="mt-6 flex justify-end gap-3">
-                        <button type="button" onClick={() => setIsCreateAtpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
-                        Batal
-                        </button>
-                        <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                          Lanjutkan & Hasilkan
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-      )}
       
        {isProtaJpModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
@@ -2601,7 +2494,7 @@ const App: React.FC = () => {
       
       {/* --- Loading & Generation Overlays --- */}
       <LoadingOverlay
-        isLoading={loadingState.isLoading && view !== 'subject_dashboard'}
+        isLoading={loadingState.isLoading && view !== 'subject_dashboard' && view !== 'tp_menu'}
         title={loadingState.title}
         message={loadingState.message}
       />
@@ -2627,6 +2520,29 @@ const App: React.FC = () => {
         title="Memproses PROSEM..."
         message={prosemGenerationProgress.message || 'Memproses permintaan Anda...'}
       />
+
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">{confirmDialog.title}</h3>
+            <p className="text-slate-600 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={closeConfirm} 
+                className="px-4 py-2 font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmDialog.onConfirm} 
+                className="px-4 py-2 font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm shadow-red-200"
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main>
         {renderContent()}

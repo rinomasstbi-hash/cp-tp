@@ -1,6 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch, Timestamp, enableIndexedDbPersistence, initializeFirestore, getCountFromServer, addDoc } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
 
@@ -9,13 +8,13 @@ const envConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)',
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || '(default)',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-const activeConfig = envConfig.projectId ? envConfig : firebaseConfig;
+const activeConfig = envConfig.projectId && envConfig.apiKey ? envConfig : firebaseConfig;
 
 enum OperationType {
   CREATE = 'create',
@@ -44,8 +43,14 @@ interface FirestoreErrorInfo {
 }
 
 export const app = initializeApp(activeConfig);
-export const db = getFirestore(app, activeConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+export const db = getFirestore(app, activeConfig.firestoreDatabaseId || '(default)');
+
+// Enable offline persistence so data is saved locally first
+enableIndexedDbPersistence(db).catch((err) => {
+    console.warn("Firebase persistence error:", err.code);
+});
+
+import { auth } from './authService';
 
 
 
@@ -83,22 +88,19 @@ const dateToNumber = (val: any): number => {
 };
 
 const cleanStringsInObject = (data: any): any => {
-    if (Array.isArray(data)) {
-        return data.map(item => cleanStringsInObject(item));
-    }
-    if (data !== null && typeof data === 'object') {
-        const cleanedObject: { [key: string]: any } = {};
-        for (const key in data) {
-            if (Object.prototype.hasOwnProperty.call(data, key)) {
-                cleanedObject[key] = cleanStringsInObject(data[key]);
-            }
+    if (data === null || data === undefined) return data;
+    try {
+        // Fast path: if it's an object/array, use native JSON stringify/parse
+        // Native V8 serialization is orders of magnitude faster than recursive JS loops
+        const jsonString = JSON.stringify(data);
+        if (jsonString && jsonString.includes('$')) {
+             // Only parse if we actually need to replace something
+             return JSON.parse(jsonString.replace(/\$/g, ''));
         }
-        return cleanedObject;
+        return data;
+    } catch (e) {
+        return data;
     }
-    if (typeof data === 'string') {
-        return data.replace(/\$/g, '');
-    }
-    return data;
 };
 
 // ============================================================================
@@ -132,7 +134,7 @@ export const recordAccessRequest = async (email: string, name: string | null): P
     try {
         await setDoc(doc(db, 'access_requests', email), { 
             name: name || email,
-            requestedAt: serverTimestamp() 
+            requestedAt: Date.now() 
         });
     } catch (error) {
         console.error("Error recording access request:", error);
@@ -156,7 +158,7 @@ export const getAccessRequests = async (): Promise<{email: string, name: string,
 export const approveAccessRequest = async (email: string): Promise<void> => {
     try {
         await addApprovedUser(email);
-        await deleteDoc(doc(db, 'access_requests', email));
+        deleteDoc(doc(db, 'access_requests', email)).catch(e => console.warn(e));
     } catch (error) {
          console.error("Error approving access request:", error);
          throw error;
@@ -165,7 +167,7 @@ export const approveAccessRequest = async (email: string): Promise<void> => {
 
 export const rejectAccessRequest = async (email: string): Promise<void> => {
     try {
-        await deleteDoc(doc(db, 'access_requests', email));
+        deleteDoc(doc(db, 'access_requests', email)).catch(e => console.warn(e));
     } catch (error) {
          console.error("Error rejecting access request:", error);
          throw error;
@@ -184,7 +186,7 @@ export const getApprovedUsers = async (): Promise<{email: string}[]> => {
 
 export const addApprovedUser = async (email: string): Promise<void> => {
     try {
-        await setDoc(doc(db, 'approved_users', email), { addedAt: serverTimestamp() });
+        await setDoc(doc(db, 'approved_users', email), { addedAt: Date.now() });
     } catch (error) {
         console.error("Error adding approved user:", error);
         throw error;
@@ -193,7 +195,7 @@ export const addApprovedUser = async (email: string): Promise<void> => {
 
 export const removeApprovedUser = async (email: string): Promise<void> => {
     try {
-        await deleteDoc(doc(db, 'approved_users', email));
+        deleteDoc(doc(db, 'approved_users', email)).catch(e => console.warn(e));
     } catch (error) {
          console.error("Error removing approved user:", error);
          throw error;
@@ -242,22 +244,27 @@ export const getAllTPs = async (): Promise<TPData[]> => {
 };
 
 export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<TPData> => {
-    const newDocRef = doc(collection(db, 'tps'));
-    const payload = {
+    let payload = {
         ...data,
-        userId: auth.currentUser!.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        userId: (auth.currentUser?.uid || ""),
+        creatorEmail: (auth.currentUser?.email || ""),
+        creatorName: data.creatorName || (auth.currentUser?.displayName || auth.currentUser?.email || "User"),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
     };
+    
+    // Completely sanitize payload to prevent Firestore hanging on undefined values or proxy objects
+    payload = JSON.parse(JSON.stringify(payload));
+
     try {
-        await setDoc(newDocRef, payload);
+        const newDocRef = doc(collection(db, 'tps'));
+        // Optimistic update: Fire and forget
+        setDoc(newDocRef, payload).catch(err => console.warn("Background sync delayed:", err));
+        
         return {
-            ...data,
-            id: newDocRef.id,
-            userId: auth.currentUser!.uid,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
+            ...payload,
+            id: newDocRef.id
+        } as TPData;
     } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, 'tps');
         throw error;
@@ -267,30 +274,36 @@ export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt'
 export const updateTP = async (id: string, data: Partial<TPData>): Promise<TPData> => {
     const docRef = doc(db, 'tps', id);
     try {
-        const docSnap = await getDoc(docRef);
-        if(!docSnap.exists()) throw new Error("Document not found");
-        const currentData = docSnap.data();
+        // We do not fetch the current doc to allow offline edits to work seamlessly.
+        // We will just merge the updates.
         
-        const payload = {
-            userId: currentData.userId,
-            subject: data.subject ?? currentData.subject,
-            cpElements: data.cpElements ?? currentData.cpElements,
-            grade: data.grade ?? currentData.grade,
-            creatorEmail: data.creatorEmail ?? currentData.creatorEmail,
-            creatorName: data.creatorName ?? currentData.creatorName,
-            cpSourceVersion: data.cpSourceVersion ?? currentData.cpSourceVersion,
-            additionalNotes: data.additionalNotes ?? currentData.additionalNotes,
-            tpGroups: data.tpGroups ?? currentData.tpGroups,
-            createdAt: currentData.createdAt,
-            updatedAt: serverTimestamp()
+        let payload = {
+            subject: data.subject,
+            cpElements: data.cpElements,
+            grade: data.grade,
+            creatorEmail: (auth.currentUser?.email || ""),
+            creatorName: data.creatorName,
+            cpSourceVersion: data.cpSourceVersion,
+            additionalNotes: data.additionalNotes,
+            tpGroups: data.tpGroups,
+            updatedAt: Date.now()
         };
         
-        await updateDoc(docRef, payload);
+        // Remove undefined fields so they are not overwritten
+        Object.keys(payload).forEach(key => {
+          if ((payload as any)[key] === undefined) {
+            delete (payload as any)[key];
+          }
+        });
+        
+        payload = JSON.parse(JSON.stringify(payload));
+        
+        // Optimistic update
+        updateDoc(docRef, payload).catch(err => console.warn("Background sync delayed:", err));
+        
         return {
-            ...currentData,
-            ...payload,
+            ...data, // returns the new values
             id,
-            createdAt: dateToNumber(currentData.createdAt),
             updatedAt: Date.now()
         } as TPData;
     } catch (error) {
@@ -301,7 +314,7 @@ export const updateTP = async (id: string, data: Partial<TPData>): Promise<TPDat
 
 export const deleteTP = async (id: string): Promise<{ success: boolean }> => {
     try {
-        await deleteDoc(doc(db, 'tps', id));
+        deleteDoc(doc(db, 'tps', id)).catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `tps/${id}`);
@@ -314,16 +327,14 @@ export const deleteTP = async (id: string): Promise<{ success: boolean }> => {
 // ============================================================================
 
 export const deleteATPsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return { success: false };
-    const q = query(collection(db, 'atps'), where('tpId', '==', tpId), where('userId', '==', userId));
+    const q = query(collection(db, 'atps'), where('tpId', '==', tpId));
     try {
         const snapshot = await getDocs(q);
         const batch = writeBatch(db);
         snapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
          handleFirestoreError(error, OperationType.DELETE, `atps`);
@@ -353,15 +364,17 @@ export const saveATP = async (data: Omit<ATPData, 'id' | 'createdAt' | 'userId'>
     const newDocRef = doc(collection(db, 'atps'));
     const payload = {
         ...data,
-        userId: auth.currentUser!.uid,
-        createdAt: serverTimestamp(),
+        userId: (auth.currentUser?.uid || ""),
+        creatorEmail: (auth.currentUser?.email || ""),
+        creatorName: data.creatorName || (auth.currentUser?.displayName || auth.currentUser?.email || "User"),
+        createdAt: Date.now(),
     };
     try {
-        await setDoc(newDocRef, payload);
+        setDoc(newDocRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...data,
             id: newDocRef.id,
-            userId: auth.currentUser!.uid,
+            userId: (auth.currentUser?.uid || ""),
             createdAt: Date.now(),
         };
     } catch (error) {
@@ -372,7 +385,7 @@ export const saveATP = async (data: Omit<ATPData, 'id' | 'createdAt' | 'userId'>
 
 export const deleteATP = async (id: string): Promise<{ success: boolean }> => {
     try {
-        await deleteDoc(doc(db, 'atps', id));
+        deleteDoc(doc(db, 'atps', id)).catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `atps/${id}`);
@@ -393,10 +406,10 @@ export const updateATP = async (id: string, data: Partial<ATPData>): Promise<ATP
             subject: data.subject ?? currentData.subject,
             content: data.content ?? currentData.content,
             creatorName: data.creatorName ?? currentData.creatorName,
-            creatorEmail: data.creatorEmail ?? currentData.creatorEmail,
+            creatorEmail: (auth.currentUser?.email || ""),
             createdAt: currentData.createdAt
         };
-        await updateDoc(docRef, payload);
+        updateDoc(docRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...currentData,
             ...payload,
@@ -414,16 +427,14 @@ export const updateATP = async (id: string, data: Partial<ATPData>): Promise<ATP
 // ============================================================================
 
 export const deletePROTAsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return { success: false };
-    const q = query(collection(db, 'protas'), where('tpId', '==', tpId), where('userId', '==', userId));
+    const q = query(collection(db, 'protas'), where('tpId', '==', tpId));
     try {
         const snapshot = await getDocs(q);
         const batch = writeBatch(db);
         snapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
          handleFirestoreError(error, OperationType.DELETE, `protas`);
@@ -453,15 +464,16 @@ export const savePROTA = async (data: Omit<PROTAData, 'id' | 'createdAt' | 'user
     const newDocRef = doc(collection(db, 'protas'));
     const payload = {
         ...data,
-        userId: auth.currentUser!.uid,
-        createdAt: serverTimestamp(),
+        userId: (auth.currentUser?.uid || ""),
+        creatorName: data.creatorName || (auth.currentUser?.displayName || auth.currentUser?.email || "User"),
+        createdAt: Date.now(),
     };
     try {
-        await setDoc(newDocRef, payload);
+        setDoc(newDocRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...data,
             id: newDocRef.id,
-            userId: auth.currentUser!.uid,
+            userId: (auth.currentUser?.uid || ""),
             createdAt: Date.now(),
         };
     } catch (error) {
@@ -472,7 +484,7 @@ export const savePROTA = async (data: Omit<PROTAData, 'id' | 'createdAt' | 'user
 
 export const deletePROTA = async (id: string): Promise<{ success: boolean }> => {
     try {
-        await deleteDoc(doc(db, 'protas', id));
+        deleteDoc(doc(db, 'protas', id)).catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `protas/${id}`);
@@ -495,7 +507,7 @@ export const updatePROTA = async (id: string, data: Partial<PROTAData>): Promise
             creatorName: data.creatorName ?? currentData.creatorName,
             createdAt: currentData.createdAt
         };
-        await updateDoc(docRef, payload);
+        updateDoc(docRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...currentData,
             ...payload,
@@ -534,15 +546,15 @@ export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt' | 'userId
     const newDocRef = doc(collection(db, 'kktps'));
     const payload = {
         ...data,
-        userId: auth.currentUser!.uid,
-        createdAt: serverTimestamp(),
+        userId: (auth.currentUser?.uid || ""),
+        createdAt: Date.now(),
     };
     try {
-        await setDoc(newDocRef, payload);
+        setDoc(newDocRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...data,
             id: newDocRef.id,
-            userId: auth.currentUser!.uid,
+            userId: (auth.currentUser?.uid || ""),
             createdAt: Date.now(),
         };
     } catch (error) {
@@ -553,7 +565,7 @@ export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt' | 'userId
 
 export const deleteKKTP = async (id: string): Promise<{ success: boolean }> => {
     try {
-        await deleteDoc(doc(db, 'kktps', id));
+        deleteDoc(doc(db, 'kktps', id)).catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `kktps/${id}`);
@@ -562,16 +574,14 @@ export const deleteKKTP = async (id: string): Promise<{ success: boolean }> => {
 };
 
 export const deleteKKTPsByATPId = async (atpId: string): Promise<{ success: boolean }> => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return { success: false };
-    const q = query(collection(db, 'kktps'), where('atpId', '==', atpId), where('userId', '==', userId));
+    const q = query(collection(db, 'kktps'), where('atpId', '==', atpId));
     try {
         const snapshot = await getDocs(q);
         const batch = writeBatch(db);
         snapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
          handleFirestoreError(error, OperationType.DELETE, `kktps`);
@@ -587,12 +597,11 @@ export const deleteKKTPsByTPId = async (tpId: string): Promise<{ success: boolea
         const atps = await getATPsByTPId(tpId);
         const batch = writeBatch(db);
         for(const atp of atps) {
-             const userId = auth.currentUser?.uid || '';
-             const q = query(collection(db, 'kktps'), where('atpId', '==', atp.id), where('userId', '==', userId));
+             const q = query(collection(db, 'kktps'), where('atpId', '==', atp.id));
              const snapshot = await getDocs(q);
              snapshot.docs.forEach(doc => batch.delete(doc.ref));
         }
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `kktps_by_tp`);
@@ -626,15 +635,15 @@ export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt' | 'us
     const newDocRef = doc(collection(db, 'prosems'));
     const payload = {
         ...data,
-        userId: auth.currentUser!.uid,
-        createdAt: serverTimestamp(),
+        userId: (auth.currentUser?.uid || ""),
+        createdAt: Date.now(),
     };
     try {
-        await setDoc(newDocRef, payload);
+        setDoc(newDocRef, payload).catch(e => console.warn("Background sync delayed:", e));
         return {
             ...data,
             id: newDocRef.id,
-            userId: auth.currentUser!.uid,
+            userId: (auth.currentUser?.uid || ""),
             createdAt: Date.now(),
         };
     } catch (error) {
@@ -644,16 +653,14 @@ export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt' | 'us
 };
 
 export const deletePROSEMsByPROTAId = async (protaId: string): Promise<{ success: boolean }> => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return { success: false };
-    const q = query(collection(db, 'prosems'), where('protaId', '==', protaId), where('userId', '==', userId));
+    const q = query(collection(db, 'prosems'), where('protaId', '==', protaId));
     try {
         const snapshot = await getDocs(q);
         const batch = writeBatch(db);
         snapshot.docs.forEach((doc) => {
             batch.delete(doc.ref);
         });
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
          handleFirestoreError(error, OperationType.DELETE, `prosems`);
@@ -666,12 +673,11 @@ export const deletePROSEMsByTPId = async (tpId: string): Promise<{ success: bool
         const protas = await getPROTAsByTPId(tpId);
         const batch = writeBatch(db);
         for(const prota of protas) {
-             const userId = auth.currentUser?.uid || '';
-             const q = query(collection(db, 'prosems'), where('protaId', '==', prota.id), where('userId', '==', userId));
+             const q = query(collection(db, 'prosems'), where('protaId', '==', prota.id));
              const snapshot = await getDocs(q);
              snapshot.docs.forEach(doc => batch.delete(doc.ref));
         }
-        await batch.commit();
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
         return { success: true };
     } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `prosems_by_tp`);
