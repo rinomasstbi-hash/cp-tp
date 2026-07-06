@@ -1,20 +1,6 @@
-import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch, Timestamp, enableIndexedDbPersistence, initializeFirestore, getCountFromServer, addDoc } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
 import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
-
-const envConfig = {
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || '(default)',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
-};
-
-const activeConfig = envConfig.projectId && envConfig.apiKey ? envConfig : firebaseConfig;
+import { app, activeConfig } from './firebaseApp';
 
 enum OperationType {
   CREATE = 'create',
@@ -42,7 +28,6 @@ interface FirestoreErrorInfo {
   }
 }
 
-export const app = initializeApp(activeConfig);
 export const db = getFirestore(app, activeConfig.firestoreDatabaseId || '(default)');
 
 // Enable offline persistence so data is saved locally first
