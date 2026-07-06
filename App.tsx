@@ -12,6 +12,7 @@ import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, Clos
 
 import Login from './components/Login';
 import ManageAccess from './components/ManageAccess';
+import { AdminSettings } from './components/AdminSettings';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, auth } from './services/authService';
 
 const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void }> = ({ userEmail, currentView, onViewChange, onLogin }) => {
@@ -37,14 +38,20 @@ const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewC
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            {userEmail === 'rinomasstbi@gmail.com' && (
+            {userEmail === 'rinomasstbi@gmail.com' && (<>
+              <button
+                onClick={() => onViewChange(currentView === 'view_admin_settings' ? 'select_subject' : 'view_admin_settings')}
+                className="text-sm font-medium text-amber-400 hover:text-amber-300 transition mr-2"
+              >
+                {currentView === 'view_admin_settings' ? 'Kembali' : 'Pengaturan API'}
+              </button>
               <button
                 onClick={() => onViewChange(currentView === 'manage_access' ? 'select_subject' : 'manage_access')}
-                className="hidden sm:block text-sm font-medium text-teal-400 hover:text-teal-300 transition"
+                className="text-sm font-medium text-teal-400 hover:text-teal-300 transition"
               >
-                {currentView === 'manage_access' ? 'Kembali ke Aplikasi' : 'Kelola Akses'}
+                {currentView === 'manage_access' ? 'Kembali' : 'Kelola Akses'}
               </button>
-            )}
+            </>)}
             {userEmail ? (
                 <button
                    onClick={() => signOut(auth).then(() => window.location.reload())}
@@ -1648,6 +1655,8 @@ const App: React.FC = () => {
     }
 
     switch (view) {
+      case 'view_admin_settings':
+        return <AdminSettings />;
       case 'manage_access':
         return <ManageAccess />;
 

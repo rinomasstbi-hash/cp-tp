@@ -1,10 +1,21 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './dbService';
 import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
 
-const getAI = () => {
-    const geminiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
+const getAI = async () => {
+    let geminiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
+    try {
+        const docRef = doc(db, 'settings', 'admin');
+        const snap = await getDoc(docRef);
+        if (snap.exists() && snap.data().geminiApiKey) {
+            geminiKey = snap.data().geminiApiKey;
+        }
+    } catch (e) {
+        console.error("Gagal memuat API Key dari database", e);
+    }
     if (!geminiKey) {
-        throw new Error('API Key tidak ditemukan. Pastikan VITE_GEMINI_API_KEY diset di Environment Variables.');
+        throw new Error('API Key tidak ditemukan. Silakan login sebagai admin dan atur di menu Pengaturan API.');
     }
     return new GoogleGenAI({ apiKey: geminiKey });
 };
@@ -46,7 +57,7 @@ const handleGeminiError = (e: any, context: string) => {
 
 export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
     try {
-        const ai = getAI();
+        const ai = await getAI();
         const response = await generateWithRetry(ai, {
             model,
             contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
@@ -88,7 +99,7 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
 
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
     try {
-        const ai = getAI();
+        const ai = await getAI();
         const response = await generateWithRetry(ai, {
             model,
             contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}. Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.`,
@@ -122,7 +133,7 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
     try {
-        const ai = getAI();
+        const ai = await getAI();
         const response = await generateWithRetry(ai, {
             model,
             contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
@@ -170,7 +181,7 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
         if (contentBySem.length === 0) {
             return [];
         }
-        const ai = getAI();
+        const ai = await getAI();
         const response = await generateWithRetry(ai, {
             model,
             contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
