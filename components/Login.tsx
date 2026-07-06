@@ -1,5 +1,5 @@
 import React from 'react';
-import { signInAnonymously, auth } from '../services/authService';
+import { signInWithPopup, GoogleAuthProvider, auth } from '../services/authService';
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -13,7 +13,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError(null);
     try {
-      await signInAnonymously(auth);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
       onLoginSuccess();
     } catch (err: any) {
       console.error("Login error:", err);

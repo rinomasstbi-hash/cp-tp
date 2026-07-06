@@ -76,7 +76,7 @@ async function startServer() {
       if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("API ERROR:", e.message); res.status(500).json({ error: e.message });
     }
   });
 
@@ -110,7 +110,7 @@ async function startServer() {
       if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("API ERROR:", e.message); res.status(500).json({ error: e.message });
     }
   });
 
@@ -145,7 +145,7 @@ async function startServer() {
       if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("API ERROR:", e.message); res.status(500).json({ error: e.message });
     }
   });
 
@@ -202,7 +202,7 @@ async function startServer() {
       if (!result || !Array.isArray(result)) throw new Error("Respons invalid");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      console.error("API ERROR:", e.message); res.status(500).json({ error: e.message });
     }
   });
 
