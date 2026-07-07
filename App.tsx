@@ -505,15 +505,37 @@ const App: React.FC = () => {
 
   const handleEdit = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
+    
+    const isOwner = tp.userId === user?.uid || (tp.creatorEmail && user?.email && tp.creatorEmail.toLowerCase().trim() === user.email.toLowerCase().trim());
+    if (!isAdmin && !isOwner) {
+      showConfirm(
+        'Akses Ditolak',
+        `Anda tidak memiliki izin untuk mengedit TP ini karena dibuat oleh ${tp.creatorName || tp.creatorEmail || 'guru lain'}.`,
+        () => closeConfirm()
+      );
+      return;
+    }
+    
     setEditingTP(tp);
     setView('edit_tp');
   };
 
   const handleDelete = (e: React.MouseEvent, tp: TPData) => {
     e.stopPropagation();
+    
+    const isOwner = tp.userId === user?.uid || (tp.creatorEmail && user?.email && tp.creatorEmail.toLowerCase().trim() === user.email.toLowerCase().trim());
+    if (!isAdmin && !isOwner) {
+      showConfirm(
+        'Akses Ditolak',
+        `Anda tidak memiliki izin untuk menghapus TP ini karena dibuat oleh ${tp.creatorName || tp.creatorEmail || 'guru lain'}.`,
+        () => closeConfirm()
+      );
+      return;
+    }
+
     showConfirm(
       'Hapus Data TP',
-      'Apakah Anda yakin ingin menghapus data TP ini?',
+      'Apakah Anda yakin ingin menghapus data TP ini? Semua data ATP, Prota, KKTP, dan Prosem yang terhubung juga akan dihapus.',
       () => {
         // Optimistic update
         setTps(prev => prev.filter(t => t.id !== tp.id));
@@ -1745,7 +1767,7 @@ const App: React.FC = () => {
                               Pada: {new Date(tp.createdAt).toLocaleString('id-ID')}
                           </p>
                       </div>
-                      {user && isApproved && (
+                      {user && isApproved && (isAdmin || tp.userId === user.uid || (tp.creatorEmail && user.email && tp.creatorEmail.toLowerCase().trim() === user.email.toLowerCase().trim())) && (
                           <div className="flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
                              <button onClick={(e) => handleEdit(e, tp)} title="Edit TP" className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors">
                               <EditIcon className="w-4 h-4"/>
@@ -1803,22 +1825,24 @@ const App: React.FC = () => {
                             <span><span className="font-semibold">Penyusun:</span> {selectedTP.creatorName}</span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                        <button 
-                            onClick={(e) => handleEdit(e, selectedTP)} 
-                            className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 font-semibold rounded-md shadow-sm hover:bg-blue-200 transition-colors text-sm"
-                        >
-                            <EditIcon className="w-4 h-4"/>
-                            <span>Edit TP</span>
-                        </button>
-                        <button 
-                            onClick={(e) => handleDelete(e, selectedTP)} 
-                            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-100 text-red-700 font-semibold rounded-md shadow-sm hover:bg-red-200 transition-colors text-sm"
-                        >
-                            <TrashIcon className="w-4 h-4"/>
-                            <span>Hapus TP</span>
-                        </button>
-                    </div>
+                    {user && isApproved && (isAdmin || selectedTP.userId === user.uid || (selectedTP.creatorEmail && user.email && selectedTP.creatorEmail.toLowerCase().trim() === user.email.toLowerCase().trim())) && (
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                            <button 
+                                onClick={(e) => handleEdit(e, selectedTP)} 
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 font-semibold rounded-md shadow-sm hover:bg-blue-200 transition-colors text-sm"
+                            >
+                                <EditIcon className="w-4 h-4"/>
+                                <span>Edit TP</span>
+                            </button>
+                            <button 
+                                onClick={(e) => handleDelete(e, selectedTP)} 
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-100 text-red-700 font-semibold rounded-md shadow-sm hover:bg-red-200 transition-colors text-sm"
+                            >
+                                <TrashIcon className="w-4 h-4"/>
+                                <span>Hapus TP</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                  <div>

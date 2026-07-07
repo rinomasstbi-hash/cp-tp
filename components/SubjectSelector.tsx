@@ -82,10 +82,10 @@ const SubjectSelector: React.FC<SubjectSelectorProps> = ({ onSelectSubject, isAd
 
   return (
     <div className="flex flex-col items-center p-4 sm:p-6 lg:p-8">
-      <div className="text-center my-8 w-full max-w-7xl">
+      <div className="text-center mt-6 mb-8 w-full max-w-7xl">
         
-        <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-          Silakan pilih mata pelajaran untuk melihat atau membuat Tujuan Pembelajaran (TP).
+        <p className="text-sm sm:text-lg text-slate-600 max-w-2xl mx-auto">
+          Silakan pilih mata pelajaran untuk melihat Tujuan Pembelajaran (TP), ATP, KKTP dll.
         </p>
         <div className="mt-6 max-w-lg mx-auto">
           <div className="relative">

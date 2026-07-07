@@ -2,8 +2,69 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(resourceData) {
+      return isSignedIn() && (
+        request.auth.uid == resourceData.userId || 
+        (resourceData.creatorEmail != null && request.auth.token.email.lower() == resourceData.creatorEmail.lower())
+      );
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email.lower() == 'rinomasstbi@gmail.com';
+    }
+
+    // Rules for TPs
+    match /tps/{tpId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+
+    // Rules for related documents (ATPs, PROTAs, KKTPs, PROSEMs)
+    // Teachers need to read them, and can only edit/delete if they are owner or admin
+    match /atps/{atpId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+    
+    match /protas/{protaId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+
+    match /kktps/{kktpId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+
+    match /prosems/{prosemId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+
+    // Default match for other collections (settings, access_requests, approved_users)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /access_requests/{requestId} {
       allow read, write: if true;
+    }
+
+    match /approved_users/{userId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }
