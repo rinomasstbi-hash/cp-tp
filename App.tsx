@@ -1554,9 +1554,69 @@ const App: React.FC = () => {
     setTimeout(() => setCopyNotification(''), 2000);
   };
 
+  const getEnrichedProsemData = (data: PROSEMData | null): PROSEMData | null => {
+    if (!data) return null;
+    
+    const isGrade9 = data.grade.includes('9') || data.grade.toUpperCase().includes('IX');
+    
+    const defaultGanjil78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] };
+    const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
+    const defaultGanjil9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
+    const defaultGenap9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+
+    const getWeekNumbersFromSettings = (
+        settings: typeof globalSettings,
+        grade: string,
+        semester: 'Ganjil' | 'Genap',
+        month: string
+    ): number[] => {
+        const defaultVal = semester === 'Ganjil'
+            ? (isGrade9 ? defaultGanjil9 : defaultGanjil78)
+            : (isGrade9 ? defaultGenap9 : defaultGenap78);
+
+        if (!settings) {
+            return defaultVal[month as keyof typeof defaultVal] || [1, 2, 3, 4, 5];
+        }
+
+        let rawWeeksObj: any = null;
+        if (isGrade9) {
+            rawWeeksObj = semester === 'Ganjil' ? settings.weeksGanjil9 : settings.weeksGenap9;
+        } else {
+            rawWeeksObj = semester === 'Ganjil' ? settings.weeksGanjil78 : settings.weeksGenap78;
+        }
+
+        if (rawWeeksObj && rawWeeksObj[month]) {
+            const val = rawWeeksObj[month];
+            if (Array.isArray(val)) {
+                return val.map(Number).filter(v => !isNaN(v) && v >= 1 && v <= 5).sort((a, b) => a - b);
+            } else if (typeof val === 'number') {
+                return Array.from({ length: val }, (_, i) => i + 1);
+            }
+        }
+
+        return defaultVal[month as keyof typeof defaultVal] || [1, 2, 3, 4, 5];
+    };
+
+    const enrichedHeaders = data.headers.map(header => {
+        const weekNumbers = getWeekNumbersFromSettings(globalSettings, data.grade, data.semester, header.month);
+        return {
+            ...header,
+            weeks: weekNumbers.length,
+            weekNumbers: weekNumbers
+        };
+    });
+
+    return {
+        ...data,
+        headers: enrichedHeaders
+    };
+  };
+
   const handleExportProsemToWord = (semester: 'Ganjil' | 'Genap') => {
-      const dataToExport = semester === 'Ganjil' ? prosemData?.ganjil : prosemData?.genap;
-      if (!dataToExport || !selectedTP || protas.length === 0) return;
+      const rawDataToExport = semester === 'Ganjil' ? prosemData?.ganjil : prosemData?.genap;
+      if (!rawDataToExport || !selectedTP || protas.length === 0) return;
+      const dataToExport = getEnrichedProsemData(rawDataToExport);
+      if (!dataToExport) return;
       const creatorName = protas[0].creatorName;
   
       const styles = `
@@ -1593,9 +1653,12 @@ const App: React.FC = () => {
       })).join('');
   
       const prosemRows = dataToExport.content.map(row => {
-          const weekCells = dataToExport.headers.flatMap(h => 
-              row.bulan[h.month]?.map(cell => `<td class="text-center">${cell || ''}</td>`) || Array(h.weeks).fill('<td></td>')
-          ).join('');
+          const weekCells = dataToExport.headers.flatMap(h => {
+              return Array.from({ length: h.weeks }, (_, weekIndex) => {
+                  const cellVal = (row.bulan[h.month] && row.bulan[h.month][weekIndex]) || '';
+                  return `<td class="text-center">${cellVal}</td>`;
+              });
+          }).join('');
           return `
               <tr>
                   <td class="text-center">${row.no}</td>
@@ -2469,7 +2532,7 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                             {prosemData?.ganjil 
-                                ? <PROSEMTableContent data={prosemData.ganjil} /> 
+                                ? <PROSEMTableContent data={getEnrichedProsemData(prosemData.ganjil)!} /> 
                                 : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Ganjil. {user && isApproved && "Klik tombol 'Buat PROSEM Ganjil' untuk memulai."}</div>
                             }
                         </div>
@@ -2493,7 +2556,7 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                             {prosemData?.genap 
-                                ? <PROSEMTableContent data={prosemData.genap} /> 
+                                ? <PROSEMTableContent data={getEnrichedProsemData(prosemData.genap)!} /> 
                                 : <div className="text-center py-10 text-slate-500">Tidak ada data PROSEM untuk Semester Genap. {user && isApproved && "Klik tombol 'Buat PROSEM Genap' untuk memulai."}</div>
                             }
                         </div>
