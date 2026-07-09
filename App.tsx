@@ -696,7 +696,7 @@ const App: React.FC = () => {
 
     try {
         setProtaGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf PROTA...', progress: 25 }));
-        const generatedContent = await geminiService.generatePROTA(selectedATP, protaJpInput);
+        const generatedContent = await geminiService.generatePROTA(selectedATP, protaJpInput, selectedTP.grade);
 
         setProtaGenerationProgress(prev => ({ ...prev, message: 'Draf PROTA diterima. Menyimpan ke database...', progress: 60 }));
         const newProtaData: Omit<PROTAData, 'id' | 'createdAt' | 'userId'> = {
@@ -1003,6 +1003,62 @@ const App: React.FC = () => {
   const handleGenerateSingleProsem = async (semester: 'Ganjil' | 'Genap') => {
     if (!selectedTP) return;
     
+    // Determine grade level
+    const isGrade9 = selectedTP.grade.includes('9') || selectedTP.grade.toUpperCase().includes('IX');
+    
+    // Default week arrays for fallback and sanitization
+    const defaultGanjil78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] };
+    const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
+    const defaultGanjil9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
+    const defaultGenap9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+
+    const sanitizeWeeksObj = (val: any, defaultVal: Record<string, number[]>): Record<string, number[]> => {
+        if (!val) return defaultVal;
+        const sanitized: Record<string, number[]> = {};
+        Object.keys(defaultVal).forEach(month => {
+            const value = val[month];
+            if (Array.isArray(value)) {
+                sanitized[month] = value.map(Number).filter(v => !isNaN(v) && v >= 1 && v <= 5).sort((a, b) => a - b);
+            } else if (typeof value === 'number') {
+                sanitized[month] = Array.from({ length: value }, (_, i) => i + 1);
+            } else {
+                sanitized[month] = defaultVal[month];
+            }
+        });
+        return sanitized;
+    };
+
+    // Get customWeeks based on grade level and semester from globalSettings
+    let weeksToUse: Record<string, number[]> | undefined = undefined;
+    
+    let currentSettings = globalSettings;
+    if (!currentSettings) {
+        try {
+            currentSettings = await getAdminSettings();
+            if (currentSettings) {
+                setGlobalSettings(currentSettings);
+            }
+        } catch (e) {
+            console.error("Gagal memuat settings on-the-fly", e);
+        }
+    }
+
+    if (currentSettings) {
+        if (isGrade9) {
+            const rawWeeksObj = semester === 'Ganjil' ? currentSettings.weeksGanjil9 : currentSettings.weeksGenap9;
+            weeksToUse = sanitizeWeeksObj(rawWeeksObj, semester === 'Ganjil' ? defaultGanjil9 : defaultGenap9);
+        } else {
+            const rawWeeksObj = semester === 'Ganjil' ? currentSettings.weeksGanjil78 : currentSettings.weeksGenap78;
+            weeksToUse = sanitizeWeeksObj(rawWeeksObj, semester === 'Ganjil' ? defaultGanjil78 : defaultGenap78);
+        }
+    } else {
+        if (isGrade9) {
+            weeksToUse = semester === 'Ganjil' ? defaultGanjil9 : defaultGenap9;
+        } else {
+            weeksToUse = semester === 'Ganjil' ? defaultGanjil78 : defaultGenap78;
+        }
+    }
+
     // Robustness: Check if protas are loaded, if not try to load them
     let currentProtas = protas;
     if (currentProtas.length === 0) {
@@ -1052,7 +1108,7 @@ const App: React.FC = () => {
             try {
                 const message = `Menghubungi AI untuk PROSEM ${semesterToGen}... ${MAX_ATTEMPTS > 1 ? `(Percobaan ${attempt}/${MAX_ATTEMPTS})` : ''}`;
                 setProsemGenerationProgress({ isLoading: true, message });
-                return await geminiService.generatePROSEM(prota, semesterToGen, selectedTP.grade);
+                return await geminiService.generatePROSEM(prota, semesterToGen, selectedTP.grade, weeksToUse);
             } catch (error: any) {
                 if (typeof error.message === 'string' && error.message.includes("503") && attempt < MAX_ATTEMPTS) {
                     await new Promise(res => setTimeout(res, DELAY));
@@ -1531,7 +1587,10 @@ const App: React.FC = () => {
       `;
   
       const monthHeaders = dataToExport.headers.map(h => `<th colspan="${h.weeks}" class="text-center">${h.month}</th>`).join('');
-      const weekHeaders = dataToExport.headers.flatMap(h => Array.from({ length: h.weeks }, (_, i) => `<th class="text-center">${i + 1}</th>`)).join('');
+      const weekHeaders = dataToExport.headers.flatMap(h => Array.from({ length: h.weeks }, (_, i) => {
+          const weekNum = h.weekNumbers ? h.weekNumbers[i] : (i + 1);
+          return `<th class="text-center">${weekNum}</th>`;
+      })).join('');
   
       const prosemRows = dataToExport.content.map(row => {
           const weekCells = dataToExport.headers.flatMap(h => 
@@ -2314,7 +2373,10 @@ const App: React.FC = () => {
                         </tr>
                         <tr>
                             {data.headers.flatMap(header => 
-                                Array.from({ length: header.weeks }, (_, i) => <th key={`${header.month}-${i}`} className="px-2 py-1 border-b border-slate-300 w-8">{i + 1}</th>)
+                                Array.from({ length: header.weeks }, (_, i) => {
+                                    const weekNum = header.weekNumbers ? header.weekNumbers[i] : (i + 1);
+                                    return <th key={`${header.month}-${i}`} className="px-2 py-1 border-b border-slate-300 w-8">{weekNum}</th>;
+                                })
                             )}
                         </tr>
                     </thead>
@@ -2393,7 +2455,7 @@ const App: React.FC = () => {
                             <div className="flex justify-between items-center mb-4">
                                 <h2 className="text-2xl font-bold text-slate-800">Rincian PROSEM - Semester Ganjil</h2>
                                 <div className="flex items-center gap-3">
-                                    {prosemData?.ganjil ? (
+                                                                      {prosemData?.ganjil ? (
                                         <button onClick={() => handleExportProsemToWord('Ganjil')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                                             <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                                         </button>
@@ -2516,35 +2578,66 @@ const App: React.FC = () => {
           </div>
       )}
       
-       {isProtaJpModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-          <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-            <h3 className="text-lg font-bold mb-2 text-slate-800">Input Jam Pertemuan</h3>
-            <p className="text-sm text-slate-600 mb-4">
-                Masukkan jumlah Jam Pertemuan (JP) per minggu untuk mata pelajaran <span className="font-semibold">{selectedSubject}</span>. Data ini akan digunakan oleh AI untuk menghitung alokasi waktu.
-            </p>
-            <form onSubmit={(e) => { e.preventDefault(); handleProtaGenerationSubmit(); }}>
-                <input
-                    type="number"
-                    value={protaJpInput}
-                    onChange={(e) => setProtaJpInput(e.target.value === '' ? '' : parseInt(e.target.value))}
-                    placeholder="Contoh: 3"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                    min="1"
-                    autoFocus
-                />
-                <div className="mt-6 flex justify-end gap-3">
-                    <button type="button" onClick={() => setIsProtaJpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
-                    Batal
-                    </button>
-                    <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                      Hasilkan PROTA
-                    </button>
-                </div>
-            </form>
+       {isProtaJpModalOpen && (() => {
+         const isGrade9 = selectedTP && (selectedTP.grade.includes('9') || selectedTP.grade.toUpperCase().includes('IX'));
+         const jpNum = Number(protaJpInput) || 0;
+         return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+              <h3 className="text-lg font-bold mb-2 text-slate-800">Input Jam Pertemuan</h3>
+              <p className="text-sm text-slate-600 mb-4">
+                  Masukkan jumlah Jam Pertemuan (JP) per minggu untuk mata pelajaran <span className="font-semibold">{selectedSubject}</span>. Data ini akan digunakan oleh AI untuk menghitung alokasi waktu.
+              </p>
+              <form onSubmit={(e) => { e.preventDefault(); handleProtaGenerationSubmit(); }}>
+                  <input
+                      type="number"
+                      value={protaJpInput}
+                      onChange={(e) => setProtaJpInput(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      placeholder="Contoh: 3"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
+                      min="1"
+                      autoFocus
+                  />
+                  
+                  {isGrade9 ? (
+                    <div className="mt-3 text-xs text-amber-700 bg-amber-50 p-3 rounded-md border border-amber-200">
+                      💡 <strong>Standar Kelas 9 (IX):</strong>
+                      <p className="mt-1">
+                        Minggu Efektif: <strong>32 - 34 minggu/tahun</strong>.
+                      </p>
+                      {jpNum > 0 && (
+                        <p className="mt-0.5">
+                          Estimasi Total: <strong>{32 * jpNum} - {34 * jpNum} JP</strong> per tahun.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-teal-700 bg-teal-50 p-3 rounded-md border border-teal-200">
+                      💡 <strong>Standar Kelas 7 & 8 (VII/VIII):</strong>
+                      <p className="mt-1">
+                        Minggu Efektif: <strong>36 - 40 minggu/tahun</strong>.
+                      </p>
+                      {jpNum > 0 && (
+                        <p className="mt-0.5">
+                          Estimasi Total: <strong>{36 * jpNum} - {40 * jpNum} JP</strong> per tahun.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex justify-end gap-3">
+                      <button type="button" onClick={() => setIsProtaJpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                      Batal
+                      </button>
+                      <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
+                        Hasilkan PROTA
+                      </button>
+                  </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+         );
+       })()}
       
       {/* --- Loading & Generation Overlays --- */}
       <LoadingOverlay

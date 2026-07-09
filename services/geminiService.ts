@@ -131,12 +131,21 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
     return [];
 };
 
-export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number): Promise<PROTARow[]> => {
+export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number, grade?: string): Promise<PROTARow[]> => {
     try {
         const ai = await getAI();
+        const isGrade9 = grade && (grade.includes('9') || grade.toUpperCase().includes('IX'));
+        const standardWeeks = isGrade9 ? '32-34 minggu (Semester Ganjil: 16-17 minggu, Semester Genap: 16-17 minggu)' : '36-40 minggu (Semester Ganjil: 18-20 minggu, Semester Genap: 18-20 minggu)';
+        const minJp = isGrade9 ? 32 * totalJpPerWeek : 36 * totalJpPerWeek;
+        const maxJp = isGrade9 ? 34 * totalJpPerWeek : 40 * totalJpPerWeek;
+
         const response = await generateWithRetry(ai, {
             model,
-            contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
+            contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. 
+Total JP per minggu: ${totalJpPerWeek}. 
+Standar minggu efektif untuk kelas ini (${grade || 'Umum'}): ${standardWeeks}. 
+Total alokasi waktu JP seluruh materi dalam setahun WAJIB berada di rentang ${minJp} JP sampai ${maxJp} JP (berdasarkan ${isGrade9 ? '32-34' : '36-40'} minggu efektif x ${totalJpPerWeek} JP/minggu). 
+Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan logis agar total setahun memenuhi standar tersebut. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
             config: {
                 systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
                 responseMimeType: "application/json",
@@ -222,14 +231,46 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
     return [];
 };
 
-export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 'Genap', grade: string): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
+export const generatePROSEM = async (
+    protaData: PROTAData, 
+    semester: 'Ganjil' | 'Genap', 
+    grade: string,
+    customWeeks?: Record<string, number> | Record<string, number[]>
+): Promise<{ headers: PROSEMHeader[], content: PROSEMRow[] }> => {
     const isGanjil = semester.toLowerCase() === 'ganjil';
     const months = isGanjil 
         ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
         : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
     
-    const weeksPerMonth = 5;
-    const headers: PROSEMHeader[] = months.map(m => ({ month: m, weeks: weeksPerMonth }));
+    // Default effective weeks per month if customWeeks not provided
+    const defaultWeeks: Record<string, number[]> = isGanjil
+        ? { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] }
+        : { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
+
+    const headers: PROSEMHeader[] = months.map(m => {
+        let weeks = 5;
+        let weekNumbers: number[] | undefined = undefined;
+        
+        if (customWeeks) {
+            const val = (customWeeks as any)[m];
+            if (Array.isArray(val)) {
+                weeks = val.length;
+                weekNumbers = val;
+            } else if (typeof val === 'number') {
+                weeks = val;
+                weekNumbers = Array.from({ length: val }, (_, i) => i + 1);
+            } else {
+                const defVal = defaultWeeks[m] || [1, 2, 3, 4, 5];
+                weeks = defVal.length;
+                weekNumbers = defVal;
+            }
+        } else {
+            const defVal = defaultWeeks[m] || [1, 2, 3, 4, 5];
+            weeks = defVal.length;
+            weekNumbers = defVal;
+        }
+        return { month: m, weeks, weekNumbers };
+    });
 
     const isSemesterMatch = (itemSem: string, targetSem: string) => {
         if (!itemSem) return false;
@@ -250,8 +291,16 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
     }
 
     const maxJpPerWeek = Number(protaData.jamPertemuan) || 2;
-    const totalWeeks = months.length * weeksPerMonth;
     
+    // Build metadata for each week of the semester
+    const weekMeta: { monthName: string; weekIndexInMonth: number }[] = [];
+    headers.forEach(h => {
+        for (let w = 0; w < h.weeks; w++) {
+            weekMeta.push({ monthName: h.month, weekIndexInMonth: w });
+        }
+    });
+
+    const totalWeeks = weekMeta.length;
     const weeklyUsage = new Array(totalWeeks).fill(0);
     let globalWeekCursor = 0; 
 
@@ -262,7 +311,9 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
         let remainingToDistribute = totalJpForTp;
         
         const distribution: Record<string, (string | null)[]> = {};
-        months.forEach(m => { distribution[m] = Array(weeksPerMonth).fill(null); });
+        headers.forEach(h => {
+            distribution[h.month] = Array(h.weeks).fill(null);
+        });
 
         while (remainingToDistribute > 0 && globalWeekCursor < totalWeeks) {
             const currentUsage = weeklyUsage[globalWeekCursor];
@@ -270,19 +321,15 @@ export const generatePROSEM = async (protaData: PROTAData, semester: 'Ganjil' | 
 
             if (availableSpace > 0) {
                 const amountToAssign = Math.min(remainingToDistribute, availableSpace);
-                const monthIndex = Math.floor(globalWeekCursor / weeksPerMonth);
-                const weekIndexInMonth = globalWeekCursor % weeksPerMonth;
+                const meta = weekMeta[globalWeekCursor];
                 
-                if (monthIndex < months.length) {
-                    const monthName = months[monthIndex];
-                    distribution[monthName][weekIndexInMonth] = String(amountToAssign);
-                }
+                distribution[meta.monthName][meta.weekIndexInMonth] = String(amountToAssign);
                 
                 weeklyUsage[globalWeekCursor] += amountToAssign;
                 remainingToDistribute -= amountToAssign;
             }
 
-            if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek) {
+            if (weeklyUsage[globalWeekCursor] >= maxJpPerWeek || availableSpace <= 0) {
                 globalWeekCursor++;
             }
         }

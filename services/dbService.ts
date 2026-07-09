@@ -678,6 +678,10 @@ export interface AdminSettings {
   nipKepalaMadrasah: string;
   mataPelajaran: string[];
   namaAplikasi?: string;
+  weeksGanjil78?: Record<string, number[]>;
+  weeksGenap78?: Record<string, number[]>;
+  weeksGanjil9?: Record<string, number[]>;
+  weeksGenap9?: Record<string, number[]>;
 }
 
 export const getAdminSettings = async (): Promise<AdminSettings | null> => {

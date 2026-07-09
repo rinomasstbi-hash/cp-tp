@@ -116,11 +116,20 @@ async function startServer() {
 
   app.post("/api/generate/prota", async (req, res) => {
     try {
-      const { atpData, totalJpPerWeek } = req.body;
+      const { atpData, totalJpPerWeek, grade } = req.body;
       const ai = getAI();
+      const isGrade9 = grade && (grade.includes('9') || grade.toUpperCase().includes('IX'));
+      const standardWeeks = isGrade9 ? '32-34 minggu (Semester Ganjil: 16-17 minggu, Semester Genap: 16-17 minggu)' : '36-40 minggu (Semester Ganjil: 18-20 minggu, Semester Genap: 18-20 minggu)';
+      const minJp = isGrade9 ? 32 * totalJpPerWeek : 36 * totalJpPerWeek;
+      const maxJp = isGrade9 ? 34 * totalJpPerWeek : 40 * totalJpPerWeek;
+
       const response = await generateWithRetry(ai, {
         model,
-        contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. Total JP per minggu: ${totalJpPerWeek}. Hitung alokasi waktu semestinya. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
+        contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. 
+Total JP per minggu: ${totalJpPerWeek}. 
+Standar minggu efektif untuk kelas ini (${grade || 'Umum'}): ${standardWeeks}. 
+Total alokasi waktu JP seluruh materi dalam setahun WAJIB berada di rentang ${minJp} JP sampai ${maxJp} JP (berdasarkan ${isGrade9 ? '32-34' : '36-40'} minggu efektif x ${totalJpPerWeek} JP/minggu). 
+Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan logis agar total setahun memenuhi standar tersebut. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
         config: {
             systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
             responseMimeType: "application/json",

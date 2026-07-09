@@ -95,6 +95,7 @@ export interface KKTPData {
 export interface PROSEMHeader {
   month: string;
   weeks: number;
+  weekNumbers?: number[];
 }
 
 export interface PROSEMRow {
