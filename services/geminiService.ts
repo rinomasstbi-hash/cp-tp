@@ -69,7 +69,7 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
                     items: {
                         type: Type.OBJECT,
                         properties: {
-                            semester: { type: Type.STRING },
+                            semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" },
                             materi: { type: Type.STRING },
                             subMateriGroups: {
                                 type: Type.ARRAY,

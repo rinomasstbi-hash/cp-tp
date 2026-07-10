@@ -1940,8 +1940,18 @@ const App: React.FC = () => {
 
       case 'view_tp_detail':
         if (!selectedTP) return null;
-        const ganjilGroups = selectedTP.tpGroups.filter(g => g.semester === 'Ganjil');
-        const genapGroups = selectedTP.tpGroups.filter(g => g.semester === 'Genap');
+        const normalizeSem = (s: string): 'Ganjil' | 'Genap' => {
+          if (!s) return 'Ganjil';
+          const lower = s.toLowerCase();
+          if (lower.includes('genap') || lower.includes('even') || lower.includes('2') || lower.includes('dua')) return 'Genap';
+          return 'Ganjil';
+        };
+        const normalizedTpGroups = (selectedTP.tpGroups || []).map(g => ({
+          ...g,
+          semester: normalizeSem(g.semester)
+        }));
+        const ganjilGroups = normalizedTpGroups.filter(g => g.semester === 'Ganjil');
+        const genapGroups = normalizedTpGroups.filter(g => g.semester === 'Genap');
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             <div className="mb-6">

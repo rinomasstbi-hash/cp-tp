@@ -40,15 +40,25 @@ const TPEditor: React.FC<TPEditorProps> = ({ mode, initialData, subject, onSave,
   );
 
   const [tpGroups, setTpGroups] = useState<TPGroupWithId[]>(() =>
-    (initialData?.tpGroups || []).map((group) => ({
-      ...group,
-      id: newId('group'),
-      subMateriGroups: group.subMateriGroups.map((subGroup) => ({
-        ...subGroup,
-        id: newId('subgroup'),
-        tps: subGroup.tps.map(tpText => ({ id: newId('tp'), value: tpText }))
-      }))
-    }))
+    (initialData?.tpGroups || []).map((group) => {
+      let normSemester: 'Ganjil' | 'Genap' = 'Ganjil';
+      if (group.semester) {
+        const lower = group.semester.toLowerCase();
+        if (lower.includes('genap') || lower.includes('even') || lower.includes('2') || lower.includes('dua')) {
+          normSemester = 'Genap';
+        }
+      }
+      return {
+        ...group,
+        semester: normSemester,
+        id: newId('group'),
+        subMateriGroups: group.subMateriGroups.map((subGroup) => ({
+          ...subGroup,
+          id: newId('subgroup'),
+          tps: subGroup.tps.map(tpText => ({ id: newId('tp'), value: tpText }))
+        }))
+      };
+    })
   );
   
   const [isGenerating, setIsGenerating] = useState(false);
