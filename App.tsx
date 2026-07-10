@@ -777,16 +777,25 @@ const App: React.FC = () => {
   const handleSaveProtaJp = async () => {
     if (protas.length === 0) return;
     const protaToUpdate = protas[0];
-    setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA...' });
+    setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA dan memperbarui data terkait...' });
     setProtaError(null);
     try {
       const updatedProta = await apiService.updatePROTA(protaToUpdate.id, {
         content: tempProtaContent
       });
+      
+      // Automatically delete associated PROSEM data since PROSEM is generated based on PROTA's JP allocation
+      try {
+        await apiService.deletePROSEMsByPROTAId(protaToUpdate.id);
+        setProsemData({ ganjil: null, genap: null });
+      } catch (prosemDelErr) {
+        console.warn("Gagal menghapus PROSEM lama otomatis:", prosemDelErr);
+      }
+
       setProtas([updatedProta]);
       setIsEditingProtaJp(false);
       setTempProtaContent([]);
-      setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui.");
+      setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui. Data PROSEM lama otomatis dihapus agar tetap sinkron.");
     } catch (error: any) {
       setProtaError(`Gagal memperbarui JP PROTA: ${error.message}`);
     } finally {
