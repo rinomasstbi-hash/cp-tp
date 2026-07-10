@@ -1,24 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from './dbService';
-import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData } from '../types';
+import { TPGroup, ATPTableRow, PROTARow, KKTPRow, PROSEMHeader, PROSEMRow, ATPData, PROTAData, ApiKeyItem } from '../types';
 
-const getAI = async () => {
-    let geminiKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
-    try {
-        const docRef = doc(db, 'settings', 'admin');
-        const snap = await getDoc(docRef);
-        if (snap.exists() && snap.data().geminiApiKey) {
-            geminiKey = snap.data().geminiApiKey;
-        }
-    } catch (e) {
-        console.error("Gagal memuat API Key dari database", e);
-    }
-    if (!geminiKey) {
-        throw new Error('API Key tidak ditemukan. Silakan login sebagai admin dan atur di menu Pengaturan API.');
-    }
-    return new GoogleGenAI({ apiKey: geminiKey });
-};
+interface KeyAttemptInfo {
+  key: string;
+  id?: string;
+  isPoolKey: boolean;
+}
 
 const model = "gemini-2.5-flash";
 
@@ -47,132 +36,271 @@ const handleGeminiError = (e: any, context: string) => {
     let errorMsg = e.message || 'Terjadi kesalahan tidak terduga';
     if (errorMsg.includes('503') || errorMsg.includes('UNAVAILABLE') || errorMsg.includes('high demand')) {
         errorMsg = 'Server AI Google saat ini sedang sibuk (high demand). Silakan coba lagi beberapa saat.';
-    } else if (errorMsg.includes('429')) {
-        errorMsg = 'Terlalu banyak permintaan ke server AI. Silakan tunggu beberapa saat lalu coba lagi.';
+    } else if (errorMsg.includes('429') || errorMsg.includes('Quota exceeded') || errorMsg.includes('quota')) {
+        errorMsg = 'Kuota pemakaian AI telah habis (Limit Tercapai). Silakan hubungi admin atau tunggu beberapa saat.';
     } else if (errorMsg.includes('403') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('PERMISSION_DENIED')) {
         errorMsg = 'API Key Anda tidak valid atau telah diblokir. Harap periksa kembali konfigurasi API Key Anda.';
     }
     throw new Error(`${context}: ${errorMsg}`);
 };
 
-export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
+const runWithAutoRotatedApiKey = async <T>(
+    apiCall: (ai: GoogleGenAI) => Promise<T>,
+    context: string
+): Promise<T> => {
+    let adminSettingsData: any = null;
+    let poolKeys: ApiKeyItem[] = [];
+    let legacyKey = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
+
     try {
-        const ai = await getAI();
-        const response = await generateWithRetry(ai, {
-            model,
-            contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
-            config: {
-                systemInstruction: "Anda adalah AI asisten guru MTsN 4 Jombang. Hasilkan array objek TPGroup. Hasilkan data JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" },
-                            materi: { type: Type.STRING },
-                            subMateriGroups: {
-                                type: Type.ARRAY,
-                                items: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        subMateri: { type: Type.STRING },
-                                        tps: { type: Type.ARRAY, items: { type: Type.STRING } }
-                                    },
-                                    required: ["subMateri", "tps"]
-                                }
-                            }
-                        },
-                        required: ["semester", "materi", "subMateriGroups"]
-                    }
+        const docRef = doc(db, 'settings', 'admin');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+            adminSettingsData = snap.data();
+            if (adminSettingsData.geminiApiKey) {
+                legacyKey = adminSettingsData.geminiApiKey;
+            }
+            if (Array.isArray(adminSettingsData.apiKeys)) {
+                poolKeys = adminSettingsData.apiKeys;
+            }
+        }
+    } catch (e) {
+        console.error("Gagal memuat pengaturan API dari Firestore", e);
+    }
+
+    const candidates: KeyAttemptInfo[] = [];
+
+    // Prioritaskan API Key aktif dari pool
+    poolKeys.forEach((pk) => {
+        if (pk.status === 'Aktif' && pk.key) {
+            candidates.push({
+                key: pk.key,
+                id: pk.id,
+                isPoolKey: true
+            });
+        }
+    });
+
+    // Gunakan legacy/default key sebagai fallback terakhir
+    if (legacyKey) {
+        candidates.push({
+            key: legacyKey,
+            isPoolKey: false
+        });
+    }
+
+    if (candidates.length === 0) {
+        throw new Error('API Key tidak ditemukan atau semua key dalam status tidak aktif. Silakan hubungi admin.');
+    }
+
+    let lastError: any = null;
+
+    for (let idx = 0; idx < candidates.length; idx++) {
+        const candidate = candidates[idx];
+        const ai = new GoogleGenAI({ apiKey: candidate.key });
+        
+        try {
+            console.log(`Mencoba membuat AI menggunakan key: ${candidate.isPoolKey ? 'Pool Key ID ' + candidate.id : 'Legacy/Default Key'}`);
+            const result = await apiCall(ai);
+            
+            // Jika sukses dan merupakan pool key, update lastUsed timestamp secara asinkron
+            if (candidate.isPoolKey && candidate.id) {
+                try {
+                    const docRef = doc(db, 'settings', 'admin');
+                    const updatedPool = poolKeys.map(k => {
+                        if (k.id === candidate.id) {
+                            return { ...k, lastUsed: Date.now() };
+                        }
+                        return k;
+                    });
+                    await setDoc(docRef, { apiKeys: updatedPool }, { merge: true });
+                } catch (e) {
+                    console.error("Gagal memperbarui timestamp lastUsed", e);
                 }
             }
-        });
+
+            return result;
+        } catch (error: any) {
+            lastError = error;
+            console.error(`Gagal menggunakan key (${candidate.isPoolKey ? 'Pool Key ID: ' + candidate.id : 'Legacy Key'}):`, error);
+
+            const isKeyIssue = (
+                error.status === 429 ||
+                error.status === 403 ||
+                String(error.message || '').toLowerCase().includes('429') ||
+                String(error.message || '').toLowerCase().includes('403') ||
+                String(error.message || '').toLowerCase().includes('quota') ||
+                String(error.message || '').toLowerCase().includes('exhausted') ||
+                String(error.message || '').toLowerCase().includes('api key') ||
+                String(error.message || '').toLowerCase().includes('api_key_invalid') ||
+                String(error.message || '').toLowerCase().includes('permission_denied') ||
+                String(error.message || '').toLowerCase().includes('invalid api key')
+            );
+
+            if (isKeyIssue && candidate.isPoolKey && candidate.id) {
+                const isLimit = String(error.message || '').toLowerCase().includes('quota') || 
+                                String(error.message || '').toLowerCase().includes('exhausted') || 
+                                error.status === 429 || 
+                                String(error.message || '').toLowerCase().includes('429');
+                const newStatus = isLimit ? 'Limit Tercapai' : 'Error';
+                const errMsg = error.message || String(error);
+
+                console.warn(`[Auto-Rotation] API Key (${candidate.id}) terdeteksi bermasalah. Mengubah status ke: ${newStatus}`);
+
+                try {
+                    const docRef = doc(db, 'settings', 'admin');
+                    const updatedPool = poolKeys.map(k => {
+                        if (k.id === candidate.id) {
+                            return { 
+                                ...k, 
+                                status: newStatus as any,
+                                errorMessage: errMsg,
+                                lastUsed: Date.now()
+                            };
+                        }
+                        return k;
+                    });
+                    await setDoc(docRef, { apiKeys: updatedPool }, { merge: true });
+                    poolKeys = updatedPool;
+                } catch (dbErr) {
+                    console.error("Gagal memperbarui status API Key bermasalah di database", dbErr);
+                }
+            }
+
+            // Jika error bukan masalah API Key (misalnya prompt diblokir, bad request), hentikan rotasi dan lempar error
+            if (!isKeyIssue) {
+                break;
+            }
+
+            console.log("Memutar ke API Key berikutnya yang aktif...");
+        }
+    }
+
+    handleGeminiError(lastError, context);
+    throw lastError; 
+};
+
+export const generateTPs = async (input: { subject: string; grade: string; cpElements: { element: string; cp: string }[]; additionalNotes: string }): Promise<TPGroup[]> => {
+    try {
+        const response = await runWithAutoRotatedApiKey(async (ai) => {
+            return await generateWithRetry(ai, {
+                model,
+                contents: `Buatkan Tujuan Pembelajaran (TP) untuk mata pelajaran ${input.subject} kelas ${input.grade}. Berikut Capaian Pembelajarannya: ${JSON.stringify(input.cpElements)}. Note tambahan: ${input.additionalNotes}`,
+                config: {
+                    systemInstruction: "Anda adalah AI asisten guru MTsN 4 Jombang. Hasilkan array objek TPGroup. Hasilkan data JSON murni.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" },
+                                materi: { type: Type.STRING },
+                                subMateriGroups: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            subMateri: { type: Type.STRING },
+                                            tps: { type: Type.ARRAY, items: { type: Type.STRING } }
+                                        },
+                                        required: ["subMateri", "tps"]
+                                    }
+                                }
+                            },
+                            required: ["semester", "materi", "subMateriGroups"]
+                        }
+                    }
+                }
+            });
+        }, 'Gagal membuat TP');
+
         const result = response.text ? JSON.parse(response.text) : null;
         if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result;
     } catch (e: any) {
-        handleGeminiError(e, 'Gagal membuat TP');
+        throw e;
     }
-    return [];
 };
 
 export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
     try {
-        const ai = await getAI();
-        const response = await generateWithRetry(ai, {
-            model,
-            contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}. Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.`,
-            config: {
-                systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            topikMateri: { type: Type.STRING },
-                            tp: { type: Type.STRING },
-                            kodeTp: { type: Type.STRING },
-                            atpSequence: { type: Type.INTEGER },
-                            semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
-                        },
-                        required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
+        const response = await runWithAutoRotatedApiKey(async (ai) => {
+            return await generateWithRetry(ai, {
+                model,
+                contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}. Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.`,
+                config: {
+                    systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                topikMateri: { type: Type.STRING },
+                                tp: { type: Type.STRING },
+                                kodeTp: { type: Type.STRING },
+                                atpSequence: { type: Type.INTEGER },
+                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
+                            },
+                            required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
+                        }
                     }
                 }
-            }
-        });
+            });
+        }, 'Gagal membuat ATP');
+
         const result = response.text ? JSON.parse(response.text) : null;
         if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result;
     } catch (error: any) {
-       handleGeminiError(error, 'Gagal membuat ATP');
+        throw error;
     }
-    return [];
 };
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number, grade?: string): Promise<PROTARow[]> => {
     try {
-        const ai = await getAI();
         const isGrade9 = grade && (grade.includes('9') || grade.toUpperCase().includes('IX'));
         const standardWeeks = isGrade9 ? '32-34 minggu (Semester Ganjil: 16-17 minggu, Semester Genap: 16-17 minggu)' : '36-40 minggu (Semester Ganjil: 18-20 minggu, Semester Genap: 18-20 minggu)';
         const minJp = isGrade9 ? 32 * totalJpPerWeek : 36 * totalJpPerWeek;
         const maxJp = isGrade9 ? 34 * totalJpPerWeek : 40 * totalJpPerWeek;
 
-        const response = await generateWithRetry(ai, {
-            model,
-            contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. 
+        const response = await runWithAutoRotatedApiKey(async (ai) => {
+            return await generateWithRetry(ai, {
+                model,
+                contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. 
 Total JP per minggu: ${totalJpPerWeek}. 
 Standar minggu efektif untuk kelas ini (${grade || 'Umum'}): ${standardWeeks}. 
 Total alokasi waktu JP seluruh materi dalam setahun WAJIB berada di rentang ${minJp} JP sampai ${maxJp} JP (berdasarkan ${isGrade9 ? '32-34' : '36-40'} minggu efektif x ${totalJpPerWeek} JP/minggu). 
 Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan logis agar total setahun memenuhi standar tersebut. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
-            config: {
-                systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            no: { type: Type.INTEGER },
-                            topikMateri: { type: Type.STRING },
-                            alurTujuanPembelajaran: { type: Type.STRING },
-                            tujuanPembelajaran: { type: Type.STRING },
-                            alokasiWaktu: { type: Type.STRING },
-                            semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
-                        },
-                        required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
+                config: {
+                    systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                no: { type: Type.INTEGER },
+                                topikMateri: { type: Type.STRING },
+                                alurTujuanPembelajaran: { type: Type.STRING },
+                                tujuanPembelajaran: { type: Type.STRING },
+                                alokasiWaktu: { type: Type.STRING },
+                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
+                            },
+                            required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
+                        }
                     }
                 }
-            }
-        });
+            });
+        }, 'Gagal membuat PROTA');
+
         const result = response.text ? JSON.parse(response.text) : null;
         if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
         return result;
     } catch (error: any) {
-       handleGeminiError(error, 'Gagal membuat PROTA');
+        throw error;
     }
-    return [];
 };
 
 export const generateKKTP = async (atpData: ATPData, semester: string, grade: string): Promise<KKTPRow[]> => {
@@ -190,45 +318,47 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
         if (contentBySem.length === 0) {
             return [];
         }
-        const ai = await getAI();
-        const response = await generateWithRetry(ai, {
-            model,
-            contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
-            config: {
-                systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            no: { type: Type.INTEGER },
-                            materiPokok: { type: Type.STRING },
-                            tp: { type: Type.STRING },
-                            kriteria: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    sangatMahir: { type: Type.STRING },
-                                    mahir: { type: Type.STRING },
-                                    cukupMahir: { type: Type.STRING },
-                                    perluBimbingan: { type: Type.STRING }
+
+        const response = await runWithAutoRotatedApiKey(async (ai) => {
+            return await generateWithRetry(ai, {
+                model,
+                contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
+                config: {
+                    systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                no: { type: Type.INTEGER },
+                                materiPokok: { type: Type.STRING },
+                                tp: { type: Type.STRING },
+                                kriteria: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        sangatMahir: { type: Type.STRING },
+                                        mahir: { type: Type.STRING },
+                                        cukupMahir: { type: Type.STRING },
+                                        perluBimbingan: { type: Type.STRING }
+                                    },
+                                    required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
                                 },
-                                required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
+                                targetKktp: { type: Type.STRING }
                             },
-                            targetKktp: { type: Type.STRING }
-                        },
-                        required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
+                            required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
+                        }
                     }
                 }
-            }
-        });
+            });
+        }, 'Gagal membuat KKTP');
+
         const result = response.text ? JSON.parse(response.text) : null;
         if (!result || !Array.isArray(result)) throw new Error("Respons invalid");
         return result;
     } catch (error: any) {
-       handleGeminiError(error, 'Gagal membuat KKTP');
+        throw error;
     }
-    return [];
 };
 
 export const generatePROSEM = async (

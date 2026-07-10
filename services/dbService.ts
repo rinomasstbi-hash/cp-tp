@@ -1,5 +1,5 @@
 import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch, Timestamp, enableIndexedDbPersistence, initializeFirestore, getCountFromServer, addDoc } from 'firebase/firestore';
-import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, ApiKeyItem } from '../types';
 import { app, activeConfig } from './firebaseApp';
 
 enum OperationType {
@@ -673,6 +673,7 @@ export const deletePROSEMsByTPId = async (tpId: string): Promise<{ success: bool
 
 export interface AdminSettings {
   geminiApiKey: string;
+  apiKeys?: ApiKeyItem[];
   tahunPelajaran: string;
   kepalaMadrasah: string;
   nipKepalaMadrasah: string;

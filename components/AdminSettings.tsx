@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAdminSettings, saveAdminSettings, AdminSettings as SettingsType } from '../services/dbService';
+import { ApiKeyItem } from '../types';
 
 interface AdminSettingsProps {
   onSave?: () => void;
@@ -56,6 +57,11 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
         weeksGanjil9: DEFAULT_GANJIL_9,
         weeksGenap9: DEFAULT_GENAP_9,
     });
+    const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+    const [newKeyName, setNewKeyName] = useState('');
+    const [newKeyValue, setNewKeyValue] = useState('');
+    const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+
     const [weeksTab, setWeeksTab] = useState<'78' | '9'>('78');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -75,6 +81,9 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                         weeksGanjil9: sanitizeWeeks(data.weeksGanjil9, DEFAULT_GANJIL_9),
                         weeksGenap9: sanitizeWeeks(data.weeksGenap9, DEFAULT_GENAP_9),
                     }));
+                    if (Array.isArray(data.apiKeys)) {
+                        setApiKeys(data.apiKeys);
+                    }
                 }
             } catch (error) {
                 console.error("Gagal memuat pengaturan:", error);
@@ -114,6 +123,54 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
             ...prev,
             mataPelajaran: prev.mataPelajaran.filter(s => s !== subject)
         }));
+    };
+
+    const handleAddApiKey = () => {
+        if (!newKeyValue.trim()) return;
+        const newItem: ApiKeyItem = {
+            id: 'key_' + Math.random().toString(36).substr(2, 9),
+            name: newKeyName.trim() || `API Key Cadangan ${apiKeys.length + 1}`,
+            key: newKeyValue.trim(),
+            status: 'Aktif'
+        };
+        const updated = [...apiKeys, newItem];
+        setApiKeys(updated);
+        setSettings(prev => ({ ...prev, apiKeys: updated }));
+        setNewKeyName('');
+        setNewKeyValue('');
+    };
+
+    const handleDeleteApiKey = (id: string) => {
+        if (!window.confirm('Apakah Anda yakin ingin menghapus API Key ini dari pool?')) return;
+        const updated = apiKeys.filter(k => k.id !== id);
+        setApiKeys(updated);
+        setSettings(prev => ({ ...prev, apiKeys: updated }));
+    };
+
+    const handleToggleApiKeyStatus = (id: string, newStatus: 'Aktif' | 'Limit Tercapai' | 'Error') => {
+        const updated = apiKeys.map(k => {
+            if (k.id === id) {
+                return { ...k, status: newStatus, errorMessage: newStatus === 'Aktif' ? undefined : k.errorMessage };
+            }
+            return k;
+        });
+        setApiKeys(updated);
+        setSettings(prev => ({ ...prev, apiKeys: updated }));
+    };
+
+    const toggleKeyVisibility = (id: string) => {
+        setVisibleKeys(prev => ({ ...prev, [id]: !prev[id] }));
+    };
+
+    const formatLastUsed = (timestamp?: number) => {
+        if (!timestamp) return '-';
+        const diff = Date.now() - timestamp;
+        if (diff < 60000) return 'Baru saja';
+        const minutes = Math.floor(diff / 60000);
+        if (minutes < 60) return `${minutes} menit yang lalu`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} jam yang lalu`;
+        return new Date(timestamp).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
     };
 
     const toggleWeekSelection = (gradeGroup: '78' | '9', semester: 'Ganjil' | 'Genap', month: string, weekNum: number) => {
@@ -377,20 +434,158 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                 </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-                <h2 className="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Konfigurasi Gemini API</h2>
-                <div className="mb-4">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Gemini API Key</label>
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-6">
+                <div className="border-b pb-4">
+                    <h2 className="text-xl font-bold text-slate-800">Konfigurasi & Pool Gemini API</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                        Atur API Key utama dan ketersediaan API Key cadangan. Sistem akan memutar penggunaan key secara otomatis jika salah satu key cadangan mendeteksi batas limit harian tercapai.
+                    </p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-lg p-4 text-sm flex gap-3">
+                    <span className="text-lg">⚙️</span>
+                    <div>
+                        <strong className="block mb-0.5">Sistem Rotasi API Key Otomatis Aktif</strong>
+                        Saat proses men-generate modul ajar atau perangkat ajar, apabila API Key yang sedang digunakan menyentuh batas limit harian (<code className="bg-blue-100 px-1 rounded text-xs font-mono">Quota Exceeded / 429</code>), sistem akan otomatis memperbarui statusnya menjadi <span className="font-semibold text-amber-700">"Limit Tercapai"</span> di database dan memindahkan pemrosesan ke API Key cadangan berikutnya yang berstatus <span className="font-semibold text-green-700">"Aktif"</span> secara real-time tanpa mengganggu kenyamanan pengguna.
+                    </div>
+                </div>
+
+                {/* Primary API Key */}
+                <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Gemini API Key Utama (Default Fallback)</label>
                     <input 
                         type="password"
                         value={settings.geminiApiKey}
                         onChange={(e) => setSettings({...settings, geminiApiKey: e.target.value})}
                         placeholder="AIzaSy..."
-                        className="w-full border border-slate-300 rounded-md p-2.5 focus:ring-teal-500 focus:border-teal-500"
+                        className="w-full border border-slate-300 rounded-md p-2.5 focus:ring-teal-500 focus:border-teal-500 font-mono text-sm"
                     />
                     <p className="mt-2 text-sm text-slate-500">
-                        API Key ini akan digunakan oleh seluruh pengguna aplikasi untuk men-generate perangkat ajar.
+                        API Key default yang digunakan sebagai prioritas terakhir apabila pool API Key cadangan kosong atau seluruhnya tidak aktif.
                     </p>
+                </div>
+
+                <div className="border-t pt-6 space-y-4">
+                    <h3 className="font-bold text-slate-800 text-lg">Pool API Key Cadangan</h3>
+                    
+                    {/* Add Key Form */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                        <span className="text-sm font-semibold text-slate-700 block">Tambah API Key Baru ke Pool</span>
+                        <div className="flex flex-col md:flex-row gap-3">
+                            <input 
+                                type="text"
+                                value={newKeyName}
+                                onChange={(e) => setNewKeyName(e.target.value)}
+                                placeholder="Nama/Label Key (misal: Akun Cadangan B)"
+                                className="flex-1 border border-slate-300 rounded-md p-2 text-sm focus:ring-teal-500 focus:border-teal-500"
+                            />
+                            <input 
+                                type="text"
+                                value={newKeyValue}
+                                onChange={(e) => setNewKeyValue(e.target.value)}
+                                placeholder="API Key (AIzaSy...)"
+                                className="flex-1 border border-slate-300 rounded-md p-2 text-sm focus:ring-teal-500 focus:border-teal-500 font-mono"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAddApiKey}
+                                disabled={!newKeyValue.trim()}
+                                className="bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm px-5 py-2 rounded-md transition disabled:opacity-50"
+                            >
+                                + Tambahkan ke Pool
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Keys Table */}
+                    {apiKeys.length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg font-medium">
+                            Belum ada API Key cadangan dalam pool. Silakan tambahkan kunci di atas untuk mengaktifkan fitur rotasi otomatis.
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm">
+                            <table className="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold">
+                                        <th className="p-3">Nama / Label</th>
+                                        <th className="p-3">API Key</th>
+                                        <th className="p-3">Status</th>
+                                        <th className="p-3">Terakhir Digunakan</th>
+                                        <th className="p-3">Keterangan / Error</th>
+                                        <th className="p-3 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 text-slate-700">
+                                    {apiKeys.map((k) => {
+                                        const isVisible = visibleKeys[k.id];
+                                        return (
+                                            <tr key={k.id} className="hover:bg-slate-50 transition">
+                                                <td className="p-3 font-medium text-slate-800">{k.name}</td>
+                                                <td className="p-3 font-mono text-xs">
+                                                    <div className="flex items-center gap-2">
+                                                        <span>
+                                                            {isVisible 
+                                                                ? k.key 
+                                                                : `${k.key.substring(0, 8)}...${k.key.substring(k.key.length - 4)}`}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleKeyVisibility(k.id)}
+                                                            className="text-slate-400 hover:text-slate-600 transition"
+                                                            title={isVisible ? "Sembunyikan" : "Tampilkan"}
+                                                        >
+                                                            {isVisible ? (
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path></svg>
+                                                            ) : (
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                                                        k.status === 'Aktif' 
+                                                            ? 'bg-green-100 text-green-800 border-green-200' 
+                                                            : k.status === 'Limit Tercapai'
+                                                                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                                                : 'bg-red-100 text-red-800 border-red-200'
+                                                    }`}>
+                                                        {k.status}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-xs text-slate-500 font-medium">{formatLastUsed(k.lastUsed)}</td>
+                                                <td className="p-3 text-xs text-slate-500 max-w-xs truncate" title={k.errorMessage || ''}>
+                                                    {k.errorMessage || '-'}
+                                                </td>
+                                                <td className="p-3 text-center">
+                                                    <div className="flex items-center justify-center gap-2">
+                                                        {k.status !== 'Aktif' && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleToggleApiKeyStatus(k.id, 'Aktif')}
+                                                                className="text-xs bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded font-semibold transition"
+                                                                title="Reset status menjadi Aktif"
+                                                            >
+                                                                Aktifkan Kembali
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteApiKey(k.id)}
+                                                            className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-md transition"
+                                                            title="Hapus Key"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             </div>
 

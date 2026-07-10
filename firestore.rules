@@ -55,7 +55,8 @@ service cloud.firestore {
     // Default match for other collections (settings, access_requests, approved_users)
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow update: if isSignedIn();
+      allow create, delete: if isAdmin();
     }
 
     match /access_requests/{requestId} {
