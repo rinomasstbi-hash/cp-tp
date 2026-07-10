@@ -611,17 +611,21 @@ const App: React.FC = () => {
     );
   };
   
-  const handleEditATP = (e: React.MouseEvent, atp: ATPData) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleEditATP = (e: React.MouseEvent | null | undefined, atp: ATPData) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!selectedTP) return;
     setEditingATP(atp);
     setView('edit_atp');
   };
 
-  const handleDeleteATP = (e: React.MouseEvent, atp: ATPData) => {
-    e.stopPropagation();
-    e.preventDefault();
+  const handleDeleteATP = (e: React.MouseEvent | null | undefined, atp: ATPData) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!selectedTP) return;
     showConfirm(
         'Hapus Data ATP',
@@ -629,6 +633,7 @@ const App: React.FC = () => {
         () => {
             _performDeleteATP(atp);
             closeConfirm();
+            setView('tp_menu');
         }
     );
   };
@@ -730,6 +735,81 @@ const App: React.FC = () => {
   const handleCreateNewAtp = () => {
     if (!selectedTP) return;
     _proceedWithAtpGeneration(user?.displayName || user?.email || "User", user?.email || "");
+  };
+
+  const handleDeleteAndRegenerateATP = async () => {
+    if (!selectedTP || !selectedATP) return;
+    
+    showConfirm(
+        'Buat Ulang ATP',
+        'Apakah Anda yakin ingin membuat ulang ATP? Data lama dan data terkait (PROTA, KKTP, PROSEM) akan dihapus, lalu AI akan menyusun ATP baru.',
+        async () => {
+            closeConfirm();
+            setLoadingState({ isLoading: true, title: 'Menghapus Data Lama', message: 'Sedang menghapus data ATP lama dan perangkat ajar yang terkait...' });
+            setAtpError(null);
+            try {
+                // Delete downstream dependencies first: PROSEM, PROTA, KKTP
+                try {
+                    await apiService.deletePROSEMsByTPId(selectedTP.id!);
+                } catch (e) {
+                    console.warn("Gagal menghapus PROSEM:", e);
+                }
+                try {
+                    await apiService.deletePROTAsByTPId(selectedTP.id!);
+                } catch (e) {
+                    console.warn("Gagal menghapus PROTA:", e);
+                }
+                try {
+                    await apiService.deleteKKTPsByATPId(selectedATP.id);
+                } catch (e) {
+                    console.warn("Gagal menghapus KKTP:", e);
+                }
+                await apiService.deleteATP(selectedATP.id);
+                
+                // Clear state
+                setAtps([]);
+                setProtas([]);
+                setKktpData(null);
+                setProsemData(null);
+                
+                setLoadingState({ isLoading: false, title: '', message: '' });
+                
+                // Now generate a new ATP
+                setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
+                try {
+                    setAtpGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf ATP baru...', progress: 25 }));
+                    const generatedContent = await geminiService.generateATP({
+                        subject: selectedTP.subject,
+                        grade: selectedTP.grade,
+                        tpGroups: selectedTP.tpGroups
+                    });
+                    setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
+                    const newAtpData: Omit<ATPData, 'id' | 'createdAt' | 'userId'> = {
+                        tpId: selectedTP.id!,
+                        subject: selectedTP.subject,
+                        content: generatedContent,
+                        creatorName: user?.displayName || user?.email || "User",
+                        creatorEmail: user?.email || "",
+                    };
+                    const savedAtp = await apiService.saveATP(newAtpData);
+                    setAtpGenerationProgress(prev => ({ ...prev, message: 'Data berhasil disimpan.', progress: 90 }));
+                    setAtps([savedAtp]);
+                    setAtpGenerationProgress(prev => ({ ...prev, message: 'Selesai!', progress: 100 }));
+                    setTimeout(() => {
+                        handleViewAtpDetail(savedAtp);
+                        setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 });
+                    }, 500);
+                } catch (error: any) {
+                    setAtpError(`Gagal membuat ATP baru: ${error.message}`);
+                    setAtpGenerationProgress({ isLoading: false, message: '', progress: 0 });
+                    setView('tp_menu');
+                }
+            } catch (error: any) {
+                setAtpError(`Gagal menghapus data lama: ${error.message}`);
+                setLoadingState({ isLoading: false, title: '', message: '' });
+            }
+        }
+    );
   };
   
   const handleCreateNewProta = () => {
@@ -964,8 +1044,10 @@ const App: React.FC = () => {
     if (selectedTP?.id) {
         setAtpError(null);
         try {
-            await apiService.updateATP(id, data);
-            setView('view_atp_list');
+            const updated = await apiService.updateATP(id, data);
+            setAtps(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
+            setSelectedATP(updated);
+            setView('view_atp_detail');
         } catch (error: any) {
             console.error(error);
             setAtpError(error.message);
@@ -1946,8 +2028,13 @@ const App: React.FC = () => {
     try {
         switch (destination) {
             case 'atp': {
-                // This logic is simplified because data is pre-loaded by the time user clicks.
-                setView('view_atp_list');
+                if (atps.length > 0) {
+                    setSelectedATP(atps[0]);
+                    setActiveKktpSemester('Ganjil');
+                    setView('view_atp_detail');
+                } else {
+                    setView('view_atp_list');
+                }
                 break;
             }
         }
@@ -2236,6 +2323,19 @@ const App: React.FC = () => {
                         Kembali ke Menu Perangkat Ajar
                     </button>
                     <div className="flex flex-wrap items-center justify-end gap-3">
+                        {user && isApproved && (
+                            <>
+                                <button onClick={() => handleEditATP(null, selectedATP)} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700">
+                                   <EditIcon className="w-5 h-5" /> Edit
+                                </button>
+                                <button onClick={handleDeleteAndRegenerateATP} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
+                                   <SparklesIcon className="w-5 h-5" /> Buat Ulang
+                                </button>
+                                <button onClick={() => handleDeleteATP(null, selectedATP)} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700">
+                                   <TrashIcon className="w-5 h-5" /> Hapus
+                                </button>
+                            </>
+                        )}
                         <button onClick={handleExportAtpToWord} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                         </button>
@@ -2401,7 +2501,15 @@ const App: React.FC = () => {
                     <p className="text-slate-500 mt-2 max-w-xl mx-auto">Program Tahunan (PROTA) dibuat berdasarkan Alur Tujuan Pembelajaran (ATP). Silakan pilih ATP terlebih dahulu.</p>
                     {user && isApproved && (
                         <button 
-                            onClick={() => setView('view_atp_list')} 
+                            onClick={() => {
+                                if (atps.length > 0) {
+                                    setSelectedATP(atps[0]);
+                                    setActiveKktpSemester('Ganjil');
+                                    setView('view_atp_detail');
+                                } else {
+                                    setView('view_atp_list');
+                                }
+                            }} 
                             className="mt-6 w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700"
                         >
                             <FlowChartIcon className="w-5 h-5"/>
@@ -2867,7 +2975,7 @@ const App: React.FC = () => {
         return <ATPEditor 
           initialData={editingATP!}
           onSave={handleSaveATP}
-          onCancel={() => setView('view_atp_list')}
+          onCancel={() => setView(selectedATP ? 'view_atp_detail' : 'view_atp_list')}
         />;
       default:
         return null;
