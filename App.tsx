@@ -1441,7 +1441,7 @@ const App: React.FC = () => {
         body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
         p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; font-size: 10pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; text-transform: uppercase; margin: 0; padding: 0;}
         .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
@@ -1470,6 +1470,7 @@ const App: React.FC = () => {
           mso-margin-top-alt: 0pt;
           mso-margin-bottom-alt: 0pt;
           mso-margin-after-alt: 0pt;
+          font-size: 12pt;
         }
       </style>
     `;
@@ -1602,7 +1603,7 @@ const App: React.FC = () => {
         body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
         p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; font-size: 10pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; }
         .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
@@ -1629,6 +1630,7 @@ const App: React.FC = () => {
           mso-margin-top-alt: 0pt;
           mso-margin-bottom-alt: 0pt;
           mso-margin-after-alt: 0pt;
+          font-size: 12pt;
         }
       </style>
     `;
@@ -2018,16 +2020,17 @@ const App: React.FC = () => {
     const styles = `
       <style>
         @page Section1 {
-          size: 595.3pt 841.9pt;
+          size: 841.9pt 595.3pt;
           margin: 36.0pt 36.0pt 36.0pt 36.0pt;
           mso-header-margin: 36.0pt;
           mso-footer-margin: 36.0pt;
+          mso-page-orientation: landscape;
         }
         div.Section1 { page: Section1; }
         body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; }
         p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
-        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; font-size: 10pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 5px; }
         .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
@@ -2043,13 +2046,13 @@ const App: React.FC = () => {
         .text-center { text-align: center; }
         .kriteria-cell { padding: 0; margin: 0; }
         .kriteria-table { width: 100%; height: 100%; border: none; }
-        .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; }
+        .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; font-size: 10pt; }
         .kriteria-table tr:last-child td { border-bottom: none; }
-        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 567.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 311.0pt;
+          width: 283.5pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -2057,6 +2060,7 @@ const App: React.FC = () => {
           mso-margin-top-alt: 0pt;
           mso-margin-bottom-alt: 0pt;
           mso-margin-after-alt: 0pt;
+          font-size: 11pt;
         }
       </style>
     `;
@@ -2271,11 +2275,11 @@ const App: React.FC = () => {
           }
           .text-center { text-align: center; }
           .rotate { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
-          .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+          .signature-table { width: 567.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
           .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
           .signature-td {
             border: none;
-            width: 311.0pt;
+            width: 283.5pt;
             text-align: left;
             vertical-align: top;
             padding: 1px 5px;
