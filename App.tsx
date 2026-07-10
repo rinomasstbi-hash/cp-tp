@@ -168,6 +168,58 @@ const App: React.FC = () => {
   const [isApproved, setIsApproved] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<GlobalSettings | null>(null);
+
+  const getSemesterWeeksList = (semester: 'Ganjil' | 'Genap', grade: string): Record<string, number[]> => {
+    const isGrade9 = grade.includes('9') || grade.toUpperCase().includes('IX');
+    
+    const defaultGanjil78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] };
+    const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
+    const defaultGanjil9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
+    const defaultGenap9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+
+    const defaultVal = semester === 'Ganjil'
+        ? (isGrade9 ? defaultGanjil9 : defaultGanjil78)
+        : (isGrade9 ? defaultGenap9 : defaultGenap78);
+
+    if (!globalSettings) {
+        return defaultVal;
+    }
+
+    let rawWeeksObj: any = null;
+    if (isGrade9) {
+        rawWeeksObj = semester === 'Ganjil' ? globalSettings.weeksGanjil9 : globalSettings.weeksGenap9;
+    } else {
+        rawWeeksObj = semester === 'Ganjil' ? globalSettings.weeksGanjil78 : globalSettings.weeksGenap78;
+    }
+
+    if (!rawWeeksObj) return defaultVal;
+
+    const result: Record<string, number[]> = {};
+    Object.keys(defaultVal).forEach(month => {
+        const val = rawWeeksObj[month];
+        if (Array.isArray(val)) {
+            result[month] = val.map(Number).filter(v => !isNaN(v) && v >= 1 && v <= 5).sort((a, b) => a - b);
+        } else if (typeof val === 'number') {
+            result[month] = Array.from({ length: val }, (_, i) => i + 1);
+        } else {
+            result[month] = defaultVal[month as keyof typeof defaultVal];
+        }
+    });
+
+    return result;
+  };
+
+  const getSemesterTotalWeeks = (semester: 'Ganjil' | 'Genap', grade: string): number => {
+    const weeksList = getSemesterWeeksList(semester, grade);
+    return Object.values(weeksList).reduce((sum, list) => sum + list.length, 0);
+  };
+
+  const parseJpValue = (val: string): number => {
+    if (!val) return 0;
+    const match = val.match(/(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
   const refreshSettings = () => {
     getAdminSettings().then(res => {
       if (res) setGlobalSettings(res);
@@ -775,31 +827,68 @@ const App: React.FC = () => {
   };
 
   const handleSaveProtaJp = async () => {
-    if (protas.length === 0) return;
+    if (protas.length === 0 || !selectedTP) return;
     const protaToUpdate = protas[0];
-    setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA dan memperbarui data terkait...' });
-    setProtaError(null);
-    try {
-      const updatedProta = await apiService.updatePROTA(protaToUpdate.id, {
-        content: tempProtaContent
-      });
-      
-      // Automatically delete associated PROSEM data since PROSEM is generated based on PROTA's JP allocation
-      try {
-        await apiService.deletePROSEMsByPROTAId(protaToUpdate.id);
-        setProsemData({ ganjil: null, genap: null });
-      } catch (prosemDelErr) {
-        console.warn("Gagal menghapus PROSEM lama otomatis:", prosemDelErr);
-      }
 
-      setProtas([updatedProta]);
-      setIsEditingProtaJp(false);
-      setTempProtaContent([]);
-      setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui. Data PROSEM lama otomatis dihapus agar tetap sinkron.");
-    } catch (error: any) {
-      setProtaError(`Gagal memperbarui JP PROTA: ${error.message}`);
-    } finally {
-      setLoadingState({ isLoading: false, title: '', message: '' });
+    const weeksGanjil = getSemesterTotalWeeks('Ganjil', selectedTP.grade);
+    const weeksGenap = getSemesterTotalWeeks('Genap', selectedTP.grade);
+    const jamWeekly = protaToUpdate.jamPertemuan || 2;
+    const targetGanjil = weeksGanjil * jamWeekly;
+    const targetGenap = weeksGenap * jamWeekly;
+
+    const allocatedGanjil = tempProtaContent.filter(r => r.semester === 'Ganjil').reduce((sum, r) => sum + parseJpValue(r.alokasiWaktu), 0);
+    const allocatedGenap = tempProtaContent.filter(r => r.semester === 'Genap').reduce((sum, r) => sum + parseJpValue(r.alokasiWaktu), 0);
+
+    const hasGanjilMismatch = allocatedGanjil !== targetGanjil;
+    const hasGenapMismatch = allocatedGenap !== targetGenap;
+
+    const saveAction = async () => {
+      setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA dan memperbarui data terkait...' });
+      setProtaError(null);
+      try {
+        const updatedProta = await apiService.updatePROTA(protaToUpdate.id, {
+          content: tempProtaContent
+        });
+        
+        // Automatically delete associated PROSEM data since PROSEM is generated based on PROTA's JP allocation
+        try {
+          await apiService.deletePROSEMsByPROTAId(protaToUpdate.id);
+          setProsemData({ ganjil: null, genap: null });
+        } catch (prosemDelErr) {
+          console.warn("Gagal menghapus PROSEM lama otomatis:", prosemDelErr);
+        }
+
+        setProtas([updatedProta]);
+        setIsEditingProtaJp(false);
+        setTempProtaContent([]);
+        setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui. Data PROSEM lama otomatis dihapus agar tetap sinkron.");
+      } catch (error: any) {
+        setProtaError(`Gagal memperbarui JP PROTA: ${error.message}`);
+      } finally {
+        setLoadingState({ isLoading: false, title: '', message: '' });
+      }
+    };
+
+    if (hasGanjilMismatch || hasGenapMismatch) {
+      let warningMessage = "Alokasi waktu (JP) yang Anda tentukan belum sesuai dengan target minggu efektif:\n\n";
+      if (hasGanjilMismatch) {
+          warningMessage += `• Semester Ganjil: Target ${targetGanjil} JP, teralokasi ${allocatedGanjil} JP (${allocatedGanjil > targetGanjil ? 'Kelebihan' : 'Kekurangan'} ${Math.abs(targetGanjil - allocatedGanjil)} JP)\n`;
+      }
+      if (hasGenapMismatch) {
+          warningMessage += `• Semester Genap: Target ${targetGenap} JP, teralokasi ${allocatedGenap} JP (${allocatedGenap > targetGenap ? 'Kelebihan' : 'Kekurangan'} ${Math.abs(targetGenap - allocatedGenap)} JP)\n`;
+      }
+      warningMessage += "\nHal ini dapat menyebabkan beberapa TP di PROSEM tidak kebagian minggu pelaksanaan, atau ada sisa minggu kosong di akhir semester. Apakah Anda yakin tetap ingin menyimpannya?";
+
+      showConfirm(
+          "Alokasi JP Tidak Seimbang",
+          warningMessage,
+          () => {
+              closeConfirm();
+              saveAction();
+          }
+      );
+    } else {
+      saveAction();
     }
   };
 
@@ -1670,7 +1759,7 @@ const App: React.FC = () => {
             weeks: weekNumbers.length,
             weekNumbers: weekNumbers
         };
-    });
+    }).filter(h => h.weeks > 0);
 
     return {
         ...data,
@@ -2236,8 +2325,19 @@ const App: React.FC = () => {
         if (!selectedTP) return null;
         const protaExists = protas.length > 0;
         const currentProta = protaExists ? protas[0] : null;
+        
+        const weeksGanjil = protaExists ? getSemesterTotalWeeks('Ganjil', selectedTP.grade) : 0;
+        const weeksGenap = protaExists ? getSemesterTotalWeeks('Genap', selectedTP.grade) : 0;
+        const jamWeekly = currentProta?.jamPertemuan || 2;
+        const targetGanjil = weeksGanjil * jamWeekly;
+        const targetGenap = weeksGenap * jamWeekly;
+
+        const contentToUse = isEditingProtaJp ? tempProtaContent : (currentProta?.content || []);
+        const allocatedGanjil = contentToUse.filter(r => r.semester === 'Ganjil').reduce((sum, r) => sum + parseJpValue(r.alokasiWaktu), 0);
+        const allocatedGenap = contentToUse.filter(r => r.semester === 'Genap').reduce((sum, r) => sum + parseJpValue(r.alokasiWaktu), 0);
+
         const totalJp = protaExists 
-          ? (isEditingProtaJp ? tempProtaContent : currentProta!.content).reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0) 
+          ? contentToUse.reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0) 
           : 0;
 
         return (
@@ -2311,6 +2411,77 @@ const App: React.FC = () => {
                 </div>
             ) : (
                 <div className="bg-white rounded-lg shadow-lg p-6">
+                    {/* Analisis Distribusi JP & Minggu Efektif */}
+                    <div className="mb-6 bg-slate-50 border border-slate-200 rounded-lg p-4">
+                        <h3 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                            <CalendarIcon className="w-4 h-4 text-indigo-600" />
+                            Analisis Distribusi JP & Minggu Efektif (Target vs Realisasi)
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Semester Ganjil */}
+                            <div className="bg-white p-3.5 border border-slate-200 rounded-md shadow-sm">
+                                <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-100">
+                                    <span className="font-semibold text-slate-700 text-sm">Semester Ganjil</span>
+                                    <span className="text-xs text-slate-500 font-medium">{weeksGanjil} Minggu Efektif × {jamWeekly} JP</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                                    <div>
+                                        <p className="text-slate-500">Target Alokasi:</p>
+                                        <p className="font-bold text-slate-800 text-sm">{targetGanjil} JP</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500">Teralokasi:</p>
+                                        <p className="font-bold text-slate-800 text-sm">{allocatedGanjil} JP</p>
+                                    </div>
+                                </div>
+                                {allocatedGanjil === targetGanjil ? (
+                                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🟢 Sempurna! Semua JP terdistribusi pas dengan minggu efektif.</span>
+                                    </div>
+                                ) : allocatedGanjil < targetGanjil ? (
+                                    <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🟡 Kurang {targetGanjil - allocatedGanjil} JP. Akan ada sisa minggu kosong di akhir semester (kelebihan minggu).</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50 border border-red-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🔴 Berlebih {allocatedGanjil - targetGanjil} JP! Beberapa TP tidak akan kebagian minggu pelaksanaan di PROSEM.</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Semester Genap */}
+                            <div className="bg-white p-3.5 border border-slate-200 rounded-md shadow-sm">
+                                <div className="flex justify-between items-center mb-2 pb-1 border-b border-slate-100">
+                                    <span className="font-semibold text-slate-700 text-sm">Semester Genap</span>
+                                    <span className="text-xs text-slate-500 font-medium">{weeksGenap} Minggu Efektif × {jamWeekly} JP</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                                    <div>
+                                        <p className="text-slate-500">Target Alokasi:</p>
+                                        <p className="font-bold text-slate-800 text-sm">{targetGenap} JP</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500">Teralokasi:</p>
+                                        <p className="font-bold text-slate-800 text-sm">{allocatedGenap} JP</p>
+                                    </div>
+                                </div>
+                                {allocatedGenap === targetGenap ? (
+                                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🟢 Sempurna! Semua JP terdistribusi pas dengan minggu efektif.</span>
+                                    </div>
+                                ) : allocatedGenap < targetGenap ? (
+                                    <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🟡 Kurang {targetGenap - allocatedGenap} JP. Akan ada sisa minggu kosong di akhir semester (kelebihan minggu).</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5 text-xs text-red-700 bg-red-50 border border-red-200 px-2.5 py-1.5 rounded font-medium">
+                                        <span>🔴 Berlebih {allocatedGenap - targetGenap} JP! Beberapa TP tidak akan kebagian minggu pelaksanaan di PROSEM.</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
                     {isEditingProtaJp && (
                       <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-md">
                         💡 <strong>Mode Edit JP Aktif:</strong> Anda dapat mengubah alokasi waktu (JP) di setiap baris langsung dari tabel di bawah, lalu klik tombol <strong>"Simpan JP"</strong> di atas.

@@ -270,7 +270,7 @@ export const generatePROSEM = async (
             weekNumbers = defVal;
         }
         return { month: m, weeks, weekNumbers };
-    });
+    }).filter(h => h.weeks > 0);
 
     const isSemesterMatch = (itemSem: string, targetSem: string) => {
         if (!itemSem) return false;
