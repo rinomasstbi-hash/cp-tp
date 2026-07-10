@@ -8,7 +8,7 @@ interface TPMenuProps {
   protas: PROTAData[];
   kktpData: { ganjil: KKTPData | null; genap: KKTPData | null } | null;
   prosemData: { ganjil: PROSEMData | null; genap: PROSEMData | null } | null;
-  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'prosem') => void;
+  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem') => void;
   onBack: () => void;
   isLoading?: boolean;
 }
@@ -80,6 +80,15 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
     },
     {
+      title: "Rincian Pekan Efektif (RPE)",
+      description: "Menghitung dan memetakan alokasi pekan efektif dan tidak efektif pembelajaran per semester.",
+      icon: <CalendarIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <CalendarIcon className="h-28 w-28 text-white"/>,
+      status: !protaExists ? 'locked' : 'completed',
+      action: () => onNavigate('rpe'),
+      actionLabel: 'Lihat Detail RPE',
+    },
+    {
       title: "Program Semester (PROSEM)",
       description: "Mendistribusikan alokasi waktu PROTA ke dalam jadwal per minggu setiap bulan.",
       icon: <ListIcon className="h-8 w-8 text-white"/>,
@@ -108,6 +117,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     'from-teal-500 to-emerald-500',  // For ATP
     'from-indigo-500 to-violet-500', // For KKTP
     'from-rose-500 to-pink-500',     // For PROTA
+    'from-emerald-600 to-teal-600',  // For RPE
     'from-orange-500 to-amber-500',  // For PROSEM
   ];
 

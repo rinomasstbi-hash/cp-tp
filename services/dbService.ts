@@ -683,6 +683,10 @@ export interface AdminSettings {
   weeksGenap78?: Record<string, number[]>;
   weeksGanjil9?: Record<string, number[]>;
   weeksGenap9?: Record<string, number[]>;
+  weekLabelsGanjil78?: Record<string, Record<string, string>>;
+  weekLabelsGenap78?: Record<string, Record<string, string>>;
+  weekLabelsGanjil9?: Record<string, Record<string, string>>;
+  weekLabelsGenap9?: Record<string, Record<string, string>>;
 }
 
 export const getAdminSettings = async (): Promise<AdminSettings | null> => {

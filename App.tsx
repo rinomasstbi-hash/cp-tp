@@ -8,6 +8,7 @@ import TPMenu from './components/TPMenu';
 import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
+import { RpeDetail } from './components/RpeDetail';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon, SaveIcon } from './components/icons';
 
 import Login from './components/Login';
@@ -172,10 +173,10 @@ const App: React.FC = () => {
   const getSemesterWeeksList = (semester: 'Ganjil' | 'Genap', grade: string): Record<string, number[]> => {
     const isGrade9 = grade.includes('9') || grade.toUpperCase().includes('IX');
     
-    const defaultGanjil78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] };
-    const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
-    const defaultGanjil9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
-    const defaultGenap9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+    const defaultGanjil78 = { 'Juli': [4, 5], 'Agustus': [1, 2, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [] };
+    const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 4, 5], 'Juni': [] };
+    const defaultGanjil9 = { 'Juli': [4, 5], 'Agustus': [1, 2, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [] };
+    const defaultGenap9 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 4, 5], 'Juni': [] };
 
     const defaultVal = semester === 'Ganjil'
         ? (isGrade9 ? defaultGanjil9 : defaultGanjil78)
@@ -212,6 +213,36 @@ const App: React.FC = () => {
   const getSemesterTotalWeeks = (semester: 'Ganjil' | 'Genap', grade: string): number => {
     const weeksList = getSemesterWeeksList(semester, grade);
     return Object.values(weeksList).reduce((sum, list) => sum + list.length, 0);
+  };
+
+  const getWeekInactiveLabel = (semester: 'Ganjil' | 'Genap', grade: string, month: string, weekNum: number): string => {
+    const isGrade9 = grade.includes('9') || grade.toUpperCase().includes('IX');
+    const labelKey = isGrade9
+      ? (semester === 'Ganjil' ? 'weekLabelsGanjil9' : 'weekLabelsGenap9')
+      : (semester === 'Ganjil' ? 'weekLabelsGanjil78' : 'weekLabelsGenap78');
+    
+    if (globalSettings && globalSettings[labelKey]) {
+      const currentLabels = globalSettings[labelKey] as Record<string, Record<string, string>>;
+      if (currentLabels[month] && typeof currentLabels[month][String(weekNum)] === 'string' && currentLabels[month][String(weekNum)].trim() !== '') {
+        return currentLabels[month][String(weekNum)].trim().toUpperCase();
+      }
+    }
+    
+    // Fallback to default inactive labels
+    const defaultLabelsMap = semester === 'Ganjil'
+      ? {
+          'Juli': { '1': 'LS2', '2': 'LS2', '3': 'MTM' },
+          'Agustus': { '3': 'PHBN' },
+          'Desember': { '1': 'SAS', '2': 'UP', '3': 'LS1', '4': 'LS1' }
+        }
+      : {
+          'Maret': { '1': 'LHR', '2': 'LHR', '3': 'LHR' },
+          'Mei': { '3': 'LHR' },
+          'Juni': { '1': 'SAS', '2': 'UP', '3': 'LS2', '4': 'LS2' }
+        };
+    
+    const monthMap = defaultLabelsMap[month as keyof typeof defaultLabelsMap] as Record<string, string> | undefined;
+    return (monthMap && monthMap[String(weekNum)]) || '';
   };
 
   const parseJpValue = (val: string): number => {
@@ -1400,29 +1431,59 @@ const App: React.FC = () => {
     
     const styles = `
       <style>
+        @page Section1 {
+          size: 595.3pt 841.9pt;
+          margin: 36.0pt 36.0pt 36.0pt 36.0pt;
+          mso-header-margin: 36.0pt;
+          mso-footer-margin: 36.0pt;
+        }
+        div.Section1 { page: Section1; }
         body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
-        p, li, h2, h1 { margin: 0; padding: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; }
+        p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; text-transform: uppercase; margin: 0; padding: 0;}
-        .header-table { margin-bottom: 15px; }
-        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table td {
+          border: none;
+          font-size: 12pt;
+          padding: 1px 0;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
         .cp-container { border: 1px solid black; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }
         .cp-title { font-size: 12pt; font-weight: bold; margin: 0 0 10px 0; }
+        .signature-table { width: 100%; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+        .signature-td {
+          border: none;
+          width: 50%;
+          text-align: left;
+          vertical-align: top;
+          padding: 1px 5px;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
       </style>
     `;
 
     const identityTable = `
       <table class="header-table">
-        <tr><td class="no-wrap" style="width: 150px; padding-left: 0;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
-        <tr><td class="no-wrap" style="padding-left: 0;">Mata Pelajaran</td><td>: ${selectedATP.subject}</td></tr>
-        <tr><td class="no-wrap" style="padding-left: 0;">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
-        <tr><td class="no-wrap" style="padding-left: 0;">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
+        <colgroup>
+          <col style="width: 150px;" />
+          <col style="width: auto;" />
+        </colgroup>
+        <tr><td class="no-wrap" style="width: 150px; padding-left: 0; font-weight: bold;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0; font-weight: bold;">Mata Pelajaran</td><td>: ${selectedATP.subject}</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0; font-weight: bold;">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
+        <tr><td class="no-wrap" style="padding-left: 0; font-weight: bold;">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
       </table>
     `;
 
@@ -1469,7 +1530,7 @@ const App: React.FC = () => {
     const signatureBlock = `
       <div class="signature-table-container">
         <br>
-        <table style="width: 100%; border: none; text-align: center;">
+        <table class="signature-table">
           <tbody>
             <tr>
               <td class="signature-td">Mengetahui,</td>
@@ -1479,8 +1540,7 @@ const App: React.FC = () => {
               <td class="signature-td">Kepala Madrasah,</td>
               <td class="signature-td">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
             <tr>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Dr. Aziz Ja'far, S.Th.I., M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
@@ -1502,8 +1562,10 @@ const App: React.FC = () => {
           ${styles}
         </head>
         <body>
-          ${mainContent}
-          ${signatureBlock}
+          <div class="Section1">
+            ${mainContent}
+            ${signatureBlock}
+          </div>
         </body>
       </html>
     `;
@@ -1529,27 +1591,57 @@ const App: React.FC = () => {
 
     const styles = `
       <style>
+        @page Section1 {
+          size: 595.3pt 841.9pt;
+          margin: 36.0pt 36.0pt 36.0pt 36.0pt;
+          mso-header-margin: 36.0pt;
+          mso-footer-margin: 36.0pt;
+        }
+        div.Section1 { page: Section1; }
         body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
-        p, li, h2, h1 { margin: 0; padding: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; }
+        p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
+        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; }
-        .header-table { margin-bottom: 15px; }
-        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table td {
+          border: none;
+          font-size: 12pt;
+          padding: 1px 0;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
+        .signature-table { width: 100%; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+        .signature-td {
+          border: none;
+          width: 50%;
+          text-align: left;
+          vertical-align: top;
+          padding: 1px 5px;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
       </style>
     `;
 
     const identityTable = `
       <table class="header-table">
-        <tr><td class="no-wrap" style="width: 150px;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
-        <tr><td class="no-wrap">Mata Pelajaran</td><td>: ${currentProta.subject}</td></tr>
-        <tr><td class="no-wrap">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
-        <tr><td class="no-wrap">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
+        <colgroup>
+          <col style="width: 150px;" />
+          <col style="width: auto;" />
+        </colgroup>
+        <tr><td class="no-wrap" style="width: 150px; font-weight: bold;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Mata Pelajaran</td><td>: ${currentProta.subject}</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Kelas</td><td>: ${selectedTP.grade} / Fase D</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Tahun Ajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
       </table>
     `;
 
@@ -1601,7 +1693,7 @@ const App: React.FC = () => {
     const signatureBlock = `
       <div class="signature-table-container">
         <br>
-        <table style="width: 100%; border: none; text-align: center;">
+        <table class="signature-table">
           <tbody>
             <tr>
               <td class="signature-td">Mengetahui,</td>
@@ -1611,8 +1703,7 @@ const App: React.FC = () => {
               <td class="signature-td">Kepala Madrasah,</td>
               <td class="signature-td">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
             <tr>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${currentProta.creatorName}</td>
@@ -1635,8 +1726,10 @@ const App: React.FC = () => {
           ${styles}
         </head>
         <body>
-          ${mainContent}
-          ${signatureBlock}
+          <div class="Section1">
+            ${mainContent}
+            ${signatureBlock}
+          </div>
         </body>
       </html>
     `;
@@ -1656,36 +1749,325 @@ const App: React.FC = () => {
     setTimeout(() => setCopyNotification(''), 2000);
   };
 
+  const handleExportRpeToWord = () => {
+    if (!selectedTP || protas.length === 0) return;
+    
+    const currentProta = protas[0];
+    const grade = selectedTP.grade;
+    const subject = selectedTP.subject;
+    const creatorName = currentProta.creatorName || selectedTP.creatorName || user?.displayName || "Guru Mata Pelajaran";
+    const jamWeekly = currentProta.jamPertemuan || 2;
+
+    const MONTH_MAX_WEEKS_LOCAL: Record<string, number> = {
+      'Juli': 5,
+      'Agustus': 5,
+      'September': 5,
+      'Oktober': 5,
+      'November': 5,
+      'Desember': 5,
+      'Januari': 5,
+      'Februari': 5,
+      'Maret': 5,
+      'April': 5,
+      'Mei': 5,
+      'Juni': 5
+    };
+
+    const CODE_DESCRIPTIONS_LOCAL: Record<string, string> = {
+      'LS2': 'Libur Semester 2',
+      'MTM': 'Masa Ta\'aruf Siswa Madrasah (MATSAMA)',
+      'PHBN': 'Peringatan Hari Besar Nasional',
+      'SAS': 'Sumatif Akhir Semester',
+      'UP': 'Ujian Praktik / Penilaian Akhir',
+      'LS1': 'Libur Semester 1',
+      'LHR': 'Libur Hari Raya / Keagamaan'
+    };
+
+    const getMonthKeteranganDoc = (
+      semester: 'Ganjil' | 'Genap',
+      month: string,
+      activeWeeks: number[]
+    ): string => {
+      const maxWeeks = MONTH_MAX_WEEKS_LOCAL[month] || 5;
+      const inactiveWeeks = Array.from({ length: maxWeeks }, (_, i) => i + 1).filter(w => !activeWeeks.includes(w));
+      
+      const realInactiveWeeks = inactiveWeeks.filter(w => {
+        const label = getWeekInactiveLabel(semester, grade, month, w);
+        return !label || label.trim().toLowerCase() !== 'x';
+      });
+
+      if (realInactiveWeeks.length === 0) {
+        return 'Semua pekan efektif';
+      }
+      
+      const codeGroups: Record<string, number[]> = {};
+      realInactiveWeeks.forEach(w => {
+        const code = getWeekInactiveLabel(semester, grade, month, w) || 'N/E';
+        if (!codeGroups[code]) {
+          codeGroups[code] = [];
+        }
+        codeGroups[code].push(w);
+      });
+      
+      const parts = Object.entries(codeGroups).map(([code, weeks]) => {
+        const weekStr = weeks.map(w => `Pekan ${w}`).join(', ');
+        const desc = CODE_DESCRIPTIONS_LOCAL[code] ? ` (${CODE_DESCRIPTIONS_LOCAL[code]})` : '';
+        return `${weekStr}: ${code}${desc}`;
+      });
+      
+      return parts.join('; ');
+    };
+
+    const buildSemesterTableHtml = (semester: 'Ganjil' | 'Genap') => {
+      const months = semester === 'Ganjil'
+        ? ['Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+        : ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni'];
+
+      const weeksList = getSemesterWeeksList(semester, grade);
+      
+      let totalPekan = 0;
+      let totalPekanEfektif = 0;
+      let totalPekanTidakEfektif = 0;
+
+      const rowsHtml = months.map((m, idx) => {
+        const activeWeeks = weeksList[m] || [];
+        const maxWeeks = MONTH_MAX_WEEKS_LOCAL[m] || 5;
+        
+        let xWeeksCount = 0;
+        for (let w = 1; w <= maxWeeks; w++) {
+          if (!activeWeeks.includes(w)) {
+            const label = getWeekInactiveLabel(semester, grade, m, w);
+            if (label && label.trim().toLowerCase() === 'x') {
+              xWeeksCount++;
+            }
+          }
+        }
+
+        const actualMaxWeeks = maxWeeks - xWeeksCount;
+        const efektif = activeWeeks.length;
+        const tidakEfektif = Math.max(0, actualMaxWeeks - efektif);
+
+        totalPekan += actualMaxWeeks;
+        totalPekanEfektif += efektif;
+        totalPekanTidakEfektif += tidakEfektif;
+        const keterangan = getMonthKeteranganDoc(semester, m, activeWeeks);
+
+        return `
+          <tr>
+            <td class="text-center" style="text-align: center;">${idx + 1}</td>
+            <td style="font-weight: bold;">${m}</td>
+            <td class="text-center" style="text-align: center;">${actualMaxWeeks}</td>
+            <td class="text-center" style="text-align: center;">${efektif}</td>
+            <td class="text-center" style="text-align: center;">${tidakEfektif}</td>
+            <td>${keterangan}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const totalJp = totalPekanEfektif * jamWeekly;
+
+      return `
+        <p style="font-weight: bold; font-size: 11pt; margin-top: 10px; margin-bottom: 3px; mso-margin-after-alt: 0pt; mso-margin-top-alt: 10pt;">SEMESTER ${semester.toUpperCase()}</p>
+        <table class="semester-table" style="border-collapse: collapse; margin-top: 2px; margin-bottom: 10px;">
+          <thead>
+            <tr>
+              <th style="text-align: center; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">No</th>
+              <th style="text-align: left; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">Nama Bulan</th>
+              <th style="text-align: center; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">Jumlah Pekan</th>
+              <th style="text-align: center; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">Pekan Efektif</th>
+              <th style="text-align: center; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">Pekan Tidak Efektif</th>
+              <th style="text-align: left; font-weight: bold; background-color: #f2f2f2; border: 1px solid black; padding: 4px 6px;">Keterangan / Alasan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+            <tr style="font-weight: bold; background-color: #f9f9f9;">
+              <td colspan="2" style="text-align: right; border: 1px solid black; padding: 4px 6px;">Jumlah Total</td>
+              <td class="text-center" style="text-align: center; border: 1px solid black; padding: 4px 6px;">${totalPekan}</td>
+              <td class="text-center" style="text-align: center; border: 1px solid black; padding: 4px 6px;">${totalPekanEfektif}</td>
+              <td class="text-center" style="text-align: center; border: 1px solid black; padding: 4px 6px;">${totalPekanTidakEfektif}</td>
+              <td style="font-size: 10pt; font-weight: normal; font-style: italic; border: 1px solid black; padding: 4px 6px;">Pekan Efektif = ${totalPekanEfektif} Minggu</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top: 2px; margin-bottom: 5px; font-weight: bold; mso-margin-after-alt: 0pt; mso-margin-top-alt: 2pt;">
+          Total Alokasi Waktu: ${totalPekanEfektif} Pekan Efektif x ${jamWeekly} JP = ${totalJp} JP
+        </p>
+      `;
+    };
+
+    const styles = `
+      <style>
+        @page Section1 {
+          size: 595.3pt 841.9pt;
+          margin: 36.0pt 36.0pt 36.0pt 36.0pt;
+          mso-header-margin: 36.0pt;
+          mso-footer-margin: 36.0pt;
+        }
+        div.Section1 { page: Section1; }
+        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; line-height: 1.15; }
+        p, li, h2, h1, div { margin: 0pt; padding: 0pt; margin-bottom: 0pt; mso-margin-after-alt: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; }
+        table { border-collapse: collapse; margin-top: 3px; margin-bottom: 8px; }
+        .semester-table { width: auto; mso-table-layout-alt: auto; }
+        th, td {
+          border: 1px solid black;
+          padding: 4px 6px;
+          text-align: left;
+          vertical-align: top;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
+        th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
+        .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 12pt; mso-margin-after-alt: 12pt; }
+        .header-table { margin-bottom: 8px; border: none; table-layout: fixed; width: 100%; }
+        .header-table td { border: none; font-size: 11pt; padding: 1px 0; }
+        .no-wrap { white-space: nowrap; }
+        .text-center { text-align: center; }
+        .signature-table { width: 100%; border: none; text-align: left; table-layout: fixed; margin-left: 36pt; }
+        .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
+        .signature-td { border: none; width: 50%; text-align: left; vertical-align: top; padding: 1px 5px; }
+      </style>
+    `;
+
+    const identityTable = `
+      <table class="header-table" style="width: 100%; border: none;">
+        <colgroup>
+          <col style="width: 150px;" />
+          <col style="width: auto;" />
+        </colgroup>
+        <tr><td class="no-wrap" style="width: 150px; font-weight: bold;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Mata Pelajaran</td><td>: ${subject}</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Kelas</td><td>: ${grade} / Fase D</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Tahun Pelajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
+      </table>
+    `;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          ${styles}
+        </head>
+        <body>
+          <div class="Section1">
+            <p class="title" style="text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 12pt; mso-margin-after-alt: 12pt;">RINCIAN PEKAN EFEKTIF (RPE)</p>
+            ${identityTable}
+            
+            ${buildSemesterTableHtml('Ganjil')}
+            <br>
+            ${buildSemesterTableHtml('Genap')}
+
+            <div class="signature-table-container">
+              <br>
+              <table class="signature-table">
+                <colgroup>
+                  <col style="width: 50%;" />
+                  <col style="width: 50%;" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td class="signature-td" style="width: 50%;">Mengetahui,</td>
+                    <td class="signature-td" style="width: 50%;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                  </tr>
+                  <tr>
+                    <td class="signature-td">Kepala Madrasah,</td>
+                    <td class="signature-td">Guru Mata Pelajaran,</td>
+                  </tr>
+                  <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
+                  <tr>
+                    <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
+                    <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${creatorName}</td>
+                  </tr>
+                  <tr>
+                    <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
+                    <td class="signature-td">NIP. -</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `RPE_${subject.replace(/ /g, '_')}_Kelas_${grade}.doc`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    setCopyNotification('File Word RPE berhasil diunduh!');
+    setTimeout(() => setCopyNotification(''), 2000);
+  };
+
   const handleExportKktpToWord = (semester: 'Ganjil' | 'Genap') => {
     const dataToExport = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
     if (!dataToExport || !selectedTP || !selectedATP) return;
     
     const styles = `
       <style>
+        @page Section1 {
+          size: 595.3pt 841.9pt;
+          margin: 36.0pt 36.0pt 36.0pt 36.0pt;
+          mso-header-margin: 36.0pt;
+          mso-footer-margin: 36.0pt;
+        }
+        div.Section1 { page: Section1; }
         body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; }
-        p, li, h2, h1 { margin: 0; padding: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; }
+        p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+        table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
+        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 5px; }
-        .header-table { margin-bottom: 15px; width: auto; }
-        .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table td {
+          border: none;
+          font-size: 12pt;
+          padding: 1px 0;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
         .text-center { text-align: center; }
         .kriteria-cell { padding: 0; margin: 0; }
         .kriteria-table { width: 100%; height: 100%; border: none; }
         .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; }
         .kriteria-table tr:last-child td { border-bottom: none; }
+        .signature-table { width: 100%; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-        .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+        .signature-td {
+          border: none;
+          width: 50%;
+          text-align: left;
+          vertical-align: top;
+          padding: 1px 5px;
+          margin: 0pt;
+          mso-margin-top-alt: 0pt;
+          mso-margin-bottom-alt: 0pt;
+          mso-margin-after-alt: 0pt;
+        }
       </style>
     `;
 
     const identityTable = `
       <table class="header-table">
-        <tr><td style="padding-right: 10px;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
-        <tr><td>Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
-        <tr><td>Kelas/Fase</td><td>: ${dataToExport.grade} / Fase D</td></tr>
-        <tr><td>Semester</td><td>: ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
+        <colgroup>
+          <col style="width: 150px;" />
+          <col style="width: auto;" />
+        </colgroup>
+        <tr><td class="no-wrap" style="width: 150px; font-weight: bold;">Nama Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Kelas/Fase</td><td>: ${dataToExport.grade} / Fase D</td></tr>
+        <tr><td class="no-wrap" style="font-weight: bold;">Semester</td><td>: ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
       </table>
     `;
 
@@ -1735,7 +2117,7 @@ const App: React.FC = () => {
     const signatureBlock = `
       <div class="signature-table-container">
         <br>
-        <table style="width: 100%; border: none; text-align: center;">
+        <table class="signature-table">
           <tbody>
             <tr>
               <td class="signature-td">Mengetahui,</td>
@@ -1745,8 +2127,7 @@ const App: React.FC = () => {
               <td class="signature-td">Kepala Madrasah,</td>
               <td class="signature-td">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
             <tr>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
@@ -1770,8 +2151,10 @@ const App: React.FC = () => {
           ${styles}
         </head>
         <body>
-          ${mainContent}
-          ${signatureBlock}
+          <div class="Section1">
+            ${mainContent}
+            ${signatureBlock}
+          </div>
         </body>
       </html>
     `;
@@ -1858,28 +2241,58 @@ const App: React.FC = () => {
   
       const styles = `
         <style>
-          @page { size: landscape; }
+          @page Section1 {
+            size: 841.9pt 595.3pt;
+            margin: 36.0pt 36.0pt 36.0pt 36.0pt;
+            mso-header-margin: 36.0pt;
+            mso-footer-margin: 36.0pt;
+            mso-page-orientation: landscape;
+          }
+          div.Section1 { page: Section1; }
           body { font-family: 'Times New Roman', Times, serif; font-size: 10pt; }
-          p, li, h2, h1 { margin: 0; padding: 0; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid black; padding: 3px; text-align: left; vertical-align: middle; }
+          p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
+          table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
+          th, td { border: 1px solid black; padding: 3px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
           th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
           .title { text-align: center; font-weight: bold; font-size: 14pt; }
-          .header-table { margin-bottom: 15px; width: auto; }
-          .header-table td { border: none; font-size: 12pt; padding: 1px 0; }
+          .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+          .header-table td {
+            border: none;
+            font-size: 12pt;
+            padding: 1px 0;
+            margin: 0pt;
+            mso-margin-top-alt: 0pt;
+            mso-margin-bottom-alt: 0pt;
+            mso-margin-after-alt: 0pt;
+          }
           .text-center { text-align: center; }
           .rotate { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+          .signature-table { width: 100%; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
           .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-          .signature-td { border: none; width: 50%; text-align: center; vertical-align: top; padding: 1px 5px; }
+          .signature-td {
+            border: none;
+            width: 50%;
+            text-align: left;
+            vertical-align: top;
+            padding: 1px 5px;
+            margin: 0pt;
+            mso-margin-top-alt: 0pt;
+            mso-margin-bottom-alt: 0pt;
+            mso-margin-after-alt: 0pt;
+          }
         </style>
       `;
   
       const identityTable = `
         <table class="header-table">
-          <tr><td style="padding-right: 10px;">Madrasah</td><td>: MTsN 4 Jombang</td></tr>
-          <tr><td>Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
-          <tr><td>Kelas/Semester</td><td>: ${dataToExport.grade} / ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
-          <tr><td>Tahun Pelajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
+          <colgroup>
+            <col style="width: 150px;" />
+            <col style="width: auto;" />
+          </colgroup>
+          <tr><td class="no-wrap" style="width: 150px; font-weight: bold;">Madrasah</td><td>: MTsN 4 Jombang</td></tr>
+          <tr><td class="no-wrap" style="font-weight: bold;">Mata Pelajaran</td><td>: ${dataToExport.subject}</td></tr>
+          <tr><td class="no-wrap" style="font-weight: bold;">Kelas/Semester</td><td>: ${dataToExport.grade} / ${dataToExport.semester === 'Ganjil' ? 'I (Ganjil)' : 'II (Genap)'}</td></tr>
+          <tr><td class="no-wrap" style="font-weight: bold;">Tahun Pelajaran</td><td>: ${globalSettings?.tahunPelajaran || '2025/2026'}</td></tr>
         </table>
       `;
   
@@ -1933,7 +2346,7 @@ const App: React.FC = () => {
       const signatureBlock = `
       <div class="signature-table-container">
         <br>
-        <table style="width: 100%; border: none; text-align: center;">
+        <table class="signature-table">
           <tbody>
             <tr>
               <td class="signature-td">Mengetahui,</td>
@@ -1943,8 +2356,7 @@ const App: React.FC = () => {
               <td class="signature-td">Kepala Madrasah,</td>
               <td class="signature-td">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
-            <tr><td class="signature-td" style="height: 30px;"></td><td class="signature-td" style="height: 30px;"></td></tr>
+            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
             <tr>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
               <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${creatorName}</td>
@@ -1966,8 +2378,10 @@ const App: React.FC = () => {
             ${styles}
           </head>
           <body>
-            ${mainContent}
-            ${signatureBlock}
+            <div class="Section1">
+              ${mainContent}
+              ${signatureBlock}
+            </div>
           </body>
         </html>
       `;
@@ -1987,7 +2401,7 @@ const App: React.FC = () => {
       setTimeout(() => setCopyNotification(''), 2000);
   };
 
-  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'prosem') => {
+  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem') => {
     if (!selectedTP) return;
 
     setGlobalError(null);
@@ -2000,6 +2414,11 @@ const App: React.FC = () => {
     
     if (destination === 'kktp') {
         await handleViewAndGenerateKktp();
+        return;
+    }
+    
+    if (destination === 'rpe') {
+        setView('view_rpe');
         return;
     }
     
@@ -2518,7 +2937,8 @@ const App: React.FC = () => {
                     )}
                 </div>
             ) : (
-                <div className="bg-white rounded-lg shadow-lg p-6">
+                <>
+                  <div className="bg-white rounded-lg shadow-lg p-6">
                     {/* Analisis Distribusi JP & Minggu Efektif */}
                     <div className="mb-6 bg-slate-50 border border-slate-200 rounded-lg p-4">
                         <h3 className="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
@@ -2643,9 +3063,52 @@ const App: React.FC = () => {
                         </table>
                     </div>
                 </div>
+              </>
             )}
           </div>
         );
+
+      case 'view_rpe': {
+        if (!selectedTP) return null;
+        const jamWeekly = (protas && protas[0]?.jamPertemuan) || 2;
+        return (
+          <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto animate-fade-in">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <div>
+                <button 
+                  onClick={() => setView('tp_menu')} 
+                  className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold transition"
+                >
+                  <BackIcon className="w-5 h-5" />
+                  Kembali ke Menu
+                </button>
+                <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
+                    Rincian Pekan Efektif (RPE)
+                </h1>
+                <p className="text-slate-500">Mata Pelajaran: {selectedSubject} | Kelas: {selectedTP.grade}</p>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <button 
+                  onClick={handleExportRpeToWord} 
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700 transition"
+                >
+                  <DownloadIcon className="w-5 h-5" />
+                  Ekspor ke Word
+                </button>
+              </div>
+            </div>
+
+            <RpeDetail
+              globalSettings={globalSettings}
+              grade={selectedTP.grade}
+              subject={selectedTP.subject}
+              jamWeekly={jamWeekly}
+              getSemesterWeeksList={getSemesterWeeksList}
+              getWeekInactiveLabel={getWeekInactiveLabel}
+            />
+          </div>
+        );
+      }
       
       case 'view_kktp':
         if (!selectedTP) return null;

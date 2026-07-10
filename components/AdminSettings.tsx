@@ -6,10 +6,49 @@ interface AdminSettingsProps {
   onSave?: () => void;
 }
 
-const DEFAULT_GANJIL_78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4], 'Desember': [1, 2] };
-const DEFAULT_GENAP_78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2] };
-const DEFAULT_GANJIL_9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
-const DEFAULT_GENAP_9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+const DEFAULT_GANJIL_78 = { 'Juli': [4, 5], 'Agustus': [1, 2, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [] };
+const DEFAULT_GENAP_78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 4, 5], 'Juni': [] };
+const DEFAULT_GANJIL_9 = { 'Juli': [4, 5], 'Agustus': [1, 2, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [] };
+const DEFAULT_GENAP_9 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 4, 5], 'Juni': [] };
+
+const MONTH_MAX_WEEKS: Record<string, number> = {
+  'Juli': 5,
+  'Agustus': 5,
+  'September': 5,
+  'Oktober': 5,
+  'November': 5,
+  'Desember': 5,
+  'Januari': 5,
+  'Februari': 5,
+  'Maret': 5,
+  'April': 5,
+  'Mei': 5,
+  'Juni': 5
+};
+
+const DEFAULT_INACTIVE_LABELS_GANJIL_78: Record<string, Record<string, string>> = {
+  'Juli': { '1': 'LS2', '2': 'LS2', '3': 'MTM' },
+  'Agustus': { '3': 'PHBN' },
+  'Desember': { '1': 'SAS', '2': 'UP', '3': 'LS1', '4': 'LS1' }
+};
+
+const DEFAULT_INACTIVE_LABELS_GENAP_78: Record<string, Record<string, string>> = {
+  'Maret': { '1': 'LHR', '2': 'LHR', '3': 'LHR' },
+  'Mei': { '3': 'LHR' },
+  'Juni': { '1': 'SAS', '2': 'UP', '3': 'LS2', '4': 'LS2' }
+};
+
+const DEFAULT_INACTIVE_LABELS_GANJIL_9: Record<string, Record<string, string>> = {
+  'Juli': { '1': 'LS2', '2': 'LS2', '3': 'MTM' },
+  'Agustus': { '3': 'PHBN' },
+  'Desember': { '1': 'SAS', '2': 'UP', '3': 'LS1', '4': 'LS1' }
+};
+
+const DEFAULT_INACTIVE_LABELS_GENAP_9: Record<string, Record<string, string>> = {
+  'Maret': { '1': 'LHR', '2': 'LHR', '3': 'LHR' },
+  'Mei': { '3': 'LHR' },
+  'Juni': { '1': 'SAS', '2': 'UP', '3': 'LS2', '4': 'LS2' }
+};
 
 const sanitizeWeeks = (val: any, defaultVal: Record<string, number[]>): Record<string, number[]> => {
     if (!val) return defaultVal;
@@ -22,6 +61,22 @@ const sanitizeWeeks = (val: any, defaultVal: Record<string, number[]>): Record<s
             sanitized[month] = Array.from({ length: value }, (_, i) => i + 1);
         } else {
             sanitized[month] = defaultVal[month];
+        }
+    });
+    return sanitized;
+};
+
+const sanitizeLabels = (val: any): Record<string, Record<string, string>> => {
+    if (!val) return {};
+    const sanitized: Record<string, Record<string, string>> = {};
+    Object.keys(val).forEach(month => {
+        sanitized[month] = {};
+        if (val[month] && typeof val[month] === 'object') {
+            Object.keys(val[month]).forEach(week => {
+                if (typeof val[month][week] === 'string') {
+                    sanitized[month][week] = val[month][week];
+                }
+            });
         }
     });
     return sanitized;
@@ -80,6 +135,10 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                         weeksGenap78: sanitizeWeeks(data.weeksGenap78, DEFAULT_GENAP_78),
                         weeksGanjil9: sanitizeWeeks(data.weeksGanjil9, DEFAULT_GANJIL_9),
                         weeksGenap9: sanitizeWeeks(data.weeksGenap9, DEFAULT_GENAP_9),
+                        weekLabelsGanjil78: sanitizeLabels(data.weekLabelsGanjil78),
+                        weekLabelsGenap78: sanitizeLabels(data.weekLabelsGenap78),
+                        weekLabelsGanjil9: sanitizeLabels(data.weekLabelsGanjil9),
+                        weekLabelsGenap9: sanitizeLabels(data.weekLabelsGenap9),
                     }));
                     if (Array.isArray(data.apiKeys)) {
                         setApiKeys(data.apiKeys);
@@ -215,6 +274,33 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
         });
     };
 
+    const handleWeekLabelChange = (gradeGroup: '78' | '9', semester: 'Ganjil' | 'Genap', month: string, weekNum: number, value: string) => {
+        setSettings(prev => {
+            const key = gradeGroup === '78' 
+                ? (semester === 'Ganjil' ? 'weekLabelsGanjil78' : 'weekLabelsGenap78')
+                : (semester === 'Ganjil' ? 'weekLabelsGanjil9' : 'weekLabelsGenap9');
+            
+            const currentLabels = prev[key] || {};
+            const monthLabels = currentLabels[month] || {};
+            
+            return {
+                ...prev,
+                [key]: {
+                    ...currentLabels,
+                    [month]: {
+                        ...monthLabels,
+                        [weekNum]: value
+                    }
+                }
+            };
+        });
+    };
+
+    const getDefaultInactiveLabel = (semester: 'Ganjil' | 'Genap', month: string, weekNum: number): string => {
+        const map = semester === 'Ganjil' ? DEFAULT_INACTIVE_LABELS_GANJIL_78 : DEFAULT_INACTIVE_LABELS_GENAP_78;
+        return (map[month] && map[month][String(weekNum)]) || '';
+    };
+
     if (loading) {
         return <div className="p-8 text-center text-slate-600">Memuat pengaturan...</div>;
     }
@@ -341,32 +427,63 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                                 const weeksObj = weeksTab === '78' ? (settings.weeksGanjil78 || {}) : (settings.weeksGanjil9 || {});
                                 const defaultVal = weeksTab === '78' ? DEFAULT_GANJIL_78[m as keyof typeof DEFAULT_GANJIL_78] : DEFAULT_GANJIL_9[m as keyof typeof DEFAULT_GANJIL_9];
                                 const activeWeeks = getSelectedWeeks(weeksObj, m, defaultVal);
+                                const maxWeeks = MONTH_MAX_WEEKS[m] || 5;
+                                const weekNumbers = Array.from({ length: maxWeeks }, (_, i) => i + 1);
+                                const inactiveWeeks = weekNumbers.filter(w => !activeWeeks.includes(w));
+                                
                                 return (
-                                    <div key={m} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 p-4 rounded-lg hover:border-slate-300 transition shadow-sm gap-4">
-                                        <div>
-                                            <span className="font-bold text-slate-800 text-base">{m}</span>
-                                            <span className="text-xs text-slate-500 block">Semester Ganjil ({activeWeeks.length} minggu efektif)</span>
+                                    <div key={m} className="flex flex-col bg-slate-50 border border-slate-200 p-4 rounded-lg hover:border-slate-300 transition shadow-sm gap-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div>
+                                                <span className="font-bold text-slate-800 text-base">{m}</span>
+                                                <span className="text-xs text-slate-500 block">Semester Ganjil ({activeWeeks.length} minggu efektif)</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm self-start sm:self-auto">
+                                                {weekNumbers.map(weekNum => {
+                                                    const isSelected = activeWeeks.includes(weekNum);
+                                                    return (
+                                                        <button
+                                                            key={weekNum}
+                                                            type="button"
+                                                            onClick={() => toggleWeekSelection(weeksTab, 'Ganjil', m, weekNum)}
+                                                            className={`w-8 h-8 rounded font-bold text-sm transition-all flex items-center justify-center active:scale-90 select-none ${
+                                                                isSelected 
+                                                                    ? 'bg-teal-600 text-white shadow-sm' 
+                                                                    : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                                                            }`}
+                                                            title={`Minggu ke-${weekNum}`}
+                                                        >
+                                                            {weekNum}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
-                                            {[1, 2, 3, 4, 5].map(weekNum => {
-                                                const isSelected = activeWeeks.includes(weekNum);
-                                                return (
-                                                    <button
-                                                        key={weekNum}
-                                                        type="button"
-                                                        onClick={() => toggleWeekSelection(weeksTab, 'Ganjil', m, weekNum)}
-                                                        className={`w-8 h-8 rounded font-bold text-sm transition-all flex items-center justify-center active:scale-90 select-none ${
-                                                            isSelected 
-                                                                ? 'bg-teal-600 text-white shadow-sm' 
-                                                                : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                                                        }`}
-                                                        title={`Minggu ke-${weekNum}`}
-                                                    >
-                                                        {weekNum}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                        {inactiveWeeks.length > 0 && (
+                                            <div className="border-t border-slate-200/60 pt-2.5 flex flex-wrap gap-x-4 gap-y-2 text-xs items-center">
+                                                <span className="text-slate-500 font-medium">Kode Tidak Efektif:</span>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {inactiveWeeks.map(w => {
+                                                        const labelKey = weeksTab === '78' ? 'weekLabelsGanjil78' : 'weekLabelsGanjil9';
+                                                        const currentLabels = settings[labelKey] || {};
+                                                        const monthLabels = currentLabels[m] || {};
+                                                        const labelVal = monthLabels[w] || '';
+                                                        return (
+                                                            <div key={w} className="flex items-center gap-1">
+                                                                <span className="text-slate-600 font-semibold bg-slate-200/50 px-1 py-0.5 rounded">M{w}</span>
+                                                                <input 
+                                                                    type="text"
+                                                                    value={labelVal}
+                                                                    onChange={(e) => handleWeekLabelChange(weeksTab, 'Ganjil', m, w, e.target.value)}
+                                                                    placeholder={getDefaultInactiveLabel('Ganjil', m, w) || 'Kode'}
+                                                                    className="w-16 px-1.5 py-0.5 border border-slate-300 rounded text-center font-bold text-xs uppercase text-teal-700 bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -391,32 +508,63 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
                                 const weeksObj = weeksTab === '78' ? (settings.weeksGenap78 || {}) : (settings.weeksGenap9 || {});
                                 const defaultVal = weeksTab === '78' ? DEFAULT_GENAP_78[m as keyof typeof DEFAULT_GENAP_78] : DEFAULT_GENAP_9[m as keyof typeof DEFAULT_GENAP_9];
                                 const activeWeeks = getSelectedWeeks(weeksObj, m, defaultVal);
+                                const maxWeeks = MONTH_MAX_WEEKS[m] || 5;
+                                const weekNumbers = Array.from({ length: maxWeeks }, (_, i) => i + 1);
+                                const inactiveWeeks = weekNumbers.filter(w => !activeWeeks.includes(w));
+                                
                                 return (
-                                    <div key={m} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 p-4 rounded-lg hover:border-slate-300 transition shadow-sm gap-4">
-                                        <div>
-                                            <span className="font-bold text-slate-800 text-base">{m}</span>
-                                            <span className="text-xs text-slate-500 block">Semester Genap ({activeWeeks.length} minggu efektif)</span>
+                                    <div key={m} className="flex flex-col bg-slate-50 border border-slate-200 p-4 rounded-lg hover:border-slate-300 transition shadow-sm gap-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div>
+                                                <span className="font-bold text-slate-800 text-base">{m}</span>
+                                                <span className="text-xs text-slate-500 block">Semester Genap ({activeWeeks.length} minggu efektif)</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm self-start sm:self-auto">
+                                                {weekNumbers.map(weekNum => {
+                                                    const isSelected = activeWeeks.includes(weekNum);
+                                                    return (
+                                                        <button
+                                                            key={weekNum}
+                                                            type="button"
+                                                            onClick={() => toggleWeekSelection(weeksTab, 'Genap', m, weekNum)}
+                                                            className={`w-8 h-8 rounded font-bold text-sm transition-all flex items-center justify-center active:scale-90 select-none ${
+                                                                isSelected 
+                                                                    ? 'bg-teal-600 text-white shadow-sm' 
+                                                                    : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                                                            }`}
+                                                            title={`Minggu ke-${weekNum}`}
+                                                        >
+                                                            {weekNum}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
-                                            {[1, 2, 3, 4, 5].map(weekNum => {
-                                                const isSelected = activeWeeks.includes(weekNum);
-                                                return (
-                                                    <button
-                                                        key={weekNum}
-                                                        type="button"
-                                                        onClick={() => toggleWeekSelection(weeksTab, 'Genap', m, weekNum)}
-                                                        className={`w-8 h-8 rounded font-bold text-sm transition-all flex items-center justify-center active:scale-90 select-none ${
-                                                            isSelected 
-                                                                ? 'bg-teal-600 text-white shadow-sm' 
-                                                                : 'bg-slate-50 text-slate-400 border border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                                                        }`}
-                                                        title={`Minggu ke-${weekNum}`}
-                                                    >
-                                                        {weekNum}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                        {inactiveWeeks.length > 0 && (
+                                            <div className="border-t border-slate-200/60 pt-2.5 flex flex-wrap gap-x-4 gap-y-2 text-xs items-center">
+                                                <span className="text-slate-500 font-medium">Kode Tidak Efektif:</span>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {inactiveWeeks.map(w => {
+                                                        const labelKey = weeksTab === '78' ? 'weekLabelsGenap78' : 'weekLabelsGenap9';
+                                                        const currentLabels = settings[labelKey] || {};
+                                                        const monthLabels = currentLabels[m] || {};
+                                                        const labelVal = monthLabels[w] || '';
+                                                        return (
+                                                            <div key={w} className="flex items-center gap-1">
+                                                                <span className="text-slate-600 font-semibold bg-slate-200/50 px-1 py-0.5 rounded">M{w}</span>
+                                                                <input 
+                                                                    type="text"
+                                                                    value={labelVal}
+                                                                    onChange={(e) => handleWeekLabelChange(weeksTab, 'Genap', m, w, e.target.value)}
+                                                                    placeholder={getDefaultInactiveLabel('Genap', m, w) || 'Kode'}
+                                                                    className="w-16 px-1.5 py-0.5 border border-slate-300 rounded text-center font-bold text-xs uppercase text-teal-700 bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
