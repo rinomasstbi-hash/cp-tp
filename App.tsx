@@ -2048,11 +2048,10 @@ const App: React.FC = () => {
         .kriteria-table { width: 100%; height: 100%; border: none; }
         .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; font-size: 10pt; }
         .kriteria-table tr:last-child td { border-bottom: none; }
-        .signature-table { width: 567.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 736.97pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 283.5pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -2062,6 +2061,8 @@ const App: React.FC = () => {
           mso-margin-after-alt: 0pt;
           font-size: 11pt;
         }
+        .signature-td-left { width: 566.9pt; }
+        .signature-td-right { width: 170.07pt; }
       </style>
     `;
 
@@ -2126,23 +2127,27 @@ const App: React.FC = () => {
       <div class="signature-table-container">
         <br>
         <table class="signature-table">
+          <colgroup>
+            <col style="width: 566.9pt;" />
+            <col style="width: 170.07pt;" />
+          </colgroup>
           <tbody>
             <tr>
-              <td class="signature-td">Mengetahui,</td>
-              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Mengetahui,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
             </tr>
             <tr>
-              <td class="signature-td">Kepala Madrasah,</td>
-              <td class="signature-td">Guru Mata Pelajaran,</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Kepala Madrasah,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
+            <tr><td class="signature-td signature-td-left" style="width: 566.9pt; height: 45px;">&nbsp;</td><td class="signature-td signature-td-right" style="width: 170.07pt; height: 45px;">&nbsp;</td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt; font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt; font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
-              <td class="signature-td">NIP. -</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">NIP. -</td>
             </tr>
           </tbody>
         </table>
@@ -2275,11 +2280,10 @@ const App: React.FC = () => {
           }
           .text-center { text-align: center; }
           .rotate { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
-          .signature-table { width: 567.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+          .signature-table { width: 736.97pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
           .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
           .signature-td {
             border: none;
-            width: 283.5pt;
             text-align: left;
             vertical-align: top;
             padding: 1px 5px;
@@ -2288,6 +2292,8 @@ const App: React.FC = () => {
             mso-margin-bottom-alt: 0pt;
             mso-margin-after-alt: 0pt;
           }
+          .signature-td-left { width: 566.9pt; }
+          .signature-td-right { width: 170.07pt; }
         </style>
       `;
   
@@ -2356,23 +2362,27 @@ const App: React.FC = () => {
       <div class="signature-table-container">
         <br>
         <table class="signature-table">
+          <colgroup>
+            <col style="width: 566.9pt;" />
+            <col style="width: 170.07pt;" />
+          </colgroup>
           <tbody>
             <tr>
-              <td class="signature-td">Mengetahui,</td>
-              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Mengetahui,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
             </tr>
             <tr>
-              <td class="signature-td">Kepala Madrasah,</td>
-              <td class="signature-td">Guru Mata Pelajaran,</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Kepala Madrasah,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
+            <tr><td class="signature-td signature-td-left" style="width: 566.9pt; height: 45px;">&nbsp;</td><td class="signature-td signature-td-right" style="width: 170.07pt; height: 45px;">&nbsp;</td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${creatorName}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt; font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt; font-weight: bold; text-decoration: underline;">${creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
-              <td class="signature-td">NIP. -</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">NIP. -</td>
             </tr>
           </tbody>
         </table>
