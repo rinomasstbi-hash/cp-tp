@@ -2869,15 +2869,7 @@ const App: React.FC = () => {
                         <h1 className="text-3xl font-bold text-slate-800">Program Semester (PROSEM)</h1>
                         <p className="text-slate-500">Mapel: {selectedTP.subject} | Kelas: {selectedTP.grade}</p>
                     </div>
-                    {prosemExists && (
-                        <div className="flex items-center gap-3">
-                            {user && isApproved && (
-                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                                </button>
-                            )}
-                        </div>
-                    )}
+                    {/* No button here in header as it is relocated next to the export button */}
                 </div>
       
                 {prosemError && (
@@ -2913,9 +2905,16 @@ const App: React.FC = () => {
                                 <h2 className="text-2xl font-bold text-slate-800">Rincian PROSEM - Semester Ganjil</h2>
                                 <div className="flex items-center gap-3">
                                                                       {prosemData?.ganjil ? (
-                                        <button onClick={() => handleExportProsemToWord('Ganjil')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
-                                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
-                                        </button>
+                                        <div className="flex gap-2">
+                                            {user && isApproved && (
+                                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                                                </button>
+                                            )}
+                                            <button onClick={() => handleExportProsemToWord('Ganjil')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                                                <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                                            </button>
+                                        </div>
                                     ) : (
                                         user && isApproved && (
                                             <button onClick={() => handleGenerateSingleProsem('Ganjil')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
@@ -2937,9 +2936,16 @@ const App: React.FC = () => {
                                 <h2 className="text-2xl font-bold text-slate-800">Rincian PROSEM - Semester Genap</h2>
                                 <div className="flex items-center gap-3">
                                     {prosemData?.genap ? (
-                                        <button onClick={() => handleExportProsemToWord('Genap')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
-                                            <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
-                                        </button>
+                                        <div className="flex gap-2">
+                                            {user && isApproved && (
+                                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                                                </button>
+                                            )}
+                                            <button onClick={() => handleExportProsemToWord('Genap')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                                                <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
+                                            </button>
+                                        </div>
                                     ) : (
                                         user && isApproved && (
                                             <button onClick={() => handleGenerateSingleProsem('Genap')} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700 disabled:bg-slate-400">
