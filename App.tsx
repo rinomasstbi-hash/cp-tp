@@ -791,8 +791,22 @@ const App: React.FC = () => {
         } else if (view === 'edit_tp' && editingTP?.id) {
           console.log("App.tsx: calling apiService.updateTP");
           await apiService.updateTP(editingTP.id, data);
-          console.log("App.tsx: updateTP completed");
+          console.log("App.tsx: updateTP completed, now deleting associated downstream data");
+          
+          // Automatically delete related ATP, PROTA, KKTP, and PROSEM to ensure data consistency
+          try {
+              await Promise.all([
+                  apiService.deleteATPsByTPId(editingTP.id),
+                  apiService.deletePROTAsByTPId(editingTP.id),
+                  apiService.deleteKKTPsByTPId(editingTP.id),
+                  apiService.deletePROSEMsByTPId(editingTP.id)
+              ]);
+          } catch (deleteErr) {
+              console.warn("Gagal menghapus data lama otomatis:", deleteErr);
+          }
+          
           tpsCache.current[selectedSubject] = undefined; // Invalidate cache
+          setTransientMessage("Tujuan Pembelajaran berhasil diperbarui. Data ATP, Prota, KKTP, dan Prosem lama otomatis dihapus agar tetap sinkron.");
           setView('view_tp_list');
         }
       } catch (error: any) {
