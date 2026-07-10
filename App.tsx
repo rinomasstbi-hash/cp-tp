@@ -1444,7 +1444,7 @@ const App: React.FC = () => {
         th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; text-transform: uppercase; margin: 0; padding: 0;}
-        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
         .header-table td {
           border: none;
           font-size: 12pt;
@@ -1458,11 +1458,11 @@ const App: React.FC = () => {
         .text-center { text-align: center; }
         .cp-container { border: 1px solid black; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }
         .cp-title { font-size: 12pt; font-weight: bold; margin: 0 0 10px 0; }
-        .signature-table { border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 10.8cm;
+          width: 311.0pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -1510,7 +1510,7 @@ const App: React.FC = () => {
       <p class="title">ALUR TUJUAN PEMBELAJARAN (ATP)</p>
       <br>
       ${identityTable}
-      <p style="margin: 0pt 0pt 12pt 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 12pt; font-size: 11pt; line-height: 1.15;">&nbsp;</p>
+      <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
       ${cpElementsHtml}
       <table>
         <thead>
@@ -1605,7 +1605,7 @@ const App: React.FC = () => {
         th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; }
-        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
         .header-table td {
           border: none;
           font-size: 12pt;
@@ -1617,11 +1617,11 @@ const App: React.FC = () => {
         }
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
-        .signature-table { border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 10.8cm;
+          width: 311.0pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -1673,7 +1673,7 @@ const App: React.FC = () => {
       <p class="title">PROGRAM TAHUNAN (PROTA)</p>
       <br>
       ${identityTable}
-      <p style="margin: 0pt 0pt 12pt 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 12pt; font-size: 11pt; line-height: 1.15;">&nbsp;</p>
+      <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
       <table>
         <thead>
           <tr>
@@ -1923,13 +1923,13 @@ const App: React.FC = () => {
         }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 12pt; mso-margin-after-alt: 12pt; }
-        .header-table { margin-bottom: 8px; border: none; table-layout: fixed; width: 100%; }
+        .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; border: none; table-layout: fixed; width: 100%; }
         .header-table td { border: none; font-size: 11pt; padding: 1px 0; }
         .no-wrap { white-space: nowrap; }
         .text-center { text-align: center; }
-        .signature-table { border: none; text-align: left; table-layout: fixed; margin-left: 36pt; }
+        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
-        .signature-td { border: none; width: 10.8cm; text-align: left; vertical-align: top; padding: 1px 5px; }
+        .signature-td { border: none; width: 311.0pt; text-align: left; vertical-align: top; padding: 1px 5px; }
       </style>
     `;
 
@@ -1957,7 +1957,7 @@ const App: React.FC = () => {
           <div class="Section1">
             <p class="title" style="text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 12pt; mso-margin-after-alt: 12pt;">RINCIAN PEKAN EFEKTIF (RPE)</p>
             ${identityTable}
-            <p style="margin: 0pt 0pt 12pt 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 12pt; font-size: 11pt; line-height: 1.15;">&nbsp;</p>
+            <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
             
             ${buildSemesterTableHtml('Ganjil')}
             <br>
@@ -1967,13 +1967,13 @@ const App: React.FC = () => {
               <br>
               <table class="signature-table">
                 <colgroup>
-                  <col style="width: 10.8cm;" />
-                  <col style="width: 10.8cm;" />
+                  <col style="width: 311.0pt;" />
+                  <col style="width: 311.0pt;" />
                 </colgroup>
                 <tbody>
                   <tr>
-                    <td class="signature-td" style="width: 10.8cm;">Mengetahui,</td>
-                    <td class="signature-td" style="width: 10.8cm;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                    <td class="signature-td">Mengetahui,</td>
+                    <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
                   </tr>
                   <tr>
                     <td class="signature-td">Kepala Madrasah,</td>
@@ -2030,7 +2030,7 @@ const App: React.FC = () => {
         th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 5px; }
-        .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+        .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
         .header-table td {
           border: none;
           font-size: 12pt;
@@ -2045,11 +2045,11 @@ const App: React.FC = () => {
         .kriteria-table { width: 100%; height: 100%; border: none; }
         .kriteria-table td { border: none; border-bottom: 1px solid #dddddd; padding: 4px; }
         .kriteria-table tr:last-child td { border-bottom: none; }
-        .signature-table { border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 10.8cm;
+          width: 311.0pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -2101,7 +2101,7 @@ const App: React.FC = () => {
       <p class="title">KRITERIA KETERCAPAIAN TUJUAN PEMBELAJARAN (KKTP)</p>
       <br>
       ${identityTable}
-      <p style="margin: 0pt 0pt 12pt 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 12pt; font-size: 11pt; line-height: 1.15;">&nbsp;</p>
+      <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
       <table>
         <thead>
           <tr>
@@ -2259,7 +2259,7 @@ const App: React.FC = () => {
           th, td { border: 1px solid black; padding: 3px; text-align: left; vertical-align: middle; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
           th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
           .title { text-align: center; font-weight: bold; font-size: 14pt; }
-          .header-table { margin-bottom: 15px; width: 100%; border: none; table-layout: fixed; }
+          .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
           .header-table td {
             border: none;
             font-size: 12pt;
@@ -2271,11 +2271,11 @@ const App: React.FC = () => {
           }
           .text-center { text-align: center; }
           .rotate { writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
-          .signature-table { border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+          .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
           .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
           .signature-td {
             border: none;
-            width: 10.8cm;
+            width: 311.0pt;
             text-align: left;
             vertical-align: top;
             padding: 1px 5px;
@@ -2328,7 +2328,7 @@ const App: React.FC = () => {
         <p class="title">PROGRAM SEMESTER (PROSEM)</p>
         <br>
         ${identityTable}
-        <p style="margin: 0pt 0pt 12pt 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 12pt; font-size: 11pt; line-height: 1.15;">&nbsp;</p>
+        <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
         <table>
           <thead>
             <tr>
