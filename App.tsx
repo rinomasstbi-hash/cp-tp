@@ -272,6 +272,8 @@ const App: React.FC = () => {
   const [protaError, setProtaError] = useState<string | null>(null);
   const [isProtaJpModalOpen, setIsProtaJpModalOpen] = useState(false);
   const [protaJpInput, setProtaJpInput] = useState<number | ''>('');
+  const [isEditingProtaJp, setIsEditingProtaJp] = useState(false);
+  const [tempProtaContent, setTempProtaContent] = useState<PROTARow[]>([]);
 
   // State for KKTP Management
   const [kktpData, setKktpData] = useState<{ ganjil: KKTPData | null; genap: KKTPData | null } | null>(null);
@@ -749,6 +751,47 @@ const App: React.FC = () => {
             }
         }
     );
+  };
+
+  const handleStartEditProtaJp = () => {
+    if (protas.length > 0) {
+      setTempProtaContent(JSON.parse(JSON.stringify(protas[0].content)));
+      setIsEditingProtaJp(true);
+    }
+  };
+
+  const handleProtaJpChange = (index: number, value: string) => {
+    const updatedContent = [...tempProtaContent];
+    updatedContent[index] = {
+      ...updatedContent[index],
+      alokasiWaktu: value
+    };
+    setTempProtaContent(updatedContent);
+  };
+
+  const handleCancelEditProtaJp = () => {
+    setIsEditingProtaJp(false);
+    setTempProtaContent([]);
+  };
+
+  const handleSaveProtaJp = async () => {
+    if (protas.length === 0) return;
+    const protaToUpdate = protas[0];
+    setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA...' });
+    setProtaError(null);
+    try {
+      const updatedProta = await apiService.updatePROTA(protaToUpdate.id, {
+        content: tempProtaContent
+      });
+      setProtas([updatedProta]);
+      setIsEditingProtaJp(false);
+      setTempProtaContent([]);
+      setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui.");
+    } catch (error: any) {
+      setProtaError(`Gagal memperbarui JP PROTA: ${error.message}`);
+    } finally {
+      setLoadingState({ isLoading: false, title: '', message: '' });
+    }
   };
 
   const handleDeleteAndRegenerateProsem = async () => {
@@ -2184,12 +2227,14 @@ const App: React.FC = () => {
         if (!selectedTP) return null;
         const protaExists = protas.length > 0;
         const currentProta = protaExists ? protas[0] : null;
-        const totalJp = protaExists ? currentProta!.content.reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0) : 0;
+        const totalJp = protaExists 
+          ? (isEditingProtaJp ? tempProtaContent : currentProta!.content).reduce((sum, row) => sum + (parseInt(row.alokasiWaktu) || 0), 0) 
+          : 0;
 
         return (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             <div className="flex justify-between items-center mb-6">
-               <button onClick={() => setView('tp_menu')} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
+               <button onClick={() => { if(isEditingProtaJp) handleCancelEditProtaJp(); setView('tp_menu'); }} className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-semibold">
                   <BackIcon className="w-5 h-5" /> 
                   Kembali ke Menu Perangkat Ajar
                </button>
@@ -2203,14 +2248,32 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 {protaExists && (
                   <>
-                    {user && isApproved && (
-                        <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                          <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                    {isEditingProtaJp ? (
+                      <>
+                        <button onClick={handleSaveProtaJp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white font-semibold rounded-md shadow-sm hover:bg-teal-700">
+                          <SaveIcon className="w-5 h-5"/> Simpan JP
                         </button>
+                        <button onClick={handleCancelEditProtaJp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-500 text-white font-semibold rounded-md shadow-sm hover:bg-slate-600">
+                          <CloseIcon className="w-5 h-5"/> Batal
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {user && isApproved && (
+                          <>
+                            <button onClick={handleStartEditProtaJp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700">
+                              <EditIcon className="w-5 h-5"/> Edit JP
+                            </button>
+                            <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
+                              <SparklesIcon className="w-5 h-5"/> Buat Ulang
+                            </button>
+                          </>
+                        )}
+                        <button onClick={handleExportProtaToWord} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
+                          <DownloadIcon className="w-5 h-5"/> Ekspor ke Word
+                        </button>
+                      </>
                     )}
-                    <button onClick={handleExportProtaToWord} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
-                      <DownloadIcon className="w-5 h-5"/> Ekspor ke Word
-                    </button>
                   </>
                 )}
               </div>
@@ -2239,6 +2302,11 @@ const App: React.FC = () => {
                 </div>
             ) : (
                 <div className="bg-white rounded-lg shadow-lg p-6">
+                    {isEditingProtaJp && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-md">
+                        💡 <strong>Mode Edit JP Aktif:</strong> Anda dapat mengubah alokasi waktu (JP) di setiap baris langsung dari tabel di bawah, lalu klik tombol <strong>"Simpan JP"</strong> di atas.
+                      </div>
+                    )}
                     <div className="overflow-x-auto mt-4">
                         <table className="min-w-full bg-white border border-slate-300 text-sm">
                             <thead className="bg-slate-100 text-left">
@@ -2247,18 +2315,32 @@ const App: React.FC = () => {
                                     <th className="px-3 py-2 border-b border-slate-300">Topik / Materi Pokok</th>
                                     <th className="px-3 py-2 border-b border-slate-300 text-center">Alur Tujuan Pembelajaran</th>
                                     <th className="px-3 py-2 border-b border-slate-300">Tujuan Pembelajaran</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Alokasi Waktu</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center w-32">Alokasi Waktu</th>
                                     <th className="px-3 py-2 border-b border-slate-300 text-center">Semester</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
-                                {currentProta!.content.map((row, index) => (
+                                {(isEditingProtaJp ? tempProtaContent : currentProta!.content).map((row, index) => (
                                     <tr key={index} className="hover:bg-slate-50">
                                         <td className="px-3 py-2 align-top border-r text-center">{row.no}</td>
                                         <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
                                         <td className="px-3 py-2 align-top border-r text-center">{row.alurTujuanPembelajaran}</td>
                                         <td className="px-3 py-2 align-top border-r">{row.tujuanPembelajaran}</td>
-                                        <td className="px-3 py-2 align-top border-r text-center">{row.alokasiWaktu}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">
+                                            {isEditingProtaJp ? (
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <input 
+                                                        type="text" 
+                                                        value={row.alokasiWaktu} 
+                                                        onChange={(e) => handleProtaJpChange(index, e.target.value)} 
+                                                        className="w-20 px-2 py-1 border border-slate-300 rounded text-center focus:ring-1 focus:ring-teal-500 focus:border-teal-500 font-semibold"
+                                                        placeholder="Contoh: 4 JP"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                row.alokasiWaktu
+                                            )}
+                                        </td>
                                         <td className="px-3 py-2 align-top text-center">{row.semester}</td>
                                     </tr>
                                 ))}
