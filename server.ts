@@ -178,9 +178,19 @@ Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan l
       const ai = getAI();
       const response = await generateWithRetry(ai, {
         model,
-        contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
+        contents: `Berdasarkan data ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan kriteria perkembangan akademik dan karakter (Integrasi Panca Cinta) untuk setiap Tujuan Pembelajaran (TP) dalam format Kriteria Ketercapaian Tujuan Pembelajaran (KKTP).
+
+Setiap Tujuan Pembelajaran (TP) wajib memiliki 4 kriteria tahapan perkembangan berikut:
+1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana siswa mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
+2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria siswa melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
+3. layak: Tuliskan kriteria perkembangan dasar/pemahaman minimal untuk TP tersebut (fokus ke aspek akademis dasar).
+4. baruBerkembang: Tuliskan kriteria perkembangan terendah/pemahaman awal untuk TP tersebut (fokus ke aspek akademis terendah/perlu bimbingan).
+
+Ambil data materiPokok dari topikMateri ATP, tp dari tp ATP, integrasiPancaCinta dari integrasiPancaCinta ATP, dan aktivitasCinta dari aktivitasCinta ATP secara lengkap dan presisi!`,
         config: {
-            systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
+            systemInstruction: `Anda adalah AI ahli penyusun Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) untuk MTsN 4 Jombang. Tugas Anda adalah menghasilkan array dari KKTPRow dalam JSON murni.
+Setiap objek KKTPRow harus merepresentasikan satu TP dari input secara lengkap tanpa ada yang terlewat atau digabungkan.
+Target KKTP (targetKktp) secara standar/default diatur ke 'cakap'.`,
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.ARRAY,
@@ -190,19 +200,21 @@ Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan l
                         no: { type: Type.INTEGER },
                         materiPokok: { type: Type.STRING },
                         tp: { type: Type.STRING },
+                        integrasiPancaCinta: { type: Type.STRING },
+                        aktivitasCinta: { type: Type.STRING },
                         kriteria: {
                             type: Type.OBJECT,
                             properties: {
-                                sangatMahir: { type: Type.STRING },
                                 mahir: { type: Type.STRING },
-                                cukupMahir: { type: Type.STRING },
-                                perluBimbingan: { type: Type.STRING }
+                                cakap: { type: Type.STRING },
+                                layak: { type: Type.STRING },
+                                baruBerkembang: { type: Type.STRING }
                             },
-                            required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
+                            required: ["mahir", "cakap", "layak", "baruBerkembang"]
                         },
                         targetKktp: { type: Type.STRING }
                     },
-                    required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
+                    required: ["no", "materiPokok", "tp", "integrasiPancaCinta", "aktivitasCinta", "kriteria", "targetKktp"]
                 }
             }
         }

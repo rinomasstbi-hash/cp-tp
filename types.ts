@@ -32,6 +32,9 @@ export interface ATPTableRow {
   kodeTp: string;
   atpSequence: number;
   semester: 'Ganjil' | 'Genap';
+  alokasiWaktu: string;
+  integrasiPancaCinta: string;
+  aktivitasCinta: string;
 }
 
 
@@ -40,6 +43,7 @@ export interface ATPData {
   userId: string;
   tpId: string;
   subject: string;
+  jamPertemuan?: number;
   content: ATPTableRow[];
   creatorName: string;
   creatorEmail: string;
@@ -48,11 +52,13 @@ export interface ATPData {
 
 export interface PROTARow {
   no: number | string;
-  topikMateri: string;
-  alurTujuanPembelajaran: string; // ATP codes like "1.1, 1.2"
-  tujuanPembelajaran: string; // The full TP text
-  alokasiWaktu: string; // e.g., "4 JP" or "120 Menit"
   semester: 'Ganjil' | 'Genap';
+  kodeTp: string;
+  topikMateri: string;
+  tp: string;
+  integrasiPancaCinta: string;
+  aktivitasCinta: string;
+  alokasiWaktu: string;
 }
 
 export interface PROTAData {
@@ -67,18 +73,20 @@ export interface PROTAData {
 }
 
 export interface KKTPKriteria {
-  sangatMahir: string;
   mahir: string;
-  cukupMahir: string;
-  perluBimbingan: string;
+  cakap: string;
+  layak: string;
+  baruBerkembang: string;
 }
 
 export interface KKTPRow {
   no: number | string;
   materiPokok: string;
   tp: string;
+  integrasiPancaCinta: string;
+  aktivitasCinta: string;
   kriteria: KKTPKriteria;
-  targetKktp: 'sangatMahir' | 'mahir' | 'cukupMahir' | 'perluBimbingan';
+  targetKktp: 'mahir' | 'cakap' | 'layak' | 'baruBerkembang';
 }
 
 export interface KKTPData {

@@ -637,6 +637,35 @@ export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt' | 'us
     }
 };
 
+export const updatePROSEM = async (id: string, data: Partial<PROSEMData>): Promise<PROSEMData> => {
+    const docRef = doc(db, 'prosems', id);
+    try {
+        const docSnap = await getDoc(docRef);
+        if(!docSnap.exists()) throw new Error("Document not found");
+        const currentData = docSnap.data();
+        const payload = {
+            userId: currentData.userId,
+            protaId: data.protaId ?? currentData.protaId,
+            subject: data.subject ?? currentData.subject,
+            grade: data.grade ?? currentData.grade,
+            semester: data.semester ?? currentData.semester,
+            headers: data.headers ?? currentData.headers,
+            content: data.content ?? currentData.content,
+            createdAt: currentData.createdAt
+        };
+        updateDoc(docRef, payload).catch(e => console.warn("Background sync delayed:", e));
+        return {
+            ...currentData,
+            ...payload,
+            id,
+            createdAt: dateToNumber(currentData.createdAt)
+        } as PROSEMData;
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `prosems/${id}`);
+        throw error;
+    }
+};
+
 export const deletePROSEMsByPROTAId = async (protaId: string): Promise<{ success: boolean }> => {
     const q = query(collection(db, 'prosems'), where('protaId', '==', protaId));
     try {

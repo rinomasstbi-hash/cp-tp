@@ -16,6 +16,23 @@ import AdminDashboard from './components/AdminDashboard';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, auth } from './services/authService';
 import { AdminSettings as GlobalSettings, getAdminSettings } from './services/dbService';
 
+const renderMultilineText = (text?: string) => {
+    if (!text) return "-";
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+        return (
+            <ul className="list-disc pl-4 space-y-1 text-left">
+                {lines.map((line, idx) => {
+                    const clean = line.replace(/^[\s\-\*\•\+]+/, '').trim();
+                    return <li key={idx}>{clean}</li>;
+                })}
+            </ul>
+        );
+    }
+    const cleanSingle = text.replace(/^[\s\-\*\•\+]+/, '').trim();
+    return <span>{cleanSingle}</span>;
+};
+
 const Header: React.FC<{ userEmail?: string | null; currentView: string; onViewChange: (v: string) => void; onLogin: () => void; globalSettings?: GlobalSettings | null; isAdmin?: boolean }> = ({ userEmail, currentView, onViewChange, onLogin, globalSettings, isAdmin }) => {
   return (
     <header className="bg-slate-800 shadow-lg w-full sticky top-0 z-40 print:hidden">
@@ -358,6 +375,10 @@ const App: React.FC = () => {
   const [isEditingProtaJp, setIsEditingProtaJp] = useState(false);
   const [tempProtaContent, setTempProtaContent] = useState<PROTARow[]>([]);
 
+  // State for ATP JP Management
+  const [isAtpJpModalOpen, setIsAtpJpModalOpen] = useState(false);
+  const [atpJpInput, setAtpJpInput] = useState<number | ''>('');
+
   // State for KKTP Management
   const [kktpData, setKktpData] = useState<{ ganjil: KKTPData | null; genap: KKTPData | null } | null>(null);
   const [kktpError, setKktpError] = useState<string | null>(null);
@@ -567,20 +588,19 @@ const App: React.FC = () => {
 
     // Optimistic Update
     setAtps(prev => prev.filter(a => a.id !== atpToDelete.id));
-    setTransientMessage('Data ATP berhasil dihapus.');
+    setProtas([]);
+    setProsemData(null);
+    setKktpData(null);
+    setTransientMessage('Data ATP serta PROTA, PROSEM, dan KKTP terkait berhasil dihapus.');
 
     try {
-        // Step 1: Attempt to delete dependencies (KKTPs) first.
-        try {
-             apiService.deleteKKTPsByATPId(atpToDelete.id).catch(console.warn);
-        } catch (kktpErr) {
-            console.warn("Info: Gagal menghapus KKTP terkait otomatis:", kktpErr);
-        }
-
-        // Step 2: Delete the ATP itself
-        apiService.deleteATP(atpToDelete.id).catch(console.warn);
-        
-        // We do not await loadATPsForTP since it will fetch in background
+        // Delete related KKTPs, PROTAs, PROSEMs, and the ATP itself
+        await Promise.allSettled([
+            apiService.deleteKKTPsByATPId(atpToDelete.id),
+            apiService.deletePROTAsByTPId(selectedTP.id!),
+            apiService.deletePROSEMsByTPId(selectedTP.id!),
+            apiService.deleteATP(atpToDelete.id)
+        ]);
     } catch (error: any) {
         console.error("Delete ATP Error:", error);
         setAtpError(`Gagal menghapus ATP. Detail: ${error.message}`);
@@ -730,7 +750,7 @@ const App: React.FC = () => {
     setView('view_atp_detail');
   };
 
-  const _proceedWithAtpGeneration = async (creatorName: string, creatorEmail: string) => {
+  const _proceedWithAtpGeneration = async (creatorName: string, creatorEmail: string, jpWeekly: number) => {
       if (!selectedTP) return;
       setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
       setAtpError(null);
@@ -739,12 +759,14 @@ const App: React.FC = () => {
           const generatedContent = await geminiService.generateATP({
               subject: selectedTP.subject,
               grade: selectedTP.grade,
-              tpGroups: selectedTP.tpGroups
+              tpGroups: selectedTP.tpGroups,
+              totalJpPerWeek: jpWeekly
           });
           setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
           const newAtpData: Omit<ATPData, 'id' | 'createdAt' | 'userId'> = {
               tpId: selectedTP.id!,
               subject: selectedTP.subject,
+              jamPertemuan: jpWeekly,
               content: generatedContent,
               creatorName: creatorName,
               creatorEmail: creatorEmail,
@@ -765,7 +787,22 @@ const App: React.FC = () => {
 
   const handleCreateNewAtp = () => {
     if (!selectedTP) return;
-    _proceedWithAtpGeneration(user?.displayName || user?.email || "User", user?.email || "");
+    setAtpJpInput('');
+    setIsAtpJpModalOpen(true);
+  };
+
+  const handleAtpGenerationSubmit = async () => {
+    if (!selectedTP || !atpJpInput || atpJpInput < 1) {
+        setAtpError("Harap masukkan jumlah JP (minimal 1).");
+        setIsAtpJpModalOpen(false);
+        return;
+    }
+    setIsAtpJpModalOpen(false);
+    await _proceedWithAtpGeneration(
+        user?.displayName || user?.email || "User", 
+        user?.email || "", 
+        Number(atpJpInput)
+    );
   };
 
   const handleDeleteAndRegenerateATP = async () => {
@@ -805,19 +842,22 @@ const App: React.FC = () => {
                 
                 setLoadingState({ isLoading: false, title: '', message: '' });
                 
-                // Now generate a new ATP
+                // Now generate a new ATP using same JP
                 setAtpGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
                 try {
                     setAtpGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf ATP baru...', progress: 25 }));
+                    const jpToUse = selectedATP.jamPertemuan || 2;
                     const generatedContent = await geminiService.generateATP({
                         subject: selectedTP.subject,
                         grade: selectedTP.grade,
-                        tpGroups: selectedTP.tpGroups
+                        tpGroups: selectedTP.tpGroups,
+                        totalJpPerWeek: jpToUse
                     });
                     setAtpGenerationProgress(prev => ({ ...prev, message: 'Draf ATP diterima. Menyimpan ke database...', progress: 60 }));
                     const newAtpData: Omit<ATPData, 'id' | 'createdAt' | 'userId'> = {
                         tpId: selectedTP.id!,
                         subject: selectedTP.subject,
+                        jamPertemuan: jpToUse,
                         content: generatedContent,
                         creatorName: user?.displayName || user?.email || "User",
                         creatorEmail: user?.email || "",
@@ -843,33 +883,28 @@ const App: React.FC = () => {
     );
   };
   
-  const handleCreateNewProta = () => {
-    setProtaJpInput('');
-    setIsProtaJpModalOpen(true);
-  };
-
-  const handleProtaGenerationSubmit = async () => {
-    if (!selectedTP || !selectedATP || !protaJpInput || protaJpInput < 1) {
-        setProtaError("Harap pilih ATP yang valid dan masukkan jumlah JP (minimal 1).");
-        setIsProtaJpModalOpen(false);
+  const handleCreateNewProta = async (atpToUse?: ATPData) => {
+    const activeAtp = atpToUse || selectedATP;
+    if (!selectedTP || !activeAtp) {
+        setProtaError("Harap pilih ATP yang valid.");
         return;
     }
     
-    setIsProtaJpModalOpen(false);
+    const jpWeekly = activeAtp.jamPertemuan || 2;
     setProtaGenerationProgress({ isLoading: true, message: 'Memulai proses...', progress: 0 });
     setProtaError(null);
 
     try {
         setProtaGenerationProgress(prev => ({ ...prev, message: 'Menghubungi AI untuk membuat draf PROTA...', progress: 25 }));
-        const generatedContent = await geminiService.generatePROTA(selectedATP, protaJpInput, selectedTP.grade);
+        const generatedContent = await geminiService.generatePROTA(activeAtp, jpWeekly, selectedTP.grade);
 
         setProtaGenerationProgress(prev => ({ ...prev, message: 'Draf PROTA diterima. Menyimpan ke database...', progress: 60 }));
         const newProtaData: Omit<PROTAData, 'id' | 'createdAt' | 'userId'> = {
             tpId: selectedTP.id!,
             subject: selectedTP.subject,
-            jamPertemuan: protaJpInput,
+            jamPertemuan: jpWeekly,
             content: generatedContent,
-            creatorName: selectedATP.creatorName,
+            creatorName: activeAtp.creatorName,
         };
         const savedProta = await apiService.savePROTA(newProtaData);
 
@@ -954,25 +989,127 @@ const App: React.FC = () => {
     const hasGenapMismatch = allocatedGenap !== targetGenap;
 
     const saveAction = async () => {
-      setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA dan memperbarui data terkait...' });
+      setLoadingState({ isLoading: true, title: 'Menyimpan Perubahan', message: 'Sedang menyimpan perubahan JP PROTA dan menyelaraskan perangkat ajar lainnya...' });
       setProtaError(null);
       try {
+        // 1. Update PROTA
         const updatedProta = await apiService.updatePROTA(protaToUpdate.id, {
           content: tempProtaContent
         });
         
-        // Automatically delete associated PROSEM data since PROSEM is generated based on PROTA's JP allocation
+        // 2. Sync to ATP (Alur Tujuan Pembelajaran) if exists
+        const activeAtp = selectedATP || (atps.length > 0 ? atps[0] : null);
+        if (activeAtp) {
+            const updatedAtpContent = activeAtp.content.map((row) => {
+                // Find matching PROTA row by kodeTp / alurTujuanPembelajaran
+                const matchedProtaRow = tempProtaContent.find(pRow => String(pRow.kodeTp).trim() === String(row.kodeTp).trim());
+                if (matchedProtaRow) {
+                    return {
+                        ...row,
+                        alokasiWaktu: matchedProtaRow.alokasiWaktu
+                    };
+                }
+                return row;
+            });
+
+            // Update ATP in Firestore
+            const updatedAtp = await apiService.updateATP(activeAtp.id, {
+                content: updatedAtpContent
+            });
+
+            // Update local states
+            setAtps(prev => prev.map(a => a.id === activeAtp.id ? { ...a, content: updatedAtpContent } : a));
+            setSelectedATP(updatedAtp);
+        }
+
+        // 3. Sync to PROSEM (Program Semester) if exists (Regenerate in-place programmatically)
+        const isGrade9 = selectedTP.grade.includes('9') || selectedTP.grade.toUpperCase().includes('IX');
+        const defaultGanjil78 = { 'Juli': [1, 2, 3, 4], 'Agustus': [1, 2, 3, 4, 5], 'September': [1, 2, 3, 4], 'Oktober': [1, 2, 3, 4], 'November': [1, 2, 3, 4, 5], 'Desember': [1, 2, 3, 4] };
+        const defaultGenap78 = { 'Januari': [1, 2, 3, 4], 'Februari': [1, 2, 3, 4], 'Maret': [1, 2, 3, 4, 5], 'April': [1, 2, 3, 4], 'Mei': [1, 2, 3, 4], 'Juni': [1, 2, 3, 4, 5] };
+        const defaultGanjil9 = { 'Juli': [1, 2, 3], 'Agustus': [1, 2, 3, 4], 'September': [1, 2, 3], 'Oktober': [1, 2, 3], 'November': [1, 2, 3], 'Desember': [1] };
+        const defaultGenap9 = { 'Januari': [1, 2, 3], 'Februari': [1, 2, 3], 'Maret': [1, 2, 3, 4], 'April': [1, 2, 3], 'Mei': [1, 2, 3], 'Juni': [1] };
+
+        const sanitizeWeeksObj = (val: any, defaultVal: Record<string, number[]>): Record<string, number[]> => {
+            if (!val) return defaultVal;
+            const sanitized: Record<string, number[]> = {};
+            Object.keys(defaultVal).forEach(month => {
+                const value = val[month];
+                if (Array.isArray(value)) {
+                    sanitized[month] = value.map(Number).filter(v => !isNaN(v) && v >= 1 && v <= 5).sort((a, b) => a - b);
+                } else if (typeof value === 'number') {
+                    sanitized[month] = Array.from({ length: value }, (_, i) => i + 1);
+                } else {
+                    sanitized[month] = defaultVal[month];
+                }
+            });
+            return sanitized;
+        };
+
+        let weeksToUseGanjil = isGrade9 ? defaultGanjil9 : defaultGanjil78;
+        let weeksToUseGenap = isGrade9 ? defaultGenap9 : defaultGenap78;
+
+        if (globalSettings) {
+            if (isGrade9) {
+                weeksToUseGanjil = sanitizeWeeksObj(globalSettings.weeksGanjil9, defaultGanjil9);
+                weeksToUseGenap = sanitizeWeeksObj(globalSettings.weeksGenap9, defaultGenap9);
+            } else {
+                weeksToUseGanjil = sanitizeWeeksObj(globalSettings.weeksGanjil78, defaultGanjil78);
+                weeksToUseGenap = sanitizeWeeksObj(globalSettings.weeksGenap78, defaultGenap78);
+            }
+        }
+
+        let existingProsems: PROSEMData[] = [];
         try {
-          await apiService.deletePROSEMsByPROTAId(protaToUpdate.id);
-          setProsemData({ ganjil: null, genap: null });
-        } catch (prosemDelErr) {
-          console.warn("Gagal menghapus PROSEM lama otomatis:", prosemDelErr);
+            existingProsems = await apiService.getPROSEMByProtaId(protaToUpdate.id);
+        } catch (err) {
+            console.warn("Gagal mengambil PROSEM lama:", err);
+        }
+
+        let updatedGanjilProsem: PROSEMData | null = null;
+        let updatedGenapProsem: PROSEMData | null = null;
+
+        const ganjilProsemDoc = existingProsems.find(p => p.semester === 'Ganjil');
+        if (ganjilProsemDoc) {
+            const regeneratedGanjil = await geminiService.generatePROSEM(updatedProta, 'Ganjil', selectedTP.grade, weeksToUseGanjil);
+            updatedGanjilProsem = await apiService.updatePROSEM(ganjilProsemDoc.id, {
+                headers: regeneratedGanjil.headers,
+                content: regeneratedGanjil.content
+            });
+        }
+
+        const genapProsemDoc = existingProsems.find(p => p.semester === 'Genap');
+        if (genapProsemDoc) {
+            const regeneratedGenap = await geminiService.generatePROSEM(updatedProta, 'Genap', selectedTP.grade, weeksToUseGenap);
+            updatedGenapProsem = await apiService.updatePROSEM(genapProsemDoc.id, {
+                headers: regeneratedGenap.headers,
+                content: regeneratedGenap.content
+            });
+        }
+
+        if (prosemData) {
+            setProsemData({
+                ganjil: updatedGanjilProsem || prosemData.ganjil,
+                genap: updatedGenapProsem || prosemData.genap
+            });
+        } else if (updatedGanjilProsem || updatedGenapProsem) {
+            setProsemData({
+                ganjil: updatedGanjilProsem,
+                genap: updatedGenapProsem
+            });
         }
 
         setProtas([updatedProta]);
         setIsEditingProtaJp(false);
         setTempProtaContent([]);
-        setTransientMessage("Alokasi Waktu (JP) pada PROTA berhasil diperbarui. Data PROSEM lama otomatis dihapus agar tetap sinkron.");
+
+        let successMessage = "Alokasi Waktu (JP) pada PROTA berhasil diperbarui.";
+        if (activeAtp) {
+            successMessage += " Perubahan otomatis disinkronkan ke ATP.";
+        }
+        if (updatedGanjilProsem || updatedGenapProsem) {
+            successMessage += " Distribusi mingguan PROSEM juga disesuaikan secara real-time.";
+        }
+        setTransientMessage(successMessage);
       } catch (error: any) {
         setProtaError(`Gagal memperbarui JP PROTA: ${error.message}`);
       } finally {
@@ -1076,8 +1213,26 @@ const App: React.FC = () => {
         setAtpError(null);
         try {
             const updated = await apiService.updateATP(id, data);
+            
+            // Automatically delete related KKTP, PROTA, and PROSEM to keep them synchronized
+            try {
+                await Promise.allSettled([
+                    apiService.deleteKKTPsByATPId(id),
+                    apiService.deletePROTAsByTPId(selectedTP.id!),
+                    apiService.deletePROSEMsByTPId(selectedTP.id!)
+                ]);
+            } catch (err) {
+                console.warn("Gagal menghapus data lama otomatis:", err);
+            }
+
+            // Clear local states for downstream documents
+            setProtas([]);
+            setProsemData(null);
+            setKktpData(null);
+
             setAtps(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
             setSelectedATP(updated);
+            setTransientMessage("ATP berhasil diperbarui. Perangkat ajar terkait (Prota, Prosem, KKTP) otomatis dihapus agar Anda dapat membuat ulang secara presisi.");
             setView('view_atp_detail');
         } catch (error: any) {
             console.error(error);
@@ -1432,16 +1587,17 @@ const App: React.FC = () => {
     const styles = `
       <style>
         @page Section1 {
-          size: 595.3pt 841.9pt;
+          size: 841.9pt 595.3pt;
           margin: 36.0pt 36.0pt 36.0pt 36.0pt;
           mso-header-margin: 36.0pt;
           mso-footer-margin: 36.0pt;
+          mso-page-orientation: landscape;
         }
         div.Section1 { page: Section1; }
-        body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; }
+        body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; }
         p, li, h2, h1, div { margin: 0pt; padding: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; }
         table { border-collapse: collapse; width: auto; mso-table-layout-alt: auto; }
-        th, td { border: 1px solid black; padding: 5px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; font-size: 10pt; }
+        th, td { border: 1px solid black; padding: 4px; text-align: left; vertical-align: top; margin: 0pt; mso-margin-top-alt: 0pt; mso-margin-bottom-alt: 0pt; mso-margin-after-alt: 0pt; font-size: 10pt; }
         th { font-weight: bold; background-color: #f2f2f2; text-align: center; }
         .title { text-align: center; font-weight: bold; font-size: 14pt; text-transform: uppercase; margin: 0; padding: 0;}
         .header-table { margin-bottom: 12.0pt; mso-margin-after-alt: 12.0pt; width: 100%; border: none; table-layout: fixed; }
@@ -1458,11 +1614,10 @@ const App: React.FC = () => {
         .text-center { text-align: center; }
         .cp-container { border: 1px solid black; padding: 10px; margin-bottom: 15px; background-color: #f9f9f9; }
         .cp-title { font-size: 12pt; font-weight: bold; margin: 0 0 10px 0; }
-        .signature-table { width: 622.0pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
+        .signature-table { width: 736.97pt; border: none; text-align: left; table-layout: fixed; margin-left: 36.0pt; }
         .signature-table-container { page-break-inside: avoid; margin-top: 15px; }
         .signature-td {
           border: none;
-          width: 311.0pt;
           text-align: left;
           vertical-align: top;
           padding: 1px 5px;
@@ -1470,8 +1625,10 @@ const App: React.FC = () => {
           mso-margin-top-alt: 0pt;
           mso-margin-bottom-alt: 0pt;
           mso-margin-after-alt: 0pt;
-          font-size: 12pt;
+          font-size: 11pt;
         }
+        .signature-td-left { width: 566.9pt; }
+        .signature-td-right { width: 170.07pt; }
       </style>
     `;
 
@@ -1488,13 +1645,28 @@ const App: React.FC = () => {
       </table>
     `;
 
+    const formatWordHtml = (text?: string) => {
+      if (!text) return '-';
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        return lines.map(line => {
+          const clean = line.replace(/^[\s\-\*\•\+]+/, '').trim();
+          return `• ${clean}`;
+        }).join('<br/>');
+      }
+      return text.replace(/^[\s\-\*\•\+]+/, '').trim();
+    };
+
     const atpRows = selectedATP.content.map(row => `
       <tr>
         <td class="text-center">${row.atpSequence}</td>
+        <td class="text-center">${row.kodeTp || ''}</td>
         <td>${row.topikMateri}</td>
         <td>${row.tp}</td>
-        <td class="text-center">${row.kodeTp || ''}</td>
+        <td class="text-center">${row.alokasiWaktu || ''}</td>
         <td class="text-center">${row.semester}</td>
+        <td>${formatWordHtml(row.integrasiPancaCinta)}</td>
+        <td>${formatWordHtml(row.aktivitasCinta)}</td>
       </tr>
     `).join('');
     
@@ -1513,14 +1685,27 @@ const App: React.FC = () => {
       ${identityTable}
       <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
       ${cpElementsHtml}
-      <table>
+      <table style="width: 100%; table-layout: fixed;">
+        <colgroup>
+          <col style="width: 4%;" />
+          <col style="width: 8%;" />
+          <col style="width: 15%;" />
+          <col style="width: 25%;" />
+          <col style="width: 8%;" />
+          <col style="width: 8%;" />
+          <col style="width: 12%;" />
+          <col style="width: 20%;" />
+        </colgroup>
         <thead>
           <tr>
-            <th class="text-center" style="width: 5%;">No. ATP</th>
-            <th style="width: 25%;">Topik/Materi</th>
-            <th style="width: 45%;">Tujuan Pembelajaran (TP)</th>
-            <th class="text-center" style="width: 10%;">Kode TP</th>
-            <th class="text-center" style="width: 15%;">Semester</th>
+            <th class="text-center">No</th>
+            <th class="text-center">Kode TP</th>
+            <th>Topik/Materi</th>
+            <th>Tujuan Pembelajaran (TP)</th>
+            <th class="text-center">Alokasi Waktu (JP)</th>
+            <th class="text-center">Semester</th>
+            <th>Integrasi Panca Cinta</th>
+            <th>Aktivitas Cinta dalam Pembelajaran</th>
           </tr>
         </thead>
         <tbody>
@@ -1533,23 +1718,27 @@ const App: React.FC = () => {
       <div class="signature-table-container">
         <br>
         <table class="signature-table">
+          <colgroup>
+            <col style="width: 566.9pt;" />
+            <col style="width: 170.07pt;" />
+          </colgroup>
           <tbody>
             <tr>
-              <td class="signature-td">Mengetahui,</td>
-              <td class="signature-td">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Mengetahui,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Jombang, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
             </tr>
             <tr>
-              <td class="signature-td">Kepala Madrasah,</td>
-              <td class="signature-td">Guru Mata Pelajaran,</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">Kepala Madrasah,</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">Guru Mata Pelajaran,</td>
             </tr>
-            <tr><td class="signature-td" style="height: 45px;">&nbsp;</td><td class="signature-td" style="height: 45px;">&nbsp;</td></tr>
+            <tr><td class="signature-td signature-td-left" style="width: 566.9pt; height: 45px;">&nbsp;</td><td class="signature-td signature-td-right" style="width: 170.07pt; height: 45px;">&nbsp;</td></tr>
             <tr>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Dr. Aziz Ja'far, S.Th.I., M.Pd.I"}</td>
-              <td class="signature-td" style="font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt; font-weight: bold; text-decoration: underline;">${globalSettings?.kepalaMadrasah || "Sulthon Sulaiman, M.Pd.I"}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt; font-weight: bold; text-decoration: underline;">${selectedATP.creatorName}</td>
             </tr>
             <tr>
-              <td class="signature-td">NIP. ${globalSettings?.nipKepalaMadrasah || '197610062007101008'}</td>
-              <td class="signature-td">NIP. -</td>
+              <td class="signature-td signature-td-left" style="width: 566.9pt;">NIP. ${globalSettings?.nipKepalaMadrasah || '198106162005011003'}</td>
+              <td class="signature-td signature-td-right" style="width: 170.07pt;">NIP. -</td>
             </tr>
           </tbody>
         </table>
@@ -1648,14 +1837,28 @@ const App: React.FC = () => {
       </table>
     `;
 
+    const formatWordHtml = (text?: string) => {
+      if (!text) return '-';
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        return lines.map(line => {
+          const clean = line.replace(/^[\s\-\*\•\+]+/, '').trim();
+          return `• ${clean}`;
+        }).join('<br/>');
+      }
+      return text.replace(/^[\s\-\*\•\+]+/, '').trim();
+    };
+
     const protaRows = currentProta.content.map(row => `
       <tr>
         <td class="text-center">${row.no}</td>
-        <td>${row.topikMateri}</td>
-        <td class="text-center">${row.alurTujuanPembelajaran}</td>
-        <td>${row.tujuanPembelajaran}</td>
-        <td class="text-center">${row.alokasiWaktu}</td>
         <td class="text-center">${row.semester}</td>
+        <td class="text-center">${row.kodeTp}</td>
+        <td>${row.topikMateri}</td>
+        <td>${row.tp}</td>
+        <td>${formatWordHtml(row.integrasiPancaCinta)}</td>
+        <td>${formatWordHtml(row.aktivitasCinta)}</td>
+        <td class="text-center">${row.alokasiWaktu}</td>
       </tr>
     `).join('');
 
@@ -1664,9 +1867,8 @@ const App: React.FC = () => {
     const totalRow = `
         <tfoot>
             <tr>
-                <td colspan="4" style="font-weight: bold; text-align: right; padding-right: 10px;">Total Jam Pertemuan (JP)</td>
+                <td colspan="7" style="font-weight: bold; text-align: right; padding-right: 10px;">Total Jam Pertemuan (JP)</td>
                 <td class="text-center" style="font-weight: bold;">${totalJp} JP</td>
-                <td></td>
             </tr>
         </tfoot>
     `;
@@ -1680,11 +1882,13 @@ const App: React.FC = () => {
         <thead>
           <tr>
             <th class="text-center" style="width: 5%;">No</th>
-            <th style="width: 20%;">Topik / Materi Pokok</th>
-            <th class="text-center" style="width: 10%;">Alur Tujuan Pembelajaran</th>
-            <th style="width: 45%;">Tujuan Pembelajaran</th>
-            <th class="text-center" style="width: 10%;">Alokasi Waktu</th>
             <th class="text-center" style="width: 10%;">Semester</th>
+            <th class="text-center" style="width: 10%;">Kode TP</th>
+            <th style="width: 15%;">Topik/Materi Pokok</th>
+            <th style="width: 25%;">Tujuan Pembelajaran (TP)</th>
+            <th style="width: 15%;">Integrasi Panca Cinta</th>
+            <th style="width: 20%;">Aktivitas Cinta dalam Pembelajaran</th>
+            <th class="text-center" style="width: 10%;">Alokasi Waktu (JP)</th>
           </tr>
         </thead>
         <tbody>
@@ -2017,6 +2221,18 @@ const App: React.FC = () => {
     const dataToExport = semester === 'Ganjil' ? kktpData?.ganjil : kktpData?.genap;
     if (!dataToExport || !selectedTP || !selectedATP) return;
     
+    const formatWordHtml = (text?: string) => {
+      if (!text) return '-';
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        return lines.map(line => {
+          const clean = line.replace(/^[\s\-\*\•\+]+/, '').trim();
+          return `• ${clean}`;
+        }).join('<br/>');
+      }
+      return text.replace(/^[\s\-\*\•\+]+/, '').trim();
+    };
+
     const styles = `
       <style>
         @page Section1 {
@@ -2081,23 +2297,27 @@ const App: React.FC = () => {
 
     const kktpRows = dataToExport.content.map(row => `
       <tr>
-        <td class="text-center" rowspan="4" style="vertical-align: top;">${row.no}</td>
+        <td class="text-center" rowspan="4" style="vertical-align: top; text-align: center;">${row.no}</td>
         <td rowspan="4" style="vertical-align: top;">${row.materiPokok}</td>
         <td rowspan="4" style="vertical-align: top;">${row.tp}</td>
-        <td>${row.kriteria.sangatMahir}</td>
-        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'sangatMahir' ? 'P' : ''}</td>
+        <td rowspan="4" style="vertical-align: top;">${formatWordHtml(row.integrasiPancaCinta)}</td>
+        <td class="text-center" style="vertical-align: top; font-weight: bold; text-align: center; background-color: #f9f9f9;">Mahir</td>
+        <td style="vertical-align: top;">${row.kriteria?.mahir || '-'}</td>
+        <td rowspan="4" class="text-center" style="vertical-align: middle; font-size: 10pt; text-align: center; font-weight: bold; background-color: #f9f9f9;">
+          Murid dianggap Tuntas jika minimal berada pada tahapan perkembangan: <br><b>Cakap</b>
+        </td>
       </tr>
       <tr>
-        <td>${row.kriteria.mahir}</td>
-        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'mahir' ? 'P' : ''}</td>
+        <td class="text-center" style="vertical-align: top; font-weight: bold; text-align: center; background-color: #f9f9f9;">Cakap</td>
+        <td style="vertical-align: top;">${row.kriteria?.cakap || '-'}</td>
       </tr>
       <tr>
-        <td>${row.kriteria.cukupMahir}</td>
-        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'cukupMahir' ? 'P' : ''}</td>
+        <td class="text-center" style="vertical-align: top; font-weight: bold; text-align: center; background-color: #f9f9f9;">Layak</td>
+        <td style="vertical-align: top;">${row.kriteria?.layak || '-'}</td>
       </tr>
        <tr>
-        <td>${row.kriteria.perluBimbingan}</td>
-        <td class="text-center" style="font-family: 'Wingdings 2', 'Zapf Dingbats', sans-serif; font-size: 14pt;">${row.targetKktp === 'perluBimbingan' ? 'P' : ''}</td>
+        <td class="text-center" style="vertical-align: top; font-weight: bold; text-align: center; background-color: #f9f9f9;">Baru Berkembang</td>
+        <td style="vertical-align: top;">${row.kriteria?.baruBerkembang || '-'}</td>
       </tr>
     `).join('');
 
@@ -2107,14 +2327,25 @@ const App: React.FC = () => {
       <br>
       ${identityTable}
       <p style="margin: 0pt 0pt 12.0pt 0pt; mso-margin-after-alt: 12.0pt; font-size: 1pt; line-height: 1pt;">&nbsp;</p>
-      <table>
+      <table style="width: 100%; border-collapse: collapse;">
+        <colgroup>
+          <col style="width: 4%;" />
+          <col style="width: 16%;" />
+          <col style="width: 25%;" />
+          <col style="width: 15%;" />
+          <col style="width: 12%;" />
+          <col style="width: 18%;" />
+          <col style="width: 10%;" />
+        </colgroup>
         <thead>
           <tr>
-            <th style="width: 3%;">No</th>
-            <th style="width: 20%;">Materi Pokok</th>
-            <th style="width: 32%;">Tujuan Pembelajaran</th>
-            <th style="width: 35%;">Kriteria</th>
-            <th style="width: 10%;">KKTP</th>
+            <th class="text-center">No</th>
+            <th>Materi Pokok</th>
+            <th>Tujuan Pembelajaran</th>
+            <th>Integrasi Panca Cinta</th>
+            <th class="text-center">Tahapan Perkembangan</th>
+            <th>Kriteria</th>
+            <th class="text-center">Ketercapaian</th>
           </tr>
         </thead>
         <tbody>
@@ -2452,8 +2683,9 @@ const App: React.FC = () => {
         } else {
             // Logic to create new PROTA
             if (atps.length > 0) {
-                setSelectedATP(atps[0]); // Assume first ATP
-                handleCreateNewProta();
+                const targetAtp = atps[0];
+                setSelectedATP(targetAtp); // Assume first ATP
+                handleCreateNewProta(targetAtp);
             } else {
                 setTransientMessage('Anda harus membuat ATP terlebih dahulu untuk membuat PROTA.');
                 setView('view_atp_list');
@@ -2766,9 +2998,6 @@ const App: React.FC = () => {
                                 <button onClick={() => handleEditATP(null, selectedATP)} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700">
                                    <EditIcon className="w-5 h-5" /> Edit
                                 </button>
-                                <button onClick={handleDeleteAndRegenerateATP} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600">
-                                   <SparklesIcon className="w-5 h-5" /> Buat Ulang
-                                </button>
                                 <button onClick={() => handleDeleteATP(null, selectedATP)} className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white font-semibold rounded-md shadow-sm hover:bg-red-700">
                                    <TrashIcon className="w-5 h-5" /> Hapus
                                 </button>
@@ -2832,24 +3061,30 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="overflow-x-auto mt-4">
-                        <table className="min-w-full bg-white border border-slate-300 text-sm">
+                        <table className="min-w-full bg-white border border-slate-300 text-xs sm:text-sm">
                             <thead className="bg-slate-100 text-left">
                                 <tr>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-12 text-center">No. ATP</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-1/4">Topik/Materi</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-1/2">Tujuan Pembelajaran (TP)</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-16 text-center">Kode TP</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center">Semester</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-10 text-center font-bold text-slate-700">No</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center font-bold text-slate-700">Kode TP</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-1/5 font-bold text-slate-700">Topik/Materi</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-[30%] font-bold text-slate-700">Tujuan Pembelajaran (TP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-24 text-center font-bold text-slate-700">Alokasi Waktu (JP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-20 text-center font-bold text-slate-700">Semester</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-[15%] font-bold text-slate-700">Integrasi Panca Cinta</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-[20%] font-bold text-slate-700">Aktivitas Cinta dalam Pembelajaran</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
                                 {selectedATP.content.map((row) => (
-                                    <tr key={row.atpSequence} className="hover:bg-slate-50">
+                                    <tr key={row.atpSequence} className="hover:bg-slate-50 text-xs sm:text-sm">
                                         <td className="px-3 py-2 align-top border-r text-center">{row.atpSequence}</td>
-                                        <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
-                                        <td className="px-3 py-2 align-top border-r">{row.tp}</td>
-                                        <td className="px-3 py-2 align-top border-r text-center">{row.kodeTp}</td>
-                                        <td className="px-3 py-2 align-top text-center">{row.semester}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center font-mono font-semibold text-slate-600">{row.kodeTp}</td>
+                                        <td className="px-3 py-2 align-top border-r text-slate-800">{row.topikMateri}</td>
+                                        <td className="px-3 py-2 align-top border-r text-slate-800">{row.tp}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center font-semibold text-slate-700">{row.alokasiWaktu}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.semester}</td>
+                                        <td className="px-3 py-2 align-top border-r text-slate-600">{renderMultilineText(row.integrasiPancaCinta)}</td>
+                                        <td className="px-3 py-2 align-top text-slate-600 leading-relaxed">{renderMultilineText(row.aktivitasCinta)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -2907,14 +3142,9 @@ const App: React.FC = () => {
                     ) : (
                       <>
                         {user && isApproved && (
-                          <>
-                            <button onClick={handleStartEditProtaJp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700">
-                              <EditIcon className="w-5 h-5"/> Edit JP
-                            </button>
-                            <button onClick={handleDeleteAndRegenerateProta} disabled={protaGenerationProgress.isLoading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                              <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                            </button>
-                          </>
+                          <button onClick={handleStartEditProtaJp} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700">
+                            <EditIcon className="w-5 h-5"/> Edit JP
+                          </button>
                         )}
                         <button onClick={handleExportProtaToWord} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                           <DownloadIcon className="w-5 h-5"/> Ekspor ke Word
@@ -3038,22 +3268,27 @@ const App: React.FC = () => {
                         <table className="min-w-full bg-white border border-slate-300 text-sm">
                             <thead className="bg-slate-100 text-left">
                                 <tr>
-                                    <th className="px-3 py-2 border-b border-slate-300 w-10 text-center">No</th>
-                                    <th className="px-3 py-2 border-b border-slate-300">Topik / Materi Pokok</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Alur Tujuan Pembelajaran</th>
-                                    <th className="px-3 py-2 border-b border-slate-300">Tujuan Pembelajaran</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 text-center w-32">Alokasi Waktu</th>
-                                    <th className="px-3 py-2 border-b border-slate-300 text-center">Semester</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 w-10 text-center font-bold text-slate-700">No</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center font-bold text-slate-700">Semester</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center font-bold text-slate-700">Kode TP</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 font-bold text-slate-700">Topik / Materi Pokok</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 font-bold text-slate-700">Tujuan Pembelajaran (TP)</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 font-bold text-slate-700">Integrasi Panca Cinta</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 font-bold text-slate-700">Aktivitas Cinta dalam Pembelajaran</th>
+                                    <th className="px-3 py-2 border-b border-slate-300 text-center w-32 font-bold text-slate-700">Alokasi Waktu (JP)</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
                                 {(isEditingProtaJp ? tempProtaContent : currentProta!.content).map((row, index) => (
                                     <tr key={index} className="hover:bg-slate-50">
                                         <td className="px-3 py-2 align-top border-r text-center">{row.no}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center">{row.semester}</td>
+                                        <td className="px-3 py-2 align-top border-r text-center font-mono font-semibold text-slate-600">{row.kodeTp}</td>
                                         <td className="px-3 py-2 align-top border-r">{row.topikMateri}</td>
-                                        <td className="px-3 py-2 align-top border-r text-center">{row.alurTujuanPembelajaran}</td>
-                                        <td className="px-3 py-2 align-top border-r">{row.tujuanPembelajaran}</td>
-                                        <td className="px-3 py-2 align-top border-r text-center">
+                                        <td className="px-3 py-2 align-top border-r">{row.tp}</td>
+                                        <td className="px-3 py-2 align-top border-r text-slate-600">{renderMultilineText(row.integrasiPancaCinta)}</td>
+                                        <td className="px-3 py-2 align-top border-r text-slate-600">{renderMultilineText(row.aktivitasCinta)}</td>
+                                        <td className="px-3 py-2 align-top text-center">
                                             {isEditingProtaJp ? (
                                                 <div className="flex items-center justify-center gap-1">
                                                     <input 
@@ -3068,15 +3303,13 @@ const App: React.FC = () => {
                                                 row.alokasiWaktu
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 align-top text-center">{row.semester}</td>
                                     </tr>
                                 ))}
                             </tbody>
                              <tfoot className="bg-slate-100 font-bold">
                                 <tr>
-                                    <td colSpan={4} className="px-3 py-2 text-right border-r">Total Jam Pertemuan (JP)</td>
-                                    <td className="px-3 py-2 text-center border-r">{totalJp} JP</td>
-                                    <td className="px-3 py-2"></td>
+                                    <td colSpan={7} className="px-3 py-2 text-right border-r">Total Jam Pertemuan (JP)</td>
+                                    <td className="px-3 py-2 text-center">{totalJp} JP</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -3150,28 +3383,43 @@ const App: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto mt-4">
                     <table className="min-w-full bg-white border border-slate-300 text-sm">
-                        <thead className="bg-slate-100 text-left">
+                        <thead className="bg-slate-100 text-slate-700 text-left font-bold border-b border-slate-300">
                             <tr>
-                                <th className="px-3 py-2 border-b border-slate-300 text-center w-[5%]">No</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-[20%]">Materi Pokok</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-[30%]">Tujuan Pembelajaran</th>
-                                <th className="px-3 py-2 border-b border-slate-300 w-[35%]">Kriteria</th>
-                                <th className="px-3 py-2 border-b border-slate-300 text-center w-[10%]">KKTP</th>
+                                <th className="px-3 py-2 border-r border-slate-300 text-center w-[5%] font-bold">No</th>
+                                <th className="px-3 py-2 border-r border-slate-300 w-[15%] font-bold">Materi Pokok</th>
+                                <th className="px-3 py-2 border-r border-slate-300 w-[20%] font-bold">Tujuan Pembelajaran</th>
+                                <th className="px-3 py-2 border-r border-slate-300 w-[15%] font-bold">Integrasi Panca Cinta</th>
+                                <th className="px-3 py-2 border-r border-slate-300 text-center w-[12%] font-bold">Tahapan Perkembangan</th>
+                                <th className="px-3 py-2 border-r border-slate-300 w-[23%] font-bold">Kriteria</th>
+                                <th className="px-3 py-2 text-center w-[10%] font-bold">Ketercapaian</th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.content.map((row) => (
                               <React.Fragment key={row.no}>
-                                <tr className="hover:bg-slate-50">
-                                    <td className="px-3 py-2 align-top border-r text-center" rowSpan={4}>{row.no}</td>
-                                    <td className="px-3 py-2 align-top border-r" rowSpan={4}>{row.materiPokok}</td>
-                                    <td className="px-3 py-2 align-top border-r" rowSpan={4}>{row.tp}</td>
-                                    <td className="px-3 py-2 align-top border-r">{row.kriteria.sangatMahir}</td>
-                                    <td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'sangatMahir' && '✓'}</td>
+                                <tr className="hover:bg-slate-50 border-t border-slate-200">
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 text-center" rowSpan={4}>{row.no}</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300" rowSpan={4}>{row.materiPokok}</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300" rowSpan={4}>{row.tp}</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300" rowSpan={4}>{renderMultilineText(row.integrasiPancaCinta)}</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 text-center font-medium bg-slate-50/50">Mahir</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 leading-relaxed">{row.kriteria?.mahir || '-'}</td>
+                                    <td className="px-3 py-2 align-top text-center text-xs text-slate-700 leading-relaxed font-semibold bg-teal-50/20" rowSpan={4}>
+                                        Murid dianggap Tuntas jika minimal berada pada tahapan perkembangan: <span className="font-bold text-teal-700 block mt-1">Cakap</span>
+                                    </td>
                                 </tr>
-                                <tr className="hover:bg-slate-50"><td className="px-3 py-2 align-top border-r">{row.kriteria.mahir}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'mahir' && '✓'}</td></tr>
-                                <tr className="hover:bg-slate-50"><td className="px-3 py-2 align-top border-r">{row.kriteria.cukupMahir}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'cukupMahir' && '✓'}</td></tr>
-                                <tr className="hover:bg-slate-50 border-b"><td className="px-3 py-2 align-top border-r">{row.kriteria.perluBimbingan}</td><td className="px-3 py-2 align-top border-r text-center text-lg font-bold">{row.targetKktp === 'perluBimbingan' && '✓'}</td></tr>
+                                <tr className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 text-center font-medium bg-slate-50/50">Cakap</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 leading-relaxed">{row.kriteria?.cakap || '-'}</td>
+                                </tr>
+                                <tr className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 text-center font-medium bg-slate-50/50">Layak</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 leading-relaxed">{row.kriteria?.layak || '-'}</td>
+                                </tr>
+                                <tr className="hover:bg-slate-50 border-b border-slate-300">
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 text-center font-medium bg-slate-50/50">Baru Berkembang</td>
+                                    <td className="px-3 py-2 align-top border-r border-slate-300 leading-relaxed">{row.kriteria?.baruBerkembang || '-'}</td>
+                                </tr>
                               </React.Fragment>
                             ))}
                         </tbody>
@@ -3462,6 +3710,9 @@ const App: React.FC = () => {
       case 'edit_atp':
         return <ATPEditor 
           initialData={editingATP!}
+          getSemesterTotalWeeks={getSemesterTotalWeeks}
+          grade={selectedTP!.grade}
+          globalSettings={globalSettings}
           onSave={handleSaveATP}
           onCancel={() => setView(selectedATP ? 'view_atp_detail' : 'view_atp_list')}
         />;
@@ -3523,21 +3774,21 @@ const App: React.FC = () => {
           </div>
       )}
       
-       {isProtaJpModalOpen && (() => {
+       {isAtpJpModalOpen && (() => {
          const isGrade9 = selectedTP && (selectedTP.grade.includes('9') || selectedTP.grade.toUpperCase().includes('IX'));
-         const jpNum = Number(protaJpInput) || 0;
+         const jpNum = Number(atpJpInput) || 0;
          return (
           <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
-              <h3 className="text-lg font-bold mb-2 text-slate-800">Input Jam Pertemuan</h3>
+              <h3 className="text-lg font-bold mb-2 text-slate-800">Input Jam Pertemuan ATP</h3>
               <p className="text-sm text-slate-600 mb-4">
-                  Masukkan jumlah Jam Pertemuan (JP) per minggu untuk mata pelajaran <span className="font-semibold">{selectedSubject}</span>. Data ini akan digunakan oleh AI untuk menghitung alokasi waktu.
+                  Masukkan jumlah Jam Pertemuan (JP) per minggu untuk mata pelajaran <span className="font-semibold">{selectedSubject}</span>. Data ini akan digunakan oleh AI untuk menyusun alokasi waktu per semester secara proporsional di Alur Tujuan Pembelajaran (ATP).
               </p>
-              <form onSubmit={(e) => { e.preventDefault(); handleProtaGenerationSubmit(); }}>
+              <form onSubmit={(e) => { e.preventDefault(); handleAtpGenerationSubmit(); }}>
                   <input
                       type="number"
-                      value={protaJpInput}
-                      onChange={(e) => setProtaJpInput(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      value={atpJpInput}
+                      onChange={(e) => setAtpJpInput(e.target.value === '' ? '' : parseInt(e.target.value))}
                       placeholder="Contoh: 3"
                       className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
                       min="1"
@@ -3571,11 +3822,11 @@ const App: React.FC = () => {
                   )}
 
                   <div className="mt-6 flex justify-end gap-3">
-                      <button type="button" onClick={() => setIsProtaJpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
+                      <button type="button" onClick={() => setIsAtpJpModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-md hover:bg-slate-300">
                       Batal
                       </button>
                       <button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">
-                        Hasilkan PROTA
+                        Hasilkan ATP
                       </button>
                   </div>
               </form>

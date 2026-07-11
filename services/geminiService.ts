@@ -223,14 +223,71 @@ export const generateTPs = async (input: { subject: string; grade: string; cpEle
     }
 };
 
-export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[] }): Promise<ATPTableRow[]> => {
+export const generateATP = async (tpData: { subject: string; grade: string; tpGroups: TPGroup[]; totalJpPerWeek: number }): Promise<ATPTableRow[]> => {
     try {
+        const isGrade9 = tpData.grade && (tpData.grade.includes('9') || tpData.grade.toUpperCase().includes('IX'));
+        const standardWeeks = isGrade9 ? '32-34 minggu (Semester Ganjil: 16-17 minggu, Semester Genap: 16-17 minggu)' : '36-40 minggu (Semester Ganjil: 18-20 minggu, Semester Genap: 18-20 minggu)';
+        const minJp = isGrade9 ? 32 * tpData.totalJpPerWeek : 36 * tpData.totalJpPerWeek;
+        const maxJp = isGrade9 ? 34 * tpData.totalJpPerWeek : 40 * tpData.totalJpPerWeek;
+
+        // Calculate the exact count of TPs in tpGroups to enforce completeness
+        let totalTpCount = 0;
+        tpData.tpGroups.forEach(group => {
+            group.subMateriGroups.forEach(sub => {
+                totalTpCount += (sub.tps || []).length;
+            });
+        });
+
         const response = await runWithAutoRotatedApiKey(async (ai) => {
             return await generateWithRetry(ai, {
                 model,
-                contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}. Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.`,
+                contents: `Susun Alur Tujuan Pembelajaran (ATP) dari data TP berikut: ${JSON.stringify(tpData.tpGroups)}.
+Mata Pelajaran: ${tpData.subject}
+Kelas: ${tpData.grade}
+Jam Pelajaran (JP) per minggu: ${tpData.totalJpPerWeek} JP
+Standar minggu efektif kelas ini: ${standardWeeks}
+Total alokasi JP seluruh TP dalam setahun WAJIB berada di rentang ${minJp} JP sampai ${maxJp} JP (berdasarkan minggu efektif x JP/minggu).
+Pastikan kolom semester HANYA berisi nilai 'Ganjil' atau 'Genap'.
+JUMLAH TP YANG DIKIRIM: Ada total ${totalTpCount} buah TP dalam input di atas. Output Anda WAJIB menghasilkan tepat ${totalTpCount} baris ATP tanpa ada satupun TP yang tertinggal, terlewat, digabungkan, atau dikurangi!`,
                 config: {
-                    systemInstruction: "Anda adalah AI pembuat ATP. Kembalikan array berisi objek ATP. Berikan output JSON murni.",
+                    systemInstruction: `Anda adalah AI pembuat Alur Tujuan Pembelajaran (ATP) untuk MTsN 4 Jombang. Tugas Anda adalah menghasilkan array objek ATP berdasarkan data TP dan kriteria berikut:
+
+1. KELENGKAPAN PENUH DAN WAJIB (SANGAT KRITIS):
+   - Input yang Anda terima berisi total ${totalTpCount} buah Tujuan Pembelajaran (TP).
+   - Output Anda WAJIB menghasilkan tepat ${totalTpCount} objek di dalam array (satu baris untuk setiap TP secara lengkap).
+   - TIDAK BOLEH ada satupun TP yang terlewat, diabaikan, atau tertinggal dalam proses pembuatan ATP.
+   - JANGAN PERNAH menggabungkan dua atau lebih TP menjadi satu baris ATP. Setiap TP tunggal harus memiliki barisnya sendiri secara eksklusif.
+
+2. Pembagian Alokasi Waktu (JP) Semester:
+   - Distribusikan total JP tahunan (${minJp} - ${maxJp} JP) secara proporsional, wajar, dan logis ke seluruh Tujuan Pembelajaran (TP).
+   - Tulis alokasi waktu dalam format angka diikuti 'JP' (contoh: '2 JP', '4 JP', '6 JP').
+   - Alokasi JP untuk SETIAP baris TP harus logis dan tidak boleh terlalu besar. Alokasi untuk satu TP TIDAK BOLEH MELEBIHI 2 minggu pertemuan (maksimal ${Math.max(6, 2 * tpData.totalJpPerWeek)} JP, dan idealnya adalah 2 JP, 3 JP, atau 4 JP). 
+   - SANGAT DILARANG memberi alokasi waktu liar seperti 8 JP, 10 JP, atau lebih besar, apalagi mengulang nilai besar tersebut berulang kali di beberapa TP. Jika materi TP panjang, bagi menjadi sub-materi dengan baris TP terpisah yang masing-masing berukuran logis (2 JP s.d 4 JP).
+   - Total alokasi waktu JP semua TP harus sesuai dengan jumlah minggu efektif dikali JP per minggu.
+
+3. Integrasi Panca Cinta (Maksimal 1-2 Pilar per TP):
+   - Jangan memasukkan kelima pilar sekaligus dalam satu TP. Fokus pada 1 atau 2 pilar utama yang paling melekat secara alami dengan materi pembelajaran agar penanaman karakternya mendalam.
+   - Pilihan Pilar Resmi MTsN 4 Jombang:
+     * Cinta kepada Allah SWT dan Rasul-Nya (Nilai spiritual, ibadah, syukur)
+     * Cinta kepada ilmu pengetahuan (Semangat belajar, jujur, penasaran, logis)
+     * Cinta kepada diri sendiri dan sesama manusia (Empati, kerja sama, anti-bullying, kesehatan)
+     * Cinta kepada lingkungan alam/ekologi (Peduli lingkungan, hemat energi, merawat flora/fauna)
+     * Cinta kepada tanah air/bangsa dan negara (Menghargai tradisi, toleransi, bangga produk lokal)
+   - ATURAN FORMAT SANGAT PENTING:
+     * JANGAN PERNAH menuliskan kata/label "Pilar 1:", "Pilar 2:", "Pilar 3:", "Pilar 4:", atau "Pilar 5:" di dalam hasil teks. Cukup tuliskan nama pilarnya saja secara langsung.
+     * Jika pilar yang terintegrasi HANYA 1: Tuliskan nama pilarnya secara langsung (contoh: "Cinta kepada Allah SWT dan Rasul-Nya").
+     * Jika pilar yang terintegrasi LEBIH DARI 1 (maksimal 2): WAJIB ditulis dalam bentuk bullet points (setiap pilar berada di baris baru dengan diawali tanda minus/bullet "- "). Contoh:
+- Cinta kepada Allah SWT dan Rasul-Nya
+- Cinta kepada ilmu pengetahuan
+     * JANGAN menggabungkan beberapa pilar dengan kata sambung "&" atau tanda koma jika jumlahnya lebih dari satu. Gunakan format bullet points di atas.
+
+4. Aktivitas Cinta dalam Pembelajaran (Aksi Nyata):
+   - Manifestasi aktivitas cinta harus berupa tindakan nyata menggunakan Kata Kerja Operasional (KKO) yang konkrit. Hindari kalimat pasif/abstrak seperti "Siswa diharapkan memiliki rasa...".
+   - Gunakan kata kerja konkrit seperti: Merawat, membagikan, membersihkan, mendoakan, menghargai, mendengarkan, menuliskan, mendiskusikan, mempraktikkan.
+   - Aktivitas wajib menyentuh aspek merasakan (feeling), memikirkan kemaslahatan (thinking), dan melakukan aksi kasih sayang (acting), namun JANGAN menuliskan kata-kata label "(Heart, Head, Hand)" atau "(Heart)", "(Head)", "(Hand)" di dalam teks hasil akhir. Tuliskan rangkaian tindakan nyatanya secara langsung dan mengalir.
+   - Kegiatan harus benar-benar bisa dipraktikkan langsung saat tatap muka di kelas atau sebagai proyek pembiasaan.
+
+Kembalikan draf ATP dalam format JSON murni yang sesuai dengan responseSchema.`,
                     responseMimeType: "application/json",
                     responseSchema: {
                         type: Type.ARRAY,
@@ -241,9 +298,12 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
                                 tp: { type: Type.STRING },
                                 kodeTp: { type: Type.STRING },
                                 atpSequence: { type: Type.INTEGER },
-                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
+                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" },
+                                alokasiWaktu: { type: Type.STRING, description: "Alokasi waktu dalam JP, contoh: '4 JP'" },
+                                integrasiPancaCinta: { type: Type.STRING, description: "Pilar Panca Cinta yang dipilih, maksimal 1-2 pilar resmi" },
+                                aktivitasCinta: { type: Type.STRING, description: "Aktivitas tindakan nyata pembiasaan dengan kata kerja operasional tanpa menuliskan kata-kata label 'Heart/Head/Hand'" }
                             },
-                            required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester"]
+                            required: ["topikMateri", "tp", "kodeTp", "atpSequence", "semester", "alokasiWaktu", "integrasiPancaCinta", "aktivitasCinta"]
                         }
                     }
                 }
@@ -260,44 +320,17 @@ export const generateATP = async (tpData: { subject: string; grade: string; tpGr
 
 export const generatePROTA = async (atpData: ATPData, totalJpPerWeek: number, grade?: string): Promise<PROTARow[]> => {
     try {
-        const isGrade9 = grade && (grade.includes('9') || grade.toUpperCase().includes('IX'));
-        const standardWeeks = isGrade9 ? '32-34 minggu (Semester Ganjil: 16-17 minggu, Semester Genap: 16-17 minggu)' : '36-40 minggu (Semester Ganjil: 18-20 minggu, Semester Genap: 18-20 minggu)';
-        const minJp = isGrade9 ? 32 * totalJpPerWeek : 36 * totalJpPerWeek;
-        const maxJp = isGrade9 ? 34 * totalJpPerWeek : 40 * totalJpPerWeek;
-
-        const response = await runWithAutoRotatedApiKey(async (ai) => {
-            return await generateWithRetry(ai, {
-                model,
-                contents: `Buatkan Program Tahunan (PROTA) berdasarkan ATP berikut: ${JSON.stringify(atpData.content)}. 
-Total JP per minggu: ${totalJpPerWeek}. 
-Standar minggu efektif untuk kelas ini (${grade || 'Umum'}): ${standardWeeks}. 
-Total alokasi waktu JP seluruh materi dalam setahun WAJIB berada di rentang ${minJp} JP sampai ${maxJp} JP (berdasarkan ${isGrade9 ? '32-34' : '36-40'} minggu efektif x ${totalJpPerWeek} JP/minggu). 
-Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan logis agar total setahun memenuhi standar tersebut. Pastikan kolom semester HANYA berisi 'Ganjil' atau 'Genap'.`,
-                config: {
-                    systemInstruction: "Anda adalah pembuat PROTA. Kembalikan array PROTARow dalam JSON.",
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                no: { type: Type.INTEGER },
-                                topikMateri: { type: Type.STRING },
-                                alurTujuanPembelajaran: { type: Type.STRING },
-                                tujuanPembelajaran: { type: Type.STRING },
-                                alokasiWaktu: { type: Type.STRING },
-                                semester: { type: Type.STRING, enum: ["Ganjil", "Genap"], description: "Harus 'Ganjil' atau 'Genap'" }
-                            },
-                            required: ["no", "topikMateri", "alurTujuanPembelajaran", "tujuanPembelajaran", "alokasiWaktu", "semester"]
-                        }
-                    }
-                }
-            });
-        }, 'Gagal membuat PROTA');
-
-        const result = response.text ? JSON.parse(response.text) : null;
-        if (!result || !Array.isArray(result) || result.length === 0) throw new Error("Respons kosong");
-        return result;
+        // Just map from ATP's content directly! No Gemini call needed, 100% perfect mapping and consistency.
+        return atpData.content.map((row, index) => ({
+            no: index + 1,
+            semester: row.semester,
+            kodeTp: row.kodeTp,
+            topikMateri: row.topikMateri,
+            tp: row.tp,
+            integrasiPancaCinta: row.integrasiPancaCinta,
+            aktivitasCinta: row.aktivitasCinta,
+            alokasiWaktu: row.alokasiWaktu || "0 JP",
+        }));
     } catch (error: any) {
         throw error;
     }
@@ -322,9 +355,19 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
         const response = await runWithAutoRotatedApiKey(async (ai) => {
             return await generateWithRetry(ai, {
                 model,
-                contents: `Berdasarkan ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan Kriteria Ketercapaian Tujuan Pembelajaran (KKTP). Kriteria: Sangat Mahir, Mahir, Cukup Mahir, Perlu Bimbingan. Tentukan targetnya (sangatMahir, mahir, cukupMahir, atau perluBimbingan).`,
+                contents: `Berdasarkan data ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan kriteria perkembangan akademik dan karakter (Integrasi Panca Cinta) untuk setiap Tujuan Pembelajaran (TP) dalam format Kriteria Ketercapaian Tujuan Pembelajaran (KKTP).
+
+Setiap Tujuan Pembelajaran (TP) wajib memiliki 4 kriteria tahapan perkembangan berikut:
+1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana siswa mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
+2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria siswa melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
+3. layak: Tuliskan kriteria perkembangan dasar/pemahaman minimal untuk TP tersebut (fokus ke aspek akademis dasar).
+4. baruBerkembang: Tuliskan kriteria perkembangan terendah/pemahaman awal untuk TP tersebut (fokus ke aspek akademis terendah/perlu bimbingan).
+
+Ambil data materiPokok dari topikMateri ATP, tp dari tp ATP, integrasiPancaCinta dari integrasiPancaCinta ATP, dan aktivitasCinta dari aktivitasCinta ATP secara lengkap dan presisi!`,
                 config: {
-                    systemInstruction: "Hasilkan array dari KKTPRow dalam JSON murni.",
+                    systemInstruction: `Anda adalah AI ahli penyusun Kriteria Ketercapaian Tujuan Pembelajaran (KKTP) untuk MTsN 4 Jombang. Tugas Anda adalah menghasilkan array dari KKTPRow dalam JSON murni.
+Setiap objek KKTPRow harus merepresentasikan satu TP dari input secara lengkap tanpa ada yang terlewat atau digabungkan.
+Target KKTP (targetKktp) secara standar/default diatur ke 'cakap'.`,
                     responseMimeType: "application/json",
                     responseSchema: {
                         type: Type.ARRAY,
@@ -334,19 +377,21 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
                                 no: { type: Type.INTEGER },
                                 materiPokok: { type: Type.STRING },
                                 tp: { type: Type.STRING },
+                                integrasiPancaCinta: { type: Type.STRING },
+                                aktivitasCinta: { type: Type.STRING },
                                 kriteria: {
                                     type: Type.OBJECT,
                                     properties: {
-                                        sangatMahir: { type: Type.STRING },
                                         mahir: { type: Type.STRING },
-                                        cukupMahir: { type: Type.STRING },
-                                        perluBimbingan: { type: Type.STRING }
+                                        cakap: { type: Type.STRING },
+                                        layak: { type: Type.STRING },
+                                        baruBerkembang: { type: Type.STRING }
                                     },
-                                    required: ["sangatMahir", "mahir", "cukupMahir", "perluBimbingan"]
+                                    required: ["mahir", "cakap", "layak", "baruBerkembang"]
                                 },
                                 targetKktp: { type: Type.STRING }
                             },
-                            required: ["no", "materiPokok", "tp", "kriteria", "targetKktp"]
+                            required: ["no", "materiPokok", "tp", "integrasiPancaCinta", "aktivitasCinta", "kriteria", "targetKktp"]
                         }
                     }
                 }
@@ -466,7 +511,7 @@ export const generatePROSEM = async (
 
         return {
             no: row.no,
-            tujuanPembelajaran: row.tujuanPembelajaran,
+            tujuanPembelajaran: row.tp,
             alokasiWaktu: row.alokasiWaktu,
             bulan: distribution,
             keterangan: '' 
