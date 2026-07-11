@@ -3636,11 +3636,6 @@ const App: React.FC = () => {
                                 <div className="flex items-center gap-3">
                                                                       {prosemData?.ganjil ? (
                                         <div className="flex gap-2">
-                                            {user && isApproved && (
-                                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                                                </button>
-                                            )}
                                             <button onClick={() => handleExportProsemToWord('Ganjil')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                                                 <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                                             </button>
@@ -3667,11 +3662,6 @@ const App: React.FC = () => {
                                 <div className="flex items-center gap-3">
                                     {prosemData?.genap ? (
                                         <div className="flex gap-2">
-                                            {user && isApproved && (
-                                                <button onClick={handleDeleteAndRegenerateProsem} disabled={prosemGenerationProgress.isLoading} className="flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-md shadow-sm hover:bg-yellow-600 disabled:bg-slate-400">
-                                                    <SparklesIcon className="w-5 h-5"/> Buat Ulang
-                                                </button>
-                                            )}
                                             <button onClick={() => handleExportProsemToWord('Genap')} className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700">
                                                 <DownloadIcon className="w-5 h-5" /> Ekspor ke Word
                                             </button>

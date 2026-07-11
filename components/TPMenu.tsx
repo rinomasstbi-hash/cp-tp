@@ -54,21 +54,12 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     },
     {
       title: "Alur Tujuan Pembelajaran (ATP)",
-      description: "Menyusun semua TP ke dalam urutan pembelajaran yang paling logis dan efektif.",
+      description: "Menyusun semua TP ke dalam urutan pembelajaran yang paling logis and efektif.",
       icon: <FlowChartIcon className="h-8 w-8 text-white"/>,
       backgroundIcon: <FlowChartIcon className="h-28 w-28 text-white"/>,
       status: atpExists ? 'completed' : 'next',
       action: () => onNavigate('atp'),
       actionLabel: atpExists ? 'Lihat/Kelola ATP' : 'Buat ATP dengan AI',
-    },
-    {
-      title: "Kriteria Ketercapaian (KKTP)",
-      description: "Menentukan kriteria dan rubrik penilaian untuk setiap tujuan pembelajaran.",
-      icon: <ChecklistIcon className="h-8 w-8 text-white"/>,
-      backgroundIcon: <ChecklistIcon className="h-28 w-28 text-white"/>,
-      status: !atpExists ? 'locked' : (kktpExists ? 'completed' : 'next'),
-      action: () => onNavigate('kktp'),
-      actionLabel: kktpExists ? 'Lihat/Kelola KKTP' : 'Buat KKTP dengan AI',
     },
     {
       title: "Program Tahunan (PROTA)",
@@ -80,6 +71,15 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
       actionLabel: protaExists ? 'Lihat/Kelola PROTA' : 'Buat PROTA dengan AI',
     },
     {
+      title: "Program Semester (PROSEM)",
+      description: "Mendistribusikan alokasi waktu PROTA ke dalam jadwal per minggu setiap bulan.",
+      icon: <ListIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <ListIcon className="h-28 w-28 text-white"/>,
+      status: !protaExists ? 'locked' : (prosemExists ? 'completed' : 'next'),
+      action: () => onNavigate('prosem'),
+      actionLabel: prosemExists ? 'Lihat/Kelola PROSEM' : 'Buat PROSEM dengan AI',
+    },
+    {
       title: "Rincian Pekan Efektif (RPE)",
       description: "Menghitung dan memetakan alokasi pekan efektif dan tidak efektif pembelajaran per semester.",
       icon: <CalendarIcon className="h-8 w-8 text-white"/>,
@@ -89,13 +89,13 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
       actionLabel: 'Lihat Detail RPE',
     },
     {
-      title: "Program Semester (PROSEM)",
-      description: "Mendistribusikan alokasi waktu PROTA ke dalam jadwal per minggu setiap bulan.",
-      icon: <ListIcon className="h-8 w-8 text-white"/>,
-      backgroundIcon: <ListIcon className="h-28 w-28 text-white"/>,
-      status: !protaExists ? 'locked' : (prosemExists ? 'completed' : 'next'),
-      action: () => onNavigate('prosem'),
-      actionLabel: prosemExists ? 'Lihat/Kelola PROSEM' : 'Buat PROSEM dengan AI',
+      title: "Kriteria Ketercapaian (KKTP)",
+      description: "Menentukan kriteria dan rubrik penilaian untuk setiap tujuan pembelajaran.",
+      icon: <ChecklistIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <ChecklistIcon className="h-28 w-28 text-white"/>,
+      status: !atpExists ? 'locked' : (kktpExists ? 'completed' : 'next'),
+      action: () => onNavigate('kktp'),
+      actionLabel: kktpExists ? 'Lihat/Kelola KKTP' : 'Buat KKTP dengan AI',
     }
   ];
 
@@ -115,10 +115,10 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
   const gradients = [
     'from-sky-500 to-cyan-500',     // For TP
     'from-teal-500 to-emerald-500',  // For ATP
-    'from-indigo-500 to-violet-500', // For KKTP
     'from-rose-500 to-pink-500',     // For PROTA
-    'from-emerald-600 to-teal-600',  // For RPE
     'from-orange-500 to-amber-500',  // For PROSEM
+    'from-emerald-600 to-teal-600',  // For RPE
+    'from-indigo-500 to-violet-500', // For KKTP
   ];
 
   return (
