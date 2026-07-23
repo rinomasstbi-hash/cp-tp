@@ -229,6 +229,9 @@ export const getAllTPs = async (): Promise<TPData[]> => {
 };
 
 export const saveTP = async (data: Omit<TPData, 'id' | 'createdAt' | 'updatedAt' | 'userId'>): Promise<TPData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
     let payload = {
         ...data,
         userId: (auth.currentUser?.uid || ""),
@@ -346,6 +349,9 @@ export const getATPsByTPId = async (tpId: string): Promise<ATPData[]> => {
 };
 
 export const saveATP = async (data: Omit<ATPData, 'id' | 'createdAt' | 'userId'>): Promise<ATPData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
     const newDocRef = doc(collection(db, 'atps'));
     const payload = {
         ...data,
@@ -446,6 +452,9 @@ export const getPROTAsByTPId = async (tpId: string): Promise<PROTAData[]> => {
 };
 
 export const savePROTA = async (data: Omit<PROTAData, 'id' | 'createdAt' | 'userId'>): Promise<PROTAData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
     const newDocRef = doc(collection(db, 'protas'));
     const payload = {
         ...data,
@@ -528,6 +537,9 @@ export const getKKTPsByATPId = async (atpId: string): Promise<KKTPData[]> => {
 };
 
 export const saveKKTP = async (data: Omit<KKTPData, 'id' | 'createdAt' | 'userId'>): Promise<KKTPData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
     const newDocRef = doc(collection(db, 'kktps'));
     const payload = {
         ...data,
@@ -617,6 +629,9 @@ export const getPROSEMByProtaId = async (protaId: string): Promise<PROSEMData[]>
 };
 
 export const savePROSEM = async (data: Omit<PROSEMData, 'id' | 'createdAt' | 'userId'>): Promise<PROSEMData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
     const newDocRef = doc(collection(db, 'prosems'));
     const payload = {
         ...data,

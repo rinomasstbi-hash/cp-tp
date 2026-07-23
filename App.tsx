@@ -2745,7 +2745,15 @@ const App: React.FC = () => {
           <SubjectDashboard
             subjectName={selectedSubject!}
             tps={tps}
-            onCreateNew={() => setView('create_tp')}
+            canCreate={!!user && isApproved}
+            onCreateNew={() => {
+              if (user && isApproved) {
+                setView('create_tp');
+              } else {
+                setGlobalError("Anda harus login dengan akun guru yang disetujui terlebih dahulu untuk dapat menyusun Tujuan Pembelajaran (TP) baru.");
+                setShowLoginModal(true);
+              }
+            }}
             onSelectTP={handleSelectTP}
             onBack={handleBackToSubjects}
             isLoading={isSubjectDashboardLoading}
@@ -3878,6 +3886,14 @@ const App: React.FC = () => {
       )}
 
       <main>
+        {globalError && view !== 'view_tp_list' && (
+          <div className="max-w-7xl mx-auto px-4 mt-6">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-left relative">
+                <div className="flex"><div className="flex-shrink-0"><AlertIcon className="h-5 w-5 text-red-400" /></div><div className="ml-3"><h3 className="text-sm font-medium text-red-800">Pemberitahuan</h3><div className="mt-2 text-sm text-red-700 whitespace-pre-wrap"><p>{globalError}</p></div></div></div>
+                <button onClick={() => setGlobalError(null)} className="absolute top-2 right-2 p-1.5 text-red-500 hover:bg-red-200 rounded-full" title="Tutup peringatan"><CloseIcon className="w-5 h-5" /></button>
+            </div>
+          </div>
+        )}
         {renderContent()}
       </main>
     </div>

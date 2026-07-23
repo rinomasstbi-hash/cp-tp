@@ -9,9 +9,10 @@ interface SubjectDashboardProps {
   onSelectTP: (tp: TPData) => void;
   onBack: () => void;
   isLoading?: boolean;
+  canCreate?: boolean;
 }
 
-const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, onCreateNew, onSelectTP, onBack, isLoading }) => {
+const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, onCreateNew, onSelectTP, onBack, isLoading, canCreate }) => {
     
   const gradients = [
     'from-violet-500 to-purple-600',
@@ -74,9 +75,21 @@ const SubjectDashboard: React.FC<SubjectDashboardProps> = ({ subjectName, tps, o
                 onClick={onCreateNew}
                 className="group flex flex-col justify-center items-center p-6 h-40 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-teal-500 hover:text-teal-600 transition-all duration-300"
             >
-                <PlusIcon className="h-12 w-12 mb-2" />
-                <h3 className="text-xl font-semibold">Buat TP Baru</h3>
-                <p className="text-base">Mulai dari awal dengan AI</p>
+                {canCreate ? (
+                    <>
+                        <PlusIcon className="h-12 w-12 mb-2" />
+                        <h3 className="text-xl font-semibold">Buat TP Baru</h3>
+                        <p className="text-sm opacity-85">Mulai dari awal dengan AI</p>
+                    </>
+                ) : (
+                    <>
+                        <svg className="h-12 w-12 mb-2 text-amber-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        <h3 className="text-xl font-semibold text-slate-700 group-hover:text-teal-600 transition-colors">Buat TP Baru (Terkunci)</h3>
+                        <p className="text-xs text-slate-400 group-hover:text-teal-600 transition-colors text-center">Login Guru dengan Google untuk Menyusun TP</p>
+                    </>
+                )}
             </button>
         </div>
         {tps.length === 0 && (
