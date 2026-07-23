@@ -72,6 +72,29 @@ const dateToNumber = (val: any): number => {
     return Date.now();
 };
 
+export const removeUndefinedFields = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => removeUndefinedFields(item));
+  }
+  if (typeof obj === 'object') {
+    if (obj.constructor && obj.constructor.name !== 'Object') {
+      return obj;
+    }
+    const cleanObj: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleanObj[key] = removeUndefinedFields(val);
+      }
+    }
+    return cleanObj;
+  }
+  return obj;
+};
+
 const cleanStringsInObject = (data: any): any => {
     if (data === null || data === undefined) return data;
     try {
@@ -749,5 +772,6 @@ export const getAdminSettings = async (): Promise<AdminSettings | null> => {
 
 export const saveAdminSettings = async (settings: Partial<AdminSettings>): Promise<void> => {
   const docRef = doc(db, 'settings', 'admin');
-  await setDoc(docRef, settings, { merge: true });
+  const cleanSettings = removeUndefinedFields(settings);
+  await setDoc(docRef, cleanSettings, { merge: true });
 };

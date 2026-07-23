@@ -157,7 +157,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ onSave }) => {
         setSaving(true);
         setMessage(null);
         try {
-            await saveAdminSettings(settings);
+            await saveAdminSettings({ ...settings, apiKeys });
             setMessage({ type: 'success', text: 'Pengaturan berhasil disimpan!' });
             if (onSave) onSave();
         } catch (error: any) {
