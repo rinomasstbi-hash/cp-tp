@@ -6,6 +6,7 @@ import { BackIcon, SparklesIcon, SaveIcon, TrashIcon, EditIcon } from './icons';
 interface RPMDetailProps {
   tp: TPData;
   rpm: RPMData | null;
+  rpms?: RPMData[];
   atp?: ATPData | null;
   teacherName: string;
   teacherNip: string;
@@ -39,6 +40,7 @@ const GRADUATE_DIMENSIONS_LIST = [
 export const RPMDetail: React.FC<RPMDetailProps> = ({
   tp,
   rpm,
+  rpms,
   atp,
   teacherName,
   teacherNip,
@@ -47,6 +49,17 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
   onDelete,
   onBack
 }) => {
+  const [savedRpmsList, setSavedRpmsList] = useState<RPMData[]>(
+    rpms && rpms.length > 0 ? rpms : (rpm ? [rpm] : [])
+  );
+
+  useEffect(() => {
+    if (rpms && rpms.length > 0) {
+      setSavedRpmsList(rpms);
+    } else if (rpm) {
+      setSavedRpmsList([rpm]);
+    }
+  }, [rpms, rpm]);
   // Extract Materi options from TPData
   const materiOptions = useMemo(() => {
     if (!tp?.tpGroups || tp.tpGroups.length === 0) return [];
@@ -95,7 +108,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
   // Checked TPs state for the selected Materi
   const [checkedTPsMap, setCheckedTPsMap] = useState<Record<string, boolean>>({});
 
-  // When selectedMateriDropdown changes, default check all TPs for that materi
+  // When selectedMateriDropdown changes, default check all TPs for that materi and load/reset RPM state
   useEffect(() => {
     if (currentMateriTPs.length > 0) {
       const initialMap: Record<string, boolean> = {};
@@ -103,14 +116,74 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         initialMap[item.tpText] = true;
       });
       setCheckedTPsMap(initialMap);
-      if (!rpm?.inputData) {
+    }
+
+    if (!selectedMateriDropdown) return;
+
+    // Check if there is an existing saved RPM matching selectedMateriDropdown
+    const match = savedRpmsList.find(r => {
+      if (!r.inputData?.subjectMatter) return false;
+      const sm = r.inputData.subjectMatter.toLowerCase().trim();
+      const sel = selectedMateriDropdown.toLowerCase().trim();
+      return sm === sel || sm.includes(sel) || sel.includes(sm);
+    });
+
+    if (match) {
+      setSavedRpmId(match.id);
+      setHtmlContent(match.htmlContent || '');
+      if (match.inputData) {
+        if (match.inputData.learningObjectives) setFormLearningObjectives(match.inputData.learningObjectives);
+        if (match.inputData.subjectMatter) setFormSubjectMatter(match.inputData.subjectMatter);
+        if (match.inputData.meetings) setFormMeetings(match.inputData.meetings);
+        if (match.inputData.pedagogicalPractices) setFormPractices(match.inputData.pedagogicalPractices);
+        if (match.inputData.graduateDimensions) setFormDimensions(match.inputData.graduateDimensions);
+      }
+    } else {
+      setSavedRpmId(null);
+      setHtmlContent('');
+      setFormSubjectMatter(selectedMateriDropdown);
+      if (currentMateriTPs.length > 0) {
         setFormLearningObjectives(currentMateriTPs.map((item, idx) => `${idx + 1}. ${item.tpText}`).join('\n'));
-        if (selectedMateriDropdown) {
-          setFormSubjectMatter(selectedMateriDropdown);
-        }
       }
     }
-  }, [selectedMateriDropdown, currentMateriTPs]);
+  }, [selectedMateriDropdown]);
+
+  const loadRPMData = (item: RPMData) => {
+    setSavedRpmId(item.id);
+    setHtmlContent(item.htmlContent || '');
+    if (item.inputData) {
+      if (item.inputData.teacherName) setFormTeacherName(item.inputData.teacherName);
+      if (item.inputData.teacherNip) setFormTeacherNip(item.inputData.teacherNip);
+      if (item.inputData.className) setFormClassName(item.inputData.className);
+      if (item.inputData.semester) setFormSemester(item.inputData.semester);
+      if (item.inputData.subject) setFormSubject(item.inputData.subject);
+      if (item.inputData.learningObjectives) setFormLearningObjectives(item.inputData.learningObjectives);
+      if (item.inputData.subjectMatter) setFormSubjectMatter(item.inputData.subjectMatter);
+      if (item.inputData.studentTarget) setFormStudentTarget(item.inputData.studentTarget);
+      if (item.inputData.language) setFormLanguage(item.inputData.language);
+      if (item.inputData.meetings) setFormMeetings(item.inputData.meetings);
+      if (item.inputData.pedagogicalPractices) setFormPractices(item.inputData.pedagogicalPractices);
+      if (item.inputData.graduateDimensions) setFormDimensions(item.inputData.graduateDimensions);
+      if (item.inputData.integrationOption) setFormIntegration(item.inputData.integrationOption);
+      if (item.inputData.kbcPancaCintaFromATP) setFormKbcPancaCintaFromATP(item.inputData.kbcPancaCintaFromATP);
+    }
+    if (item.htmlContent) {
+      setActiveTab('preview');
+    } else {
+      setActiveTab('form');
+    }
+    setToast({ type: 'info', text: `Memuat RPM: ${item.inputData?.subjectMatter || item.subject}` });
+  };
+
+  const startNewRPM = () => {
+    setSavedRpmId(null);
+    setHtmlContent('');
+    setActiveTab('form');
+    if (selectedMateriDropdown) {
+      setFormSubjectMatter(selectedMateriDropdown);
+    }
+    setToast({ type: 'info', text: 'Siap membuat RPM baru untuk topik ini.' });
+  };
 
   // Extract ATP Panca Cinta matches
   const atpPancaCintaMatches = useMemo(() => {
@@ -383,6 +456,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
             grade: formClassName,
             semester: formSemester
           });
+          setSavedRpmsList(prev => prev.map(r => r.id === savedRpmId ? { ...r, inputData, htmlContent: cleanHtml } : r));
         } else {
           const newRpm = await onSave({
             tpId: tp.id || '',
@@ -395,6 +469,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
           });
           if (newRpm?.id) {
             setSavedRpmId(newRpm.id);
+            setSavedRpmsList(prev => [newRpm, ...prev.filter(r => r.id !== newRpm.id)]);
           }
         }
       } catch (saveErr) {
@@ -442,6 +517,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
           grade: formClassName,
           semester: formSemester
         });
+        setSavedRpmsList(prev => prev.map(r => r.id === savedRpmId ? { ...r, inputData, htmlContent } : r));
       } else {
         const newRpm = await onSave({
           tpId: tp.id || '',
@@ -454,6 +530,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         });
         if (newRpm?.id) {
           setSavedRpmId(newRpm.id);
+          setSavedRpmsList(prev => [newRpm, ...prev.filter(r => r.id !== newRpm.id)]);
         }
       }
       setToast({ type: 'success', text: 'RPM berhasil disimpan ke database!' });
@@ -472,7 +549,9 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
   const executeDeleteRPM = async () => {
     if (!savedRpmId) return;
     try {
-      await onDelete(savedRpmId);
+      const targetId = savedRpmId;
+      await onDelete(targetId);
+      setSavedRpmsList(prev => prev.filter(r => r.id !== targetId));
       setSavedRpmId(null);
       setHtmlContent('');
       setActiveTab('form');
@@ -659,6 +738,91 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
           </button>
         </div>
       )}
+
+      {/* Saved RPMs List Section */}
+      <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 no-print shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📁</span>
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm">
+                Daftar RPM Tersimpan ({savedRpmsList.length})
+              </h3>
+              <p className="text-xs text-slate-500">
+                Pilih RPM yang sudah ada untuk melihat/mengedit, atau buat RPM baru untuk topik/materi lain.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={startNewRPM}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-sm hover:shadow-md flex-shrink-0"
+          >
+            <span>+</span>
+            <span>Buat RPM Baru / Topik Lain</span>
+          </button>
+        </div>
+
+        {savedRpmsList.length === 0 ? (
+          <div className="text-xs text-slate-500 italic bg-white p-3 rounded-xl border border-dashed border-slate-200 text-center">
+            Belum ada RPM tersimpan untuk TP ini. Silakan pilih topik materi di bawah dan klik "Hasilkan RPM".
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {savedRpmsList.map((r, idx) => {
+              const isSelected = savedRpmId === r.id;
+              const topic = r.inputData?.subjectMatter || `RPM Topik #${idx + 1}`;
+              return (
+                <div
+                  key={r.id}
+                  className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-teal-50/90 border-teal-500 shadow-sm ring-2 ring-teal-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-slate-800 text-xs line-clamp-2">
+                        {topic}
+                      </span>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-teal-600 text-white rounded-full flex-shrink-0">
+                          Aktif
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Kelas {r.grade} ({r.semester}) • {r.subject}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between pt-3 mt-2 border-t border-slate-100">
+                    <button
+                      onClick={() => loadRPMData(r)}
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors cursor-pointer ${
+                        isSelected
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {isSelected ? 'Sedang Dilihat' : 'Buka RPM'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSavedRpmId(r.id);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="text-xs text-rose-600 hover:text-rose-800 p-1.5 rounded hover:bg-rose-50 transition-colors"
+                      title="Hapus RPM ini"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Main Tabs Navigation */}
       <div className="flex border-b border-slate-200 mb-6 no-print">

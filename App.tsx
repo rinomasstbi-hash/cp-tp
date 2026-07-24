@@ -394,6 +394,7 @@ const App: React.FC = () => {
 
   // State for RPM Management
   const [rpmData, setRpmData] = useState<RPMData | null>(null);
+  const [rpmsList, setRpmsList] = useState<RPMData[]>([]);
 
 
   // State for AI generation progress
@@ -500,9 +501,11 @@ const App: React.FC = () => {
                 setProtaError("Gagal memuat data PROTA.");
             }
 
-            if (rpmsResult.status === 'fulfilled' && rpmsResult.value.length > 0) {
-                setRpmData(rpmsResult.value[0]);
+            if (rpmsResult.status === 'fulfilled') {
+                setRpmsList(rpmsResult.value);
+                setRpmData(rpmsResult.value.length > 0 ? rpmsResult.value[0] : null);
             } else {
+                setRpmsList([]);
                 setRpmData(null);
             }
 
@@ -2798,23 +2801,29 @@ const App: React.FC = () => {
             <RPMDetail
               tp={selectedTP}
               rpm={rpmData}
+              rpms={rpmsList}
               atp={atps && atps.length > 0 ? atps[0] : null}
               teacherName={selectedTP.creatorName || user?.displayName || ''}
               teacherNip=""
               onSave={async (data) => {
                 const saved = await apiService.saveRPM(data);
                 setRpmData(saved);
+                setRpmsList(prev => [saved, ...prev.filter(r => r.id !== saved.id)]);
                 return saved;
               }}
               onUpdate={async (id, data) => {
                 await apiService.updateRPM(id, data);
-                if (rpmData) {
-                  setRpmData({ ...rpmData, ...data });
+                setRpmsList(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+                if (rpmData?.id === id) {
+                  setRpmData(prev => prev ? { ...prev, ...data } : null);
                 }
               }}
               onDelete={async (id) => {
                 await apiService.deleteRPM(id);
-                setRpmData(null);
+                setRpmsList(prev => prev.filter(r => r.id !== id));
+                if (rpmData?.id === id) {
+                  setRpmData(null);
+                }
               }}
               onBack={() => setView('tp_menu')}
             />
