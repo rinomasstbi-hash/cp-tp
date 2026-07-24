@@ -282,7 +282,7 @@ JUMLAH TP YANG DIKIRIM: Ada total ${totalTpCount} buah TP dalam input di atas. O
      * JANGAN menggabungkan beberapa pilar dengan kata sambung "&" atau tanda koma jika jumlahnya lebih dari satu. Gunakan format bullet points di atas.
 
 4. Aktivitas Cinta dalam Pembelajaran (Aksi Nyata):
-   - Manifestasi aktivitas cinta harus berupa tindakan nyata menggunakan Kata Kerja Operasional (KKO) yang konkrit. Hindari kalimat pasif/abstrak seperti "Siswa diharapkan memiliki rasa...".
+   - Manifestasi aktivitas cinta harus berupa tindakan nyata menggunakan Kata Kerja Operasional (KKO) yang konkrit. Hindari kalimat pasif/abstrak seperti "Murid diharapkan memiliki rasa...".
    - Gunakan kata kerja konkrit seperti: Merawat, membagikan, membersihkan, mendoakan, menghargai, mendengarkan, menuliskan, mendiskusikan, mempraktikkan.
    - Aktivitas wajib menyentuh aspek merasakan (feeling), memikirkan kemaslahatan (thinking), dan melakukan aksi kasih sayang (acting), namun JANGAN menuliskan kata-kata label "(Heart, Head, Hand)" atau "(Heart)", "(Head)", "(Hand)" di dalam teks hasil akhir. Tuliskan rangkaian tindakan nyatanya secara langsung dan mengalir.
    - Kegiatan harus benar-benar bisa dipraktikkan langsung saat tatap muka di kelas atau sebagai proyek pembiasaan.
@@ -358,8 +358,8 @@ export const generateKKTP = async (atpData: ATPData, semester: string, grade: st
                 contents: `Berdasarkan data ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan kriteria perkembangan akademik dan karakter (Integrasi Panca Cinta) untuk setiap Tujuan Pembelajaran (TP) dalam format Kriteria Ketercapaian Tujuan Pembelajaran (KKTP).
 
 Setiap Tujuan Pembelajaran (TP) wajib memiliki 4 kriteria tahapan perkembangan berikut:
-1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana siswa mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
-2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria siswa melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
+1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana murid mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
+2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria murid melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
 3. layak: Tuliskan kriteria perkembangan dasar/pemahaman minimal untuk TP tersebut (fokus ke aspek akademis dasar).
 4. baruBerkembang: Tuliskan kriteria perkembangan terendah/pemahaman awal untuk TP tersebut (fokus ke aspek akademis terendah/perlu bimbingan).
 

@@ -181,8 +181,8 @@ Silakan bagi dan distribusikan alokasi waktu JP per TP secara proporsional dan l
         contents: `Berdasarkan data ATP berikut (Semester ${semester}, kelas ${grade}): ${JSON.stringify(contentBySem)}, buatkan kriteria perkembangan akademik dan karakter (Integrasi Panca Cinta) untuk setiap Tujuan Pembelajaran (TP) dalam format Kriteria Ketercapaian Tujuan Pembelajaran (KKTP).
 
 Setiap Tujuan Pembelajaran (TP) wajib memiliki 4 kriteria tahapan perkembangan berikut:
-1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana siswa mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
-2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria siswa melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
+1. mahir: Tuliskan kriteria tingkat mahir/pembiasaan untuk pemahaman TP tersebut + kriteria bagaimana murid mempraktikkan minimal 2 aktivitas cinta secara konsisten/membudaya (ambil rujukan dari kolom aktivitasCinta).
+2. cakap: Tuliskan kriteria target utama akademis/pemahaman esensial TP tersebut + kriteria murid melakukan minimal 1 aktivitas cinta (ambil rujukan dari kolom aktivitasCinta).
 3. layak: Tuliskan kriteria perkembangan dasar/pemahaman minimal untuk TP tersebut (fokus ke aspek akademis dasar).
 4. baruBerkembang: Tuliskan kriteria perkembangan terendah/pemahaman awal untuk TP tersebut (fokus ke aspek akademis terendah/perlu bimbingan).
 
