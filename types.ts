@@ -151,6 +151,7 @@ export interface RPMInput {
   subject: string;
   learningObjectives: string;
   subjectMatter: string;
+  subTopic?: string;
   studentTarget?: string;
   language: 'Bahasa Indonesia' | 'Bahasa Arab' | 'Bahasa Inggris';
   meetings: number;

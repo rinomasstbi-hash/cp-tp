@@ -70,6 +70,12 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     materiOptions[0] || ''
   );
 
+  // State for previewing a specific saved RPM item
+  const [previewRpmItem, setPreviewRpmItem] = useState<RPMData | null>(null);
+
+  // Checked TPs state for the selected Materi
+  const [checkedTPsMap, setCheckedTPsMap] = useState<Record<string, boolean>>({});
+
   // List of TPs for selectedMateriDropdown
   const currentMateriTPs = useMemo(() => {
     if (!selectedMateriDropdown || !tp?.tpGroups) return [];
@@ -84,6 +90,17 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     });
     return list;
   }, [tp, selectedMateriDropdown]);
+
+  // Derived sub-topic from active/selected TPs
+  const derivedSubTopic = useMemo(() => {
+    if (!currentMateriTPs || currentMateriTPs.length === 0) return '';
+    const checkedItems = currentMateriTPs.filter(item => checkedTPsMap[item.tpText] !== false);
+    const uniqueSubMateris = Array.from(new Set(checkedItems.map(item => item.subMateri).filter(Boolean)));
+    if (uniqueSubMateris.length > 0) {
+      return uniqueSubMateris.join(', ');
+    }
+    return '';
+  }, [currentMateriTPs, checkedTPsMap]);
 
   // Extract default TP objectives and subject matter
   const initialTPs = tp.tpGroups
@@ -104,9 +121,6 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     });
     return list.map((t, idx) => `${idx + 1}. ${t}`).join('\n');
   }, [tp, materiOptions]);
-
-  // Checked TPs state for the selected Materi
-  const [checkedTPsMap, setCheckedTPsMap] = useState<Record<string, boolean>>({});
 
   // When selectedMateriDropdown changes, default check all TPs for that materi and load/reset RPM state
   useEffect(() => {
@@ -134,6 +148,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       if (match.inputData) {
         if (match.inputData.learningObjectives) setFormLearningObjectives(match.inputData.learningObjectives);
         if (match.inputData.subjectMatter) setFormSubjectMatter(match.inputData.subjectMatter);
+        if (match.inputData.subTopic) setFormSubTopic(match.inputData.subTopic);
         if (match.inputData.meetings) setFormMeetings(match.inputData.meetings);
         if (match.inputData.pedagogicalPractices) setFormPractices(match.inputData.pedagogicalPractices);
         if (match.inputData.graduateDimensions) setFormDimensions(match.inputData.graduateDimensions);
@@ -148,6 +163,13 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     }
   }, [selectedMateriDropdown]);
 
+  // Sync formSubTopic when derivedSubTopic updates and no explicit custom subTopic exists
+  useEffect(() => {
+    if (derivedSubTopic && !formSubTopic) {
+      setFormSubTopic(derivedSubTopic);
+    }
+  }, [derivedSubTopic]);
+
   const loadRPMData = (item: RPMData) => {
     setSavedRpmId(item.id);
     setHtmlContent(item.htmlContent || '');
@@ -159,6 +181,8 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       if (item.inputData.subject) setFormSubject(item.inputData.subject);
       if (item.inputData.learningObjectives) setFormLearningObjectives(item.inputData.learningObjectives);
       if (item.inputData.subjectMatter) setFormSubjectMatter(item.inputData.subjectMatter);
+      if (item.inputData.subTopic) setFormSubTopic(item.inputData.subTopic);
+      else setFormSubTopic('');
       if (item.inputData.studentTarget) setFormStudentTarget(item.inputData.studentTarget);
       if (item.inputData.language) setFormLanguage(item.inputData.language);
       if (item.inputData.meetings) setFormMeetings(item.inputData.meetings);
@@ -167,12 +191,8 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       if (item.inputData.integrationOption) setFormIntegration(item.inputData.integrationOption);
       if (item.inputData.kbcPancaCintaFromATP) setFormKbcPancaCintaFromATP(item.inputData.kbcPancaCintaFromATP);
     }
-    if (item.htmlContent) {
-      setActiveTab('preview');
-    } else {
-      setActiveTab('form');
-    }
-    setToast({ type: 'info', text: `Memuat RPM: ${item.inputData?.subjectMatter || item.subject}` });
+    setActiveTab('form');
+    setToast({ type: 'info', text: `Parameter RPM "${item.inputData?.subjectMatter || item.subject}" dimuat ke formulir.` });
   };
 
   const startNewRPM = () => {
@@ -182,6 +202,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     if (selectedMateriDropdown) {
       setFormSubjectMatter(selectedMateriDropdown);
     }
+    setFormSubTopic(derivedSubTopic || '');
     setToast({ type: 'info', text: 'Siap membuat RPM baru untuk topik ini.' });
   };
 
@@ -233,6 +254,9 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
   );
   const [formSubjectMatter, setFormSubjectMatter] = useState(
     rpm?.inputData?.subjectMatter || materiOptions[0] || initialMateris
+  );
+  const [formSubTopic, setFormSubTopic] = useState<string>(
+    rpm?.inputData?.subTopic || ''
   );
   const [formStudentTarget, setFormStudentTarget] = useState(
     rpm?.inputData?.studentTarget || ''
@@ -426,6 +450,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       subject: formSubject,
       learningObjectives: formLearningObjectives,
       subjectMatter: formSubjectMatter,
+      subTopic: formSubTopic || derivedSubTopic,
       studentTarget: formStudentTarget,
       language: formLanguage,
       meetings: formMeetings,
@@ -448,7 +473,15 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       // Auto save after generation complete if possible
       try {
         setIsSaving(true);
-        if (savedRpmId) {
+        const activeRpm = savedRpmId ? savedRpmsList.find(r => r.id === savedRpmId) : null;
+        const currentSubTopic = formSubTopic || derivedSubTopic;
+        const isSameRPMTarget = activeRpm && (
+          (activeRpm.inputData?.subjectMatter || '').toLowerCase().trim() === formSubjectMatter.toLowerCase().trim() &&
+          (activeRpm.inputData?.learningObjectives || '').trim() === formLearningObjectives.trim() &&
+          (activeRpm.inputData?.subTopic || '').toLowerCase().trim() === currentSubTopic.toLowerCase().trim()
+        );
+
+        if (savedRpmId && isSameRPMTarget) {
           await onUpdate(savedRpmId, {
             inputData,
             htmlContent: cleanHtml,
@@ -499,6 +532,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
       subject: formSubject,
       learningObjectives: formLearningObjectives,
       subjectMatter: formSubjectMatter,
+      subTopic: formSubTopic || derivedSubTopic,
       studentTarget: formStudentTarget,
       language: formLanguage,
       meetings: formMeetings,
@@ -509,7 +543,15 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     };
 
     try {
-      if (savedRpmId) {
+      const activeRpm = savedRpmId ? savedRpmsList.find(r => r.id === savedRpmId) : null;
+      const currentSubTopic = formSubTopic || derivedSubTopic;
+      const isSameRPMTarget = activeRpm && (
+        (activeRpm.inputData?.subjectMatter || '').toLowerCase().trim() === formSubjectMatter.toLowerCase().trim() &&
+        (activeRpm.inputData?.learningObjectives || '').trim() === formLearningObjectives.trim() &&
+        (activeRpm.inputData?.subTopic || '').toLowerCase().trim() === currentSubTopic.toLowerCase().trim()
+      );
+
+      if (savedRpmId && isSameRPMTarget) {
         await onUpdate(savedRpmId, {
           inputData,
           htmlContent,
@@ -563,14 +605,48 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     }
   };
 
-  const handleExportWord = () => {
-    if (!htmlContent) return;
+  const exportRpmToWord = (item?: RPMData) => {
+    const targetItem = item || savedRpmsList.find(r => r.id === savedRpmId) || (htmlContent ? {
+      id: savedRpmId || 'temp',
+      tpId: tp.id || '',
+      subject: formSubject,
+      grade: formClassName,
+      semester: formSemester,
+      inputData: {
+        teacherName: formTeacherName,
+        teacherNip: formTeacherNip,
+        className: formClassName,
+        semester: formSemester,
+        subject: formSubject,
+        learningObjectives: formLearningObjectives,
+        subjectMatter: formSubjectMatter,
+        subTopic: formSubTopic || derivedSubTopic,
+        studentTarget: formStudentTarget,
+        language: formLanguage,
+        meetings: formMeetings,
+        pedagogicalPractices: formPractices,
+        graduateDimensions: formDimensions,
+        integrationOption: formIntegration,
+        kbcPancaCintaFromATP: formKbcPancaCintaFromATP
+      },
+      htmlContent: htmlContent
+    } as RPMData : null);
+
+    if (!targetItem || !targetItem.htmlContent) {
+      setToast({ type: 'error', text: 'Dokumen RPM tidak memiliki isi HTML untuk diunduh.' });
+      return;
+    }
+
+    const itemClass = targetItem.grade || targetItem.inputData?.className || formClassName || 'Kelas';
+    const itemMateri = targetItem.inputData?.subjectMatter || targetItem.subject || formSubjectMatter || 'Materi';
+    const itemSubTopic = targetItem.inputData?.subTopic || (formSubTopic || derivedSubTopic);
+    const subTopicSuffix = itemSubTopic ? `_${itemSubTopic}` : '';
 
     const fullDoc = `<!DOCTYPE html>
 <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head>
   <meta charset='utf-8'>
-  <title>RPM - ${formSubject}</title>
+  <title>RPM - ${itemMateri}${itemSubTopic ? ` (${itemSubTopic})` : ''}</title>
   <!--[if gte mso 9]>
   <xml>
     <w:WordDocument>
@@ -619,13 +695,13 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
 </head>
 <body>
   <div class="Section1">
-    ${htmlContent}
+    ${targetItem.htmlContent}
   </div>
 </body>
 </html>`;
 
-    const cleanClass = (formClassName || 'Kelas').replace(/[\/\\?%*:|"<>]/g, '').trim();
-    const cleanMateri = (selectedMateriDropdown || formSubjectMatter || 'Materi').replace(/[\/\\?%*:|"<>]/g, '').trim();
+    const cleanClass = itemClass.replace(/[\/\\?%*:|"<>]/g, '').trim();
+    const cleanMateri = (itemMateri + subTopicSuffix).replace(/[\/\\?%*:|"<>]/g, '').trim();
     const fileName = `RPM_${cleanClass}_${cleanMateri}.doc`;
 
     const blob = new Blob(['\ufeff', fullDoc], { type: 'application/msword' });
@@ -637,6 +713,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setToast({ type: 'success', text: `Mengunduh berkas ${fileName}` });
   };
 
   return (
@@ -699,12 +776,69 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         </div>
       )}
 
+      {/* Preview RPM Modal */}
+      {previewRpmItem && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden my-auto">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+              <div>
+                <h3 className="font-bold text-base sm:text-lg flex items-center gap-2">
+                  <span>📄</span> Preview Dokumen RPM
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Topik: <span className="font-bold text-teal-300">{previewRpmItem.inputData?.subjectMatter || previewRpmItem.subject}</span>
+                  {previewRpmItem.inputData?.subTopic && (
+                    <span className="ml-2">| Sub Topik: <span className="font-bold text-emerald-300">{previewRpmItem.inputData.subTopic}</span></span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => exportRpmToWord(previewRpmItem)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
+                >
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v6h6v10H6z" />
+                  </svg>
+                  <span>Unduh Word (.doc)</span>
+                </button>
+                <button
+                  onClick={() => setPreviewRpmItem(null)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer text-lg leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body - HTML Document Render */}
+            <div className="p-6 overflow-y-auto grow bg-slate-100/60 font-serif text-slate-900 text-sm leading-relaxed">
+              <div className="bg-white p-8 rounded-xl shadow-xs border border-slate-200 max-w-3xl mx-auto space-y-4">
+                <div dangerouslySetInnerHTML={{ __html: previewRpmItem.htmlContent || '<p>Tidak ada konten dokumen.</p>' }} />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+              <span>Klik <strong>Unduh Word (.doc)</strong> untuk menyimpan dokumen ini ke komputer.</span>
+              <button
+                onClick={() => setPreviewRpmItem(null)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 no-print">
         <div>
           <button
             onClick={onBack}
-            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold"
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-2 font-semibold cursor-pointer"
           >
             <BackIcon className="w-5 h-5" />
             Kembali ke Menu Perangkat Ajar
@@ -739,96 +873,11 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         </div>
       )}
 
-      {/* Saved RPMs List Section */}
-      <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 no-print shadow-xs">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">📁</span>
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm">
-                Daftar RPM Tersimpan ({savedRpmsList.length})
-              </h3>
-              <p className="text-xs text-slate-500">
-                Pilih RPM yang sudah ada untuk melihat/mengedit, atau buat RPM baru untuk topik/materi lain.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={startNewRPM}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition-all cursor-pointer shadow-sm hover:shadow-md flex-shrink-0"
-          >
-            <span>+</span>
-            <span>Buat RPM Baru / Topik Lain</span>
-          </button>
-        </div>
-
-        {savedRpmsList.length === 0 ? (
-          <div className="text-xs text-slate-500 italic bg-white p-3 rounded-xl border border-dashed border-slate-200 text-center">
-            Belum ada RPM tersimpan untuk TP ini. Silakan pilih topik materi di bawah dan klik "Hasilkan RPM".
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {savedRpmsList.map((r, idx) => {
-              const isSelected = savedRpmId === r.id;
-              const topic = r.inputData?.subjectMatter || `RPM Topik #${idx + 1}`;
-              return (
-                <div
-                  key={r.id}
-                  className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-teal-50/90 border-teal-500 shadow-sm ring-2 ring-teal-500/20'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-bold text-slate-800 text-xs line-clamp-2">
-                        {topic}
-                      </span>
-                      {isSelected && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-teal-600 text-white rounded-full flex-shrink-0">
-                          Aktif
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Kelas {r.grade} ({r.semester}) • {r.subject}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 mt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => loadRPMData(r)}
-                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'bg-teal-600 text-white'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {isSelected ? 'Sedang Dilihat' : 'Buka RPM'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSavedRpmId(r.id);
-                        setShowDeleteConfirm(true);
-                      }}
-                      className="text-xs text-rose-600 hover:text-rose-800 p-1.5 rounded hover:bg-rose-50 transition-colors"
-                      title="Hapus RPM ini"
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
       {/* Main Tabs Navigation */}
       <div className="flex border-b border-slate-200 mb-6 no-print">
         <button
           onClick={() => setActiveTab('form')}
-          className={`py-3 px-6 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 ${
+          className={`py-3 px-6 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
             activeTab === 'form'
               ? 'border-teal-600 text-teal-700 bg-teal-50/50'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -839,21 +888,36 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('preview')}
-          disabled={!htmlContent && !isGenerating}
-          className={`py-3 px-6 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 ${
+          disabled={savedRpmsList.length === 0 && !isGenerating}
+          className={`py-3 px-6 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
             activeTab === 'preview'
               ? 'border-teal-600 text-teal-700 bg-teal-50/50'
               : 'border-transparent text-slate-500 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed'
           }`}
         >
           <SparklesIcon className="w-4 h-4" />
-          Dokumen & Hasil RPM {isGenerating && '(Sedang Dibuat...)'}
+          Dokumen & Hasil RPM ({savedRpmsList.length}) {isGenerating && '⏳'}
         </button>
       </div>
 
       {/* TAB 1: FORM PARAMETERS */}
       {activeTab === 'form' && (
         <div className="bg-white rounded-2xl shadow-lg border border-slate-100 p-6 sm:p-8 space-y-6 no-print">
+          {savedRpmsList.length > 0 && (
+            <div className="p-3.5 bg-teal-50 border border-teal-200 rounded-xl flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-teal-900 font-semibold">
+                <span className="text-base">📁</span>
+                <span>Terdapat {savedRpmsList.length} RPM tersimpan untuk TP ini.</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('preview')}
+                className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+              >
+                Lihat Daftar RPM & Unduh Word →
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Formulir Penyusunan RPM</h2>
@@ -864,7 +928,7 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
             <button
               onClick={handleGenerateRPM}
               disabled={isGenerating}
-              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold text-base shadow-lg shadow-teal-500/20 hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50"
+              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold text-base shadow-lg shadow-teal-500/20 hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
             >
               <SparklesIcon className="w-5 h-5" />
               {isGenerating ? 'Memproses AI...' : 'Buat RPM dengan AI'}
@@ -1050,6 +1114,24 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
                   )}
                 </div>
 
+                {/* Sub Topik / Fokus Materi */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Sub Topik / Fokus Materi</span>
+                    <span className="text-[10px] text-teal-600 font-normal">Otomatis dari TP / Dapat Diedit</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formSubTopic}
+                    onChange={(e) => setFormSubTopic(e.target.value)}
+                    className="w-full px-3.5 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm bg-white font-medium text-slate-800"
+                    placeholder="misal: Tekanan Zat Padat & Tekanan Zat Cair"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Fokus sub-materi ini akan dicantumkan khusus pada dokumen RPM dan daftar hasil.
+                  </p>
+                </div>
+
                 {/* Checklist TP */}
                 <div className="flex-1 flex flex-col min-h-[220px]">
                   <div className="flex items-center justify-between mb-1.5">
@@ -1232,83 +1314,171 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
         </div>
       )}
 
-      {/* TAB 2: PREVIEW & DOCUMENT RESULT */}
+      {/* TAB 2: SAVED RPMS COLLECTION & WORD DOWNLOAD */}
       {activeTab === 'preview' && (
         <div className="space-y-6">
-          {/* Status & Actions Bar */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4 no-print">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${isGenerating ? 'bg-amber-400 animate-ping' : 'bg-emerald-500'}`} />
-              <span className="text-sm font-semibold text-slate-700">
-                {isGenerating ? 'AI sedang menyusun Rencana Pembelajaran Mendalam...' : 'Dokumen RPM Siap Disimpan & Diekspor'}
-              </span>
+          {/* Header Card inside Tab 2 */}
+          <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <span>📁</span> Daftar RPM Tersimpan ({savedRpmsList.length})
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Seluruh hasil RPM yang telah dibuat tersimpan di bawah ini. Silakan unduh berkas dalam format Word (.doc) untuk dibaca, dicetak, atau diedit.
+              </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {savedRpmId && (
-                <button
-                  onClick={handleDeleteRPMPrompt}
-                  className="px-3.5 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Hapus RPM dari Database"
-                >
-                  <TrashIcon className="w-4 h-4" />
-                  Hapus RPM
-                </button>
-              )}
-
-              <button
-                onClick={handleManualSave}
-                disabled={isSaving || !htmlContent}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors disabled:opacity-50"
-              >
-                <SaveIcon className="w-4 h-4" />
-                {isSaving ? 'Menyimpan...' : 'Simpan RPM'}
-              </button>
-
-              <button
-                onClick={handleExportWord}
-                disabled={!htmlContent}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition-colors disabled:opacity-50"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v6h6v10H6z" />
-                </svg>
-                Ekspor Word (.doc)
-              </button>
-            </div>
+            <button
+              onClick={startNewRPM}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-xs shrink-0"
+            >
+              <span>+</span>
+              <span>Buat RPM Baru / Topik Lain</span>
+            </button>
           </div>
 
-          {/* Printable Container */}
-          <div
-            id="printable-rpm-area"
-            ref={printContainerRef}
-            className="bg-white p-8 sm:p-12 rounded-2xl shadow-xl border border-slate-200 min-h-[800px] text-slate-900 font-serif leading-relaxed"
-          >
-            <style>{`
-              .rpm-document-body .lampiran-section,
-              .rpm-document-body .lampiran-section *,
-              .rpm-document-body [data-lampiran],
-              .rpm-document-body [data-lampiran] * {
-                text-align: left !important;
-              }
-            `}</style>
-            {htmlContent ? (
-              <div
-                className="rpm-document-body"
-                dangerouslySetInnerHTML={{ __html: htmlContent }}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-                <SparklesIcon className="w-12 h-12 text-teal-500 animate-spin mb-4" />
-                <p className="font-sans font-semibold text-base text-slate-600">
-                  Menghasilkan Rencana Pembelajaran Mendalam...
-                </p>
-                <p className="font-sans text-xs text-slate-400 mt-1">
-                  Harap tunggu beberapa saat hingga AI selesai membuat dokumen.
-                </p>
+          {/* AI Generation Live Banner */}
+          {isGenerating && (
+            <div className="p-6 bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-2xl shadow-sm space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-sm animate-spin">
+                  ✨
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">
+                    AI Sedang Menyusun Dokumen RPM...
+                  </h3>
+                  <p className="text-xs text-teal-700">
+                    Topik Materi: <span className="font-bold">{formSubjectMatter || formSubject}</span>
+                  </p>
+                </div>
               </div>
-            )}
-          </div>
+              <p className="text-xs text-slate-500">
+                Sistem sedang memproses penyusunan Rencana Pembelajaran Mendalam. Setelah selesai, dokumen akan otomatis disimpan di bawah ini dan siap diunduh dalam format Word (.doc).
+              </p>
+              <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                <div className="bg-teal-600 h-full animate-pulse w-3/4"></div>
+              </div>
+            </div>
+          )}
+
+          {/* List of Saved RPMs */}
+          {savedRpmsList.length === 0 && !isGenerating ? (
+            <div className="bg-white p-12 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
+              <div className="text-4xl">📄</div>
+              <h3 className="font-bold text-slate-700 text-base">Belum Ada RPM yang Dibuat</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Silakan beralih ke tab <strong>Pengaturan Parameter RPM</strong> di atas, pilih topik materi, lalu klik tombol <strong>Buat RPM Sekarang</strong>.
+              </p>
+              <button
+                onClick={() => setActiveTab('form')}
+                className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white font-bold text-xs rounded-xl hover:bg-teal-700 transition-colors cursor-pointer"
+              >
+                Ke Formulir Parameter →
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {savedRpmsList.map((r, idx) => {
+                const topic = r.inputData?.subjectMatter || r.subject || `RPM Topik #${idx + 1}`;
+                const subTopic = r.inputData?.subTopic || '';
+                const meetings = r.inputData?.meetings || 2;
+                const lang = r.inputData?.language || 'Bahasa Indonesia';
+                const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('id-ID', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric'
+                }) : '';
+
+                return (
+                  <div
+                    key={r.id}
+                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                  >
+                    <div>
+                      {/* Top Row: Title & Badge */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="text-[10px] uppercase font-extrabold tracking-wider text-teal-600 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-100">
+                            Topik Materi #{idx + 1}
+                          </span>
+                          <h3 className="font-bold text-slate-800 text-base mt-1 line-clamp-2">
+                            {topic}
+                          </h3>
+                          {subTopic && (
+                            <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 bg-teal-50 text-teal-800 text-xs font-semibold rounded-lg border border-teal-200/80">
+                              <span>🎯 Fokus Sub Topik:</span>
+                              <span className="font-bold">{subTopic}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Meta Info Pills */}
+                      <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-slate-600">
+                        <span className="bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+                          📚 Kelas {r.grade} ({r.semester})
+                        </span>
+                        <span className="bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+                          ⏱️ {meetings} Pertemuan
+                        </span>
+                        <span className="bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+                          🌐 {lang}
+                        </span>
+                        {dateStr && (
+                          <span className="bg-slate-50 text-slate-400 px-2 py-1 rounded-lg text-[11px]">
+                            📅 {dateStr}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Learning Objectives excerpt if available */}
+                      {r.inputData?.learningObjectives && (
+                        <div className="mt-3 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-[11px] text-slate-600 line-clamp-2 italic">
+                          "{r.inputData.learningObjectives.replace(/\n/g, ' ')}"
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Footer */}
+                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => setPreviewRpmItem(r)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-xs rounded-xl transition-colors cursor-pointer border border-teal-200/80"
+                          title="Lihat dokumen hasil RPM"
+                        >
+                          <span>👁️</span>
+                          <span>Lihat Dokumen</span>
+                        </button>
+
+                        <button
+                          onClick={() => exportRpmToWord(r)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-colors cursor-pointer"
+                          title="Download berkas Word (.doc)"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v6h6v10H6z" />
+                          </svg>
+                          <span>Unduh Word (.doc)</span>
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setSavedRpmId(r.id);
+                          setShowDeleteConfirm(true);
+                        }}
+                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer text-xs"
+                        title="Hapus RPM ini"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

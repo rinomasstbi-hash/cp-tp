@@ -548,6 +548,7 @@ function createRPMPrompt(data: RPMInput): string {
     subject,
     learningObjectives,
     subjectMatter,
+    subTopic,
     studentTarget,
     language,
     meetings,
@@ -739,7 +740,7 @@ function createRPMPrompt(data: RPMInput): string {
     - Semester: ${semester}
     - Mata Pelajaran: ${subject}
     - Tujuan Pembelajaran Terpilih: ${learningObjectives}
-    - Materi Pelajaran Terpilih: ${subjectMatter}
+    - Materi Pelajaran Terpilih: ${subjectMatter}${subTopic ? ` (Sub Topik / Fokus Materi: ${subTopic})` : ''}
     - Target Murid: ${studentDescription}
     - Bahasa Pembuka/Penutup: ${language}
     - Jumlah Pertemuan: ${meetings}
@@ -748,7 +749,7 @@ function createRPMPrompt(data: RPMInput): string {
     - Opsi Integrasi: ${integrationOption}
 
     **INSTRUKSI BATASAN CAKUPAN DOKUMEN (SANGAT PENTING & UTAMA):**
-    - Dokumen RPM ini HARUS DIBUAT KHUSUS DAN HANYA UNTUK MATERI PELAJARAN: "${subjectMatter}" DAN TUJUAN PEMBELAJARAN TERPILIH SAJA:
+    - Dokumen RPM ini HARUS DIBUAT KHUSUS DAN HANYA UNTUK MATERI PELAJARAN: "${subjectMatter}" ${subTopic ? `DENGAN SUB TOPIK / FOKUS MATERI: "${subTopic}"` : ''} DAN TUJUAN PEMBELAJARAN TERPILIH SAJA:
       "${learningObjectives}"
     - DILARANG KERAS membuat RPM untuk materi pelajaran lain, bab/topik lain, atau TP di luar yang tertera di atas.
     - Semua bagian dokumen (termasuk Identifikasi, Desain Pembelajaran, Pengalaman Belajar per Pertemuan, LKM, dan Instrumen Asesmen) HARUS HANYA FOKUS pada materi (${subjectMatter}) dan TP terpilih di atas.
@@ -804,7 +805,7 @@ function createRPMPrompt(data: RPMInput): string {
 
     b. **IDENTIFIKASI**
        - Target Murid: ${studentDescription}
-       - Materi Pelajaran: ${subjectMatter}
+       - Materi Pelajaran: ${subjectMatter}${subTopic ? ` (Sub Topik / Fokus Materi: ${subTopic})` : ''}
        - Capaian Dimensi Lulusan: ${(graduateDimensions || []).join(', ')}
        - Topik Panca Cinta: Analisislah materi pelajaran dan tujuan pembelajaran untuk memilih 2-3 dimensi Kurikulum Berbasis Cinta (KBC) yang paling relevan dari daftar berikut: [Cinta Allah dan Rasul-Nya, Cinta Ilmu, Cinta Lingkungan, Cinta Diri dan Sesama, Cinta Tanah Air].
        - Materi Insersi: Untuk setiap Topik Panca Cinta yang dipilih, tuliskan satu kalimat singkat yang menggambarkan nilai cinta yang diintegrasikan dalam pembelajaran.
@@ -812,7 +813,7 @@ function createRPMPrompt(data: RPMInput): string {
     c. **DESAIN PEMBELAJARAN**
        - Lintas Disiplin Ilmu: Generate 1-2 disiplin ilmu lain yang relevan dengan materi.
        - Tujuan Pembelajaran: ${learningObjectives}
-       - Topik Pembelajaran: Buat judul topik yang lebih spesifik dan menarik dari input 'Materi Pelajaran'.
+       - Topik Pembelajaran: Buat judul topik/sub-topik yang spesifik dan menarik dari input '${subjectMatter}' ${subTopic ? `(Fokus: ${subTopic})` : ''}.
        - Praktik Pedagogis per Pertemuan: ${practicesText}
        - Kemitraan Pembelajaran: Generate saran kemitraan yang relevan (misal: orang tua, perpustakaan sekolah).
        - Lingkungan Pembelajaran: Generate saran lingkungan belajar yang sesuai (misal: di dalam kelas, di luar kelas, laboratorium).
