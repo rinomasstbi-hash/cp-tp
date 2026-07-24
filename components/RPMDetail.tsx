@@ -10,6 +10,8 @@ interface RPMDetailProps {
   atp?: ATPData | null;
   teacherName: string;
   teacherNip: string;
+  currentUser?: { uid: string; email?: string | null; displayName?: string | null } | null;
+  isTpOwner?: boolean;
   onSave: (data: Omit<RPMData, 'id' | 'createdAt' | 'userId'>) => Promise<RPMData>;
   onUpdate: (id: string, data: Partial<RPMData>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -44,6 +46,8 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
   atp,
   teacherName,
   teacherNip,
+  currentUser,
+  isTpOwner = true,
   onSave,
   onUpdate,
   onDelete,
@@ -438,6 +442,10 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
 
   const handleGenerateRPM = async () => {
     setErrorMessage(null);
+    if (!isTpOwner) {
+      setErrorMessage(`Hanya pembuat TP (${tp.creatorName || 'Penyusun'}) yang berhak membuat, mengedit, atau menghapus RPM.`);
+      return;
+    }
     setIsGenerating(true);
     setActiveTab('preview');
     setHtmlContent('');
@@ -521,6 +529,10 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
 
   const handleManualSave = async () => {
     if (!htmlContent) return;
+    if (!isTpOwner) {
+      setErrorMessage(`Hanya pembuat TP (${tp.creatorName || 'Penyusun'}) yang berhak mengubah atau menyimpan RPM.`);
+      return;
+    }
     setIsSaving(true);
     setErrorMessage(null);
 
@@ -590,6 +602,11 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
 
   const executeDeleteRPM = async () => {
     if (!savedRpmId) return;
+    if (!isTpOwner) {
+      setErrorMessage(`Hanya pembuat TP (${tp.creatorName || 'Penyusun'}) yang berhak menghapus RPM.`);
+      setShowDeleteConfirm(false);
+      return;
+    }
     try {
       const targetId = savedRpmId;
       await onDelete(targetId);
@@ -843,11 +860,8 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
             <BackIcon className="w-5 h-5" />
             Kembali ke Menu Perangkat Ajar
           </button>
-          <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-slate-800">
             Rencana Pembelajaran Mendalam (RPM)
-            <span className="text-xs px-2.5 py-1 bg-gradient-to-r from-teal-500 to-emerald-600 text-white font-medium rounded-full shadow-sm">
-              KBC / SRA / Literasi / Numerasi
-            </span>
           </h1>
           <p className="text-slate-500 mt-1">
             Mata Pelajaran: <span className="font-semibold">{formSubject}</span> | Kelas:{' '}
@@ -918,17 +932,22 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
             </div>
           )}
 
+          {!isTpOwner && (
+            <div className="p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs flex items-center gap-2">
+              <span className="text-base">🔒</span>
+              <span>Akses Terbatas: Hanya pembuat TP (<strong>{tp.creatorName || 'Penyusun'}</strong>) yang berhak membuat, mengedit, atau menghapus RPM. Anda saat ini dalam mode lihat dan unduh dokumen.</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Formulir Penyusunan RPM</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Lengkapi data dan preferensi pembelajaran di bawah ini. AI akan merancang dokumen RPM secara terstruktur.
-              </p>
             </div>
             <button
               onClick={handleGenerateRPM}
-              disabled={isGenerating}
-              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold text-base shadow-lg shadow-teal-500/20 hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              disabled={isGenerating || !isTpOwner}
+              title={!isTpOwner ? `Hanya pembuat TP (${tp.creatorName || 'Penyusun'}) yang dapat membuat RPM` : undefined}
+              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold text-base shadow-lg shadow-teal-500/20 hover:shadow-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
             >
               <SparklesIcon className="w-5 h-5" />
               {isGenerating ? 'Memproses AI...' : 'Buat RPM dengan AI'}
@@ -1463,16 +1482,18 @@ export const RPMDetail: React.FC<RPMDetailProps> = ({
                         </button>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setSavedRpmId(r.id);
-                          setShowDeleteConfirm(true);
-                        }}
-                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer text-xs"
-                        title="Hapus RPM ini"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
+                      {isTpOwner && (
+                        <button
+                          onClick={() => {
+                            setSavedRpmId(r.id);
+                            setShowDeleteConfirm(true);
+                          }}
+                          className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer text-xs"
+                          title="Hapus RPM ini"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

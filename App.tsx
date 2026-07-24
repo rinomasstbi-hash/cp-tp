@@ -2797,6 +2797,13 @@ const App: React.FC = () => {
 
       case 'view_rpm':
         if (!selectedTP) return null;
+        const isTpOwner = Boolean(
+          user && (
+            isAdmin ||
+            (selectedTP.userId && selectedTP.userId === user.uid) ||
+            (selectedTP.creatorEmail && user.email && selectedTP.creatorEmail.toLowerCase().trim() === user.email.toLowerCase().trim())
+          )
+        );
         return (
             <RPMDetail
               tp={selectedTP}
@@ -2805,6 +2812,8 @@ const App: React.FC = () => {
               atp={atps && atps.length > 0 ? atps[0] : null}
               teacherName={selectedTP.creatorName || user?.displayName || ''}
               teacherNip=""
+              currentUser={user}
+              isTpOwner={isTpOwner}
               onSave={async (data) => {
                 const saved = await apiService.saveRPM(data);
                 setRpmData(saved);
