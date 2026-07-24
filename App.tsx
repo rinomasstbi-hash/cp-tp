@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData } from './types';
+import { View, TPData, TPGroup, ATPData, ATPTableRow, PROTAData, KKTPData, PROSEMData, RPMData } from './types';
 import * as apiService from './services/dbService';
 import * as geminiService from './services/geminiService';
 import SubjectSelector from './components/SubjectSelector';
@@ -9,6 +9,7 @@ import TPEditor from './components/TPEditor';
 import ATPEditor from './components/ATPEditor';
 import LoadingOverlay from './components/LoadingOverlay';
 import { RpeDetail } from './components/RpeDetail';
+import { RPMDetail } from './components/RPMDetail';
 import { PlusIcon, EditIcon, TrashIcon, BackIcon, ClipboardIcon, AlertIcon, CloseIcon, FlowChartIcon, ChevronDownIcon, ChevronUpIcon, SparklesIcon, DownloadIcon, BookOpenIcon, ChecklistIcon, CalendarIcon, ListIcon, SaveIcon } from './components/icons';
 
 import Login from './components/Login';
@@ -391,6 +392,9 @@ const App: React.FC = () => {
   const [prosemGenerationProgress, setProsemGenerationProgress] = useState({ isLoading: false, message: '' });
   const [activeProsemSemester, setActiveProsemSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
 
+  // State for RPM Management
+  const [rpmData, setRpmData] = useState<RPMData | null>(null);
+
 
   // State for AI generation progress
   const [atpGenerationProgress, setAtpGenerationProgress] = useState({ isLoading: false, message: '', progress: 0 });
@@ -471,9 +475,10 @@ const App: React.FC = () => {
         setIsTPMenuLoading(true);
 
         try {
-            const [atpsResult, protasResult] = await Promise.allSettled([
+            const [atpsResult, protasResult, rpmsResult] = await Promise.allSettled([
                 apiService.getATPsByTPId(tpId),
-                apiService.getPROTAsByTPId(tpId)
+                apiService.getPROTAsByTPId(tpId),
+                apiService.getRPMsByTPId(tpId)
             ]);
 
             let atpsData: ATPData[] = [];
@@ -493,6 +498,12 @@ const App: React.FC = () => {
             } else {
                 console.error("Gagal memuat PROTA:", protasResult.reason);
                 setProtaError("Gagal memuat data PROTA.");
+            }
+
+            if (rpmsResult.status === 'fulfilled' && rpmsResult.value.length > 0) {
+                setRpmData(rpmsResult.value[0]);
+            } else {
+                setRpmData(null);
             }
 
             const dependentPromises = [];
@@ -2651,7 +2662,7 @@ const App: React.FC = () => {
       setTimeout(() => setCopyNotification(''), 2000);
   };
 
-  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem') => {
+  const handleNavigateFromMenu = async (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem' | 'rpm') => {
     if (!selectedTP) return;
 
     setGlobalError(null);
@@ -2659,6 +2670,11 @@ const App: React.FC = () => {
 
     if (destination === 'detail') {
         setView('view_tp_detail');
+        return;
+    }
+
+    if (destination === 'rpm') {
+        setView('view_rpm');
         return;
     }
     
@@ -2769,9 +2785,38 @@ const App: React.FC = () => {
                 protas={protas}
                 kktpData={kktpData}
                 prosemData={prosemData}
+                rpmData={rpmData}
                 onNavigate={handleNavigateFromMenu}
                 onBack={() => setView('subject_dashboard')}
                 isLoading={isTPMenuLoading}
+            />
+        );
+
+      case 'view_rpm':
+        if (!selectedTP) return null;
+        return (
+            <RPMDetail
+              tp={selectedTP}
+              rpm={rpmData}
+              atp={atps && atps.length > 0 ? atps[0] : null}
+              teacherName={selectedTP.creatorName || user?.displayName || ''}
+              teacherNip=""
+              onSave={async (data) => {
+                const saved = await apiService.saveRPM(data);
+                setRpmData(saved);
+                return saved;
+              }}
+              onUpdate={async (id, data) => {
+                await apiService.updateRPM(id, data);
+                if (rpmData) {
+                  setRpmData({ ...rpmData, ...data });
+                }
+              }}
+              onDelete={async (id) => {
+                await apiService.deleteRPM(id);
+                setRpmData(null);
+              }}
+              onBack={() => setView('tp_menu')}
             />
         );
 

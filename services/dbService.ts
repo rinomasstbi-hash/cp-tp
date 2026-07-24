@@ -1,5 +1,5 @@
 import { getFirestore, collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch, Timestamp, enableIndexedDbPersistence, initializeFirestore, getCountFromServer, addDoc } from 'firebase/firestore';
-import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, ApiKeyItem } from '../types';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, ApiKeyItem, RPMData } from '../types';
 import { app, activeConfig } from './firebaseApp';
 
 enum OperationType {
@@ -774,4 +774,98 @@ export const saveAdminSettings = async (settings: Partial<AdminSettings>): Promi
   const docRef = doc(db, 'settings', 'admin');
   const cleanSettings = removeUndefinedFields(settings);
   await setDoc(docRef, cleanSettings, { merge: true });
+};
+
+// ============================================================================
+// RPM (Rencana Pembelajaran Mendalam)
+// ============================================================================
+
+export const getRPMsByTPId = async (tpId: string): Promise<RPMData[]> => {
+    const q = query(collection(db, 'rpms'), where('tpId', '==', tpId));
+    try {
+        const querySnapshot = await getDocs(q);
+        return querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                userId: data.userId || '',
+                tpId: data.tpId || '',
+                subject: data.subject || '',
+                grade: data.grade || '',
+                semester: data.semester || 'Ganjil',
+                inputData: data.inputData || {},
+                htmlContent: data.htmlContent || '',
+                createdAt: data.createdAt || Date.now(),
+                creatorName: data.creatorName || ''
+            } as RPMData;
+        });
+    } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `rpms/tpId=${tpId}`);
+        return [];
+    }
+};
+
+export const saveRPM = async (data: Omit<RPMData, 'id' | 'createdAt' | 'userId'>): Promise<RPMData> => {
+    if (!auth.currentUser) {
+        throw new Error("Penyimpanan gagal: Anda harus login dengan akun Guru terlebih dahulu.");
+    }
+    const newDocRef = doc(collection(db, 'rpms'));
+    const payload = {
+        ...data,
+        userId: auth.currentUser?.uid || "",
+        createdAt: Date.now()
+    };
+    
+    try {
+        const cleanPayload = removeUndefinedFields(payload);
+        setDoc(newDocRef, cleanPayload).catch(e => console.warn("Background sync delayed:", e));
+        return {
+            id: newDocRef.id,
+            ...payload
+        };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, 'rpms');
+        throw error;
+    }
+};
+
+export const updateRPM = async (id: string, data: Partial<RPMData>): Promise<{ success: boolean }> => {
+    const docRef = doc(db, 'rpms', id);
+    try {
+        const cleanData = removeUndefinedFields({
+            ...data,
+            updatedAt: Date.now()
+        });
+        updateDoc(docRef, cleanData).catch(e => console.warn("Background sync delayed:", e));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `rpms/${id}`);
+        throw error;
+    }
+};
+
+export const deleteRPM = async (id: string): Promise<{ success: boolean }> => {
+    try {
+        deleteDoc(doc(db, 'rpms', id)).catch(e => console.warn("Background sync delayed:", e));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `rpms/${id}`);
+        throw error;
+    }
+};
+
+export const deleteRPMsByTPId = async (tpId: string): Promise<{ success: boolean }> => {
+    const q = query(collection(db, 'rpms'), where('tpId', '==', tpId));
+    try {
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        batch.commit().catch(e => console.warn("Background sync delayed:", e));
+        return { success: true };
+    } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `rpms`);
+        throw error;
+    }
 };

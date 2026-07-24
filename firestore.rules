@@ -52,6 +52,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || isOwner(resource.data);
     }
 
+    match /rpms/{rpmId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isOwner(resource.data);
+    }
+
     // Default match for other collections (settings, access_requests, approved_users)
     match /settings/{settingId} {
       allow read: if true;

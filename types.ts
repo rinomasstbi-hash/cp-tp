@@ -136,4 +136,41 @@ export interface ApiKeyItem {
   lastUsed?: number;
 }
 
-export type View = 'select_subject' | 'subject_dashboard' | 'tp_menu' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list' | 'view_kktp' | 'view_prosem' | 'view_admin_settings' | 'view_rpe';
+export enum IntegrationOption {
+  NONE = 'Tidak Ada',
+  SRA = 'Satuan Pendidikan Ramah Anak (SRA)',
+  LITERASI = 'Penguatan Literasi',
+  NUMERASI = 'Penguatan Numerasi',
+}
+
+export interface RPMInput {
+  teacherName: string;
+  teacherNip: string;
+  className: string;
+  semester: 'Ganjil' | 'Genap';
+  subject: string;
+  learningObjectives: string;
+  subjectMatter: string;
+  studentTarget?: string;
+  language: 'Bahasa Indonesia' | 'Bahasa Arab' | 'Bahasa Inggris';
+  meetings: number;
+  pedagogicalPractices: string[];
+  graduateDimensions: string[];
+  integrationOption: IntegrationOption | string;
+  kbcPancaCintaFromATP?: string;
+}
+
+export interface RPMData {
+  id: string;
+  userId: string;
+  tpId: string;
+  subject: string;
+  grade: string;
+  semester: 'Ganjil' | 'Genap';
+  inputData: RPMInput;
+  htmlContent: string;
+  createdAt: number;
+  creatorName?: string;
+}
+
+export type View = 'select_subject' | 'subject_dashboard' | 'tp_menu' | 'view_tp_list' | 'view_tp_detail' | 'create_tp' | 'edit_tp' | 'view_atp_list' | 'view_atp_detail' | 'edit_atp' | 'view_prota_list' | 'view_kktp' | 'view_prosem' | 'view_admin_settings' | 'view_rpe' | 'view_rpm' | 'create_rpm';

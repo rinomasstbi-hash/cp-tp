@@ -1,5 +1,5 @@
 import React from 'react';
-import { TPData, ATPData, PROTAData, KKTPData, PROSEMData } from '../types';
+import { TPData, ATPData, PROTAData, KKTPData, PROSEMData, RPMData } from '../types';
 import { BackIcon, BookOpenIcon, FlowChartIcon, ChecklistIcon, SparklesIcon, CalendarIcon, ListIcon } from './icons';
 
 interface TPMenuProps {
@@ -8,17 +8,19 @@ interface TPMenuProps {
   protas: PROTAData[];
   kktpData: { ganjil: KKTPData | null; genap: KKTPData | null } | null;
   prosemData: { ganjil: PROSEMData | null; genap: PROSEMData | null } | null;
-  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem') => void;
+  rpmData?: RPMData | null;
+  onNavigate: (destination: 'detail' | 'atp' | 'kktp' | 'prota' | 'rpe' | 'prosem' | 'rpm') => void;
   onBack: () => void;
   isLoading?: boolean;
 }
 
-const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData, onNavigate, onBack, isLoading }) => {
+const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData, rpmData, onNavigate, onBack, isLoading }) => {
 
   const atpExists = atps.length > 0;
   const kktpExists = !!(kktpData?.ganjil || kktpData?.genap);
   const protaExists = protas.length > 0;
   const prosemExists = !!(prosemData?.ganjil || prosemData?.genap);
+  const rpmExists = !!rpmData;
 
   const CheckmarkIcon = () => (
     <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -96,6 +98,15 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
       status: !atpExists ? 'locked' : (kktpExists ? 'completed' : 'next'),
       action: () => onNavigate('kktp'),
       actionLabel: kktpExists ? 'Lihat/Kelola KKTP' : 'Buat KKTP dengan AI',
+    },
+    {
+      title: "Rencana Pembelajaran Mendalam (RPM)",
+      description: "Menyusun modul ajar mendalam dengan integrasi Kurikulum Berbasis Cinta (KBC), SRA, Literasi & Numerasi.",
+      icon: <SparklesIcon className="h-8 w-8 text-white"/>,
+      backgroundIcon: <SparklesIcon className="h-28 w-28 text-white"/>,
+      status: rpmExists ? 'completed' : 'next',
+      action: () => onNavigate('rpm'),
+      actionLabel: rpmExists ? 'Lihat/Kelola RPM' : 'Buat RPM dengan AI',
     }
   ];
 
@@ -119,6 +130,7 @@ const TPMenu: React.FC<TPMenuProps> = ({ tp, atps, protas, kktpData, prosemData,
     'from-orange-500 to-amber-500',  // For PROSEM
     'from-emerald-600 to-teal-600',  // For RPE
     'from-indigo-500 to-violet-500', // For KKTP
+    'from-cyan-600 to-teal-700',     // For RPM
   ];
 
   return (
